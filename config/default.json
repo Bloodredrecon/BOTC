@@ -1,0 +1,15 @@
+{
+  "port": 3847,
+  "host": "0.0.0.0",
+  "storytellerPin": "1234",
+  "hue": {
+    "enabled": false,
+    "bridgeIp": "",
+    "username": "",
+    "lights": {
+      "ambient": "",
+      "accent": "",
+      "effect": ""
+    }
+  }
+}

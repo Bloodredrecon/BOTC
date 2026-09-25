@@ -1,0 +1,60 @@
+{
+  "id": "trouble-brewing",
+  "name": "Trouble Brewing",
+  "characters": [
+    { "id": "washerwoman", "name": "Washerwoman", "team": "townsfolk", "ability": "You start knowing that 1 of 2 players is a particular Townsfolk.", "firstNight": 10, "otherNight": 0, "reminders": ["Townsfolk", "Wrong"] },
+    { "id": "librarian", "name": "Librarian", "team": "townsfolk", "ability": "You start knowing that 1 of 2 players is a particular Outsider. (Or that zero are in play.)", "firstNight": 11, "otherNight": 0, "reminders": ["Outsider", "Wrong"] },
+    { "id": "investigator", "name": "Investigator", "team": "townsfolk", "ability": "You start knowing that 1 of 2 players is a particular Minion.", "firstNight": 12, "otherNight": 0, "reminders": ["Minion", "Wrong"] },
+    { "id": "chef", "name": "Chef", "team": "townsfolk", "ability": "You start knowing how many pairs of evil players there are.", "firstNight": 13, "otherNight": 0, "reminders": [] },
+    { "id": "empath", "name": "Empath", "team": "townsfolk", "ability": "Each night, you learn how many of your 2 alive neighbors are evil.", "firstNight": 14, "otherNight": 15, "reminders": [] },
+    { "id": "fortuneteller", "name": "Fortune Teller", "team": "townsfolk", "ability": "Each night, choose 2 players: you learn if either is a Demon. There is a good player that registers as a Demon to you.", "firstNight": 15, "otherNight": 16, "reminders": ["Red herring"] },
+    { "id": "undertaker", "name": "Undertaker", "team": "townsfolk", "ability": "Each night*, you learn which character died by execution today.", "firstNight": 0, "otherNight": 18, "reminders": ["Died today"] },
+    { "id": "monk", "name": "Monk", "team": "townsfolk", "ability": "Each night*, choose a player (not yourself): they are safe from the Demon tonight.", "firstNight": 0, "otherNight": 5, "reminders": ["Safe"] },
+    { "id": "ravenkeeper", "name": "Ravenkeeper", "team": "townsfolk", "ability": "If you die at night, you are woken to choose a player: you learn their character.", "firstNight": 0, "otherNight": 14, "reminders": [] },
+    { "id": "virgin", "name": "Virgin", "team": "townsfolk", "ability": "The 1st time you are nominated, if the nominator is a Townsfolk, they are executed immediately.", "firstNight": 0, "otherNight": 0, "reminders": ["No ability"] },
+    { "id": "slayer", "name": "Slayer", "team": "townsfolk", "ability": "Once per game, during the day, publicly choose a player: if they are the Demon, they die.", "firstNight": 0, "otherNight": 0, "reminders": ["No ability"] },
+    { "id": "soldier", "name": "Soldier", "team": "townsfolk", "ability": "You are safe from the Demon.", "firstNight": 0, "otherNight": 0, "reminders": [] },
+    { "id": "mayor", "name": "Mayor", "team": "townsfolk", "ability": "If only 3 players live & no execution occurs, your team wins. If you die at night, another player might die instead.", "firstNight": 0, "otherNight": 0, "reminders": [] },
+    { "id": "butler", "name": "Butler", "team": "outsider", "ability": "Each night, choose a player (not yourself): tomorrow, you may only vote if they are voting too.", "firstNight": 16, "otherNight": 17, "reminders": ["Master"] },
+    { "id": "drunk", "name": "Drunk", "team": "outsider", "ability": "You do not know you are the Drunk. You think you are a Townsfolk character, but you are not.", "firstNight": 0, "otherNight": 0, "reminders": ["Drunk"] },
+    { "id": "recluse", "name": "Recluse", "team": "outsider", "ability": "You might register as evil & as a Minion or Demon, even if dead.", "firstNight": 0, "otherNight": 0, "reminders": [] },
+    { "id": "saint", "name": "Saint", "team": "outsider", "ability": "If you die by execution, your team loses.", "firstNight": 0, "otherNight": 0, "reminders": [] },
+    { "id": "poisoner", "name": "Poisoner", "team": "minion", "ability": "Each night, choose a player: they are poisoned tonight and tomorrow day.", "firstNight": 8, "otherNight": 4, "reminders": ["Poisoned"] },
+    { "id": "spy", "name": "Spy", "team": "minion", "ability": "Each night, you see the Grimoire. You might register as good & as a Townsfolk or Outsider, even if dead.", "firstNight": 9, "otherNight": 6, "reminders": [] },
+    { "id": "scarletwoman", "name": "Scarlet Woman", "team": "minion", "ability": "If there are 5 or more players alive & the Demon dies, you become the Demon. (Travellers don't count.)", "firstNight": 0, "otherNight": 7, "reminders": ["Is the Demon"] },
+    { "id": "baron", "name": "Baron", "team": "minion", "ability": "There are extra Outsiders in play. [+2 Outsiders]", "firstNight": 0, "otherNight": 0, "reminders": [] },
+    { "id": "imp", "name": "Imp", "team": "demon", "ability": "Each night*, choose a player: they die. If you kill yourself this way, a Minion becomes the Demon.", "firstNight": 0, "otherNight": 13, "reminders": ["Dead"] }
+  ],
+  "fabled": [
+    { "id": "angel", "name": "Angel", "ability": "Something bad might happen to whoever is most responsible for the death of a new player." },
+    { "id": "buddhist", "name": "Buddhist", "ability": "For the first 2 days, minions get false Info." },
+    { "id": "djinn", "name": "Djinn", "ability": "Use the Djinn's special rules. [depends on script]" },
+    { "id": "fibbin", "name": "Fibbin", "ability": "Once per game, 1 good player might get incorrect information." },
+    { "id": "fiddler", "name": "Fiddler", "ability": "Once per game, the Demon secretly chooses an opposing player: all players vote which of those 2 win the game." },
+    { "id": "hellslibrarian", "name": "Hell's Librarian", "ability": "Something bad might happen to whoever talks when the Storyteller asks for silence." },
+    { "id": "revolutionary", "name": "Revolutionary", "ability": "2 neighboring players are known to be the same alignment. Once per game, 1 of them registers falsely." },
+    { "id": "stormcatcher", "name": "Storm Catcher", "ability": "Name a good character. If in play, they can only die by execution, but evil knows who they are." },
+    { "id": "doomsayer", "name": "Doomsayer", "ability": "If 4 or more players live, each living player may publicly choose (once per game) that a player of their own alignment dies." }
+  ],
+  "setupByPlayerCount": {
+    "5": { "townsfolk": 3, "outsider": 0, "minion": 1, "demon": 1 },
+    "6": { "townsfolk": 3, "outsider": 1, "minion": 1, "demon": 1 },
+    "7": { "townsfolk": 5, "outsider": 0, "minion": 1, "demon": 1 },
+    "8": { "townsfolk": 5, "outsider": 1, "minion": 1, "demon": 1 },
+    "9": { "townsfolk": 5, "outsider": 2, "minion": 1, "demon": 1 },
+    "10": { "townsfolk": 7, "outsider": 0, "minion": 2, "demon": 1 },
+    "11": { "townsfolk": 7, "outsider": 1, "minion": 2, "demon": 1 },
+    "12": { "townsfolk": 7, "outsider": 2, "minion": 2, "demon": 1 },
+    "13": { "townsfolk": 9, "outsider": 0, "minion": 3, "demon": 1 },
+    "14": { "townsfolk": 9, "outsider": 1, "minion": 3, "demon": 1 },
+    "15": { "townsfolk": 9, "outsider": 2, "minion": 3, "demon": 1 }
+  },
+  "firstNightMeta": [
+    { "id": "dusk", "name": "Dusk", "wakeText": "Wait for everyone to close their eyes. Night begins." },
+    { "id": "demon-info", "name": "Demon info", "wakeText": "Wake the Demon. Show the Minions. Show three bluffs. Put the Demon to sleep." },
+    { "id": "minion-info", "name": "Minion info", "wakeText": "Wake each Minion. Show them the Demon. Put them to sleep." }
+  ],
+  "otherNightMeta": [
+    { "id": "dusk", "name": "Dusk", "wakeText": "Wait for everyone to close their eyes. Night begins." }
+  ]
+}

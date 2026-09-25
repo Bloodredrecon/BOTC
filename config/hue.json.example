@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "bridgeIp": "192.168.1.50",
+  "username": "your-hue-app-username",
+  "lights": {
+    "ambient": "1",
+    "accent": "2",
+    "effect": "3"
+  }
+}
