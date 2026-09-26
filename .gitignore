@@ -5,6 +5,8 @@ server/dist/
 data/session.json
 config/hue.json
 config/local.json
+data/audio/*
+!data/audio/README.txt
 .env
 *.log
 .DS_Store

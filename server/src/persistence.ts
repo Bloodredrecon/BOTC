@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeAmbiance } from "./ambiance.js";
 import type {
   CharacterDef,
   FabledDef,
@@ -33,6 +34,7 @@ export type ScriptData = {
   id: "trouble-brewing";
   name: string;
   characters: CharacterDef[];
+  travellers: CharacterDef[];
   fabled: FabledDef[];
   setupByPlayerCount: Record<string, SetupCounts>;
   firstNightMeta: { id: string; name: string; wakeText: string }[];
@@ -56,21 +58,35 @@ export function loadConfig(): AppConfig {
 }
 
 export function loadScript(): ScriptData {
-  return JSON.parse(readFileSync(SCRIPT_PATH, "utf-8")) as ScriptData;
+  const raw = JSON.parse(readFileSync(SCRIPT_PATH, "utf-8")) as ScriptData;
+  return { ...raw, travellers: raw.travellers ?? [] };
+}
+
+export function normalizePlayer(p: Partial<Player> & { id: string; seat: number }): Player {
+  return {
+    id: p.id,
+    seat: p.seat,
+    name: p.name ?? `Player ${p.seat}`,
+    alive: p.alive ?? true,
+    usedGhostVote: p.usedGhostVote ?? false,
+    characterId: p.characterId ?? null,
+    reminders: p.reminders ?? [],
+    notes: p.notes ?? "",
+    bluffs: p.bluffs ?? [],
+    isTraveller: p.isTraveller ?? false,
+    abilityUsed: p.abilityUsed ?? false,
+    leftGame: p.leftGame ?? false,
+  };
 }
 
 export function createEmptySession(playerCount = 8): GameSession {
-  const players: Player[] = Array.from({ length: playerCount }, (_, i) => ({
-    id: `p${i + 1}`,
-    seat: i + 1,
-    name: `Player ${i + 1}`,
-    alive: true,
-    usedGhostVote: false,
-    characterId: null,
-    reminders: [],
-    notes: "",
-    bluffs: [],
-  }));
+  const players: Player[] = Array.from({ length: playerCount }, (_, i) =>
+    normalizePlayer({
+      id: `p${i + 1}`,
+      seat: i + 1,
+      name: `Player ${i + 1}`,
+    }),
+  );
 
   return {
     scriptId: "trouble-brewing",
@@ -83,7 +99,13 @@ export function createEmptySession(playerCount = 8): GameSession {
     timer: null,
     nomination: null,
     dawnDeathIds: [],
+    dawnDeathsAnnounced: false,
     executionPendingId: null,
+    executedTodayId: null,
+    diedTonightIds: [],
+    winner: null,
+    stNotices: [],
+    ambiance: normalizeAmbiance(null),
     tvConnected: false,
     storytellerConnected: false,
   };
@@ -98,9 +120,19 @@ export function loadSession(): GameSession {
   }
   try {
     const raw = JSON.parse(readFileSync(SESSION_PATH, "utf-8")) as GameSession;
+    const base = createEmptySession(raw.players?.length || 8);
     return {
-      ...createEmptySession(raw.players?.length || 8),
+      ...base,
       ...raw,
+      players: (raw.players ?? base.players).map((p, i) =>
+        normalizePlayer({ ...p, id: p.id ?? `p${i + 1}`, seat: p.seat ?? i + 1 }),
+      ),
+      executedTodayId: raw.executedTodayId ?? null,
+      dawnDeathsAnnounced: Boolean(raw.dawnDeathsAnnounced),
+      diedTonightIds: raw.diedTonightIds ?? [],
+      winner: raw.winner ?? null,
+      stNotices: Array.isArray(raw.stNotices) ? raw.stNotices : [],
+      ambiance: normalizeAmbiance(raw.ambiance),
       tvConnected: false,
       storytellerConnected: false,
     };

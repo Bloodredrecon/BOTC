@@ -1,15 +1,77 @@
+import { listAmbianceCatalog, normalizeAmbiance, toAmbiancePublic } from "./ambiance.js";
+import { listAudioCues } from "./audio-library.js";
+import { dayAbilityTips } from "./night.js";
 import type { ScriptData } from "./persistence.js";
+import {
+  adjustSetupForBaron,
+  effectiveVoteCount,
+} from "./rules.js";
 import type {
   GameSession,
   Player,
+  PublicEvent,
   PublicState,
+  RevealPlayer,
   SetupCounts,
   StorytellerState,
   Team,
 } from "./types.js";
 
+/** True once overnight deaths may appear on the public TV roster / ledger. */
+export function overnightDeathsArePublic(session: GameSession): boolean {
+  if (session.phase === "night" || session.phase === "firstNight") return false;
+  if (session.phase === "dawn") return Boolean(session.dawnDeathsAnnounced);
+  return true;
+}
+
+/**
+ * Public alive bit for TV / projection.
+ * otherDeath flips session alive immediately (ST grimoire); overnight kills stay
+ * hidden here until announceDawnDeaths (or day). Executions / day deaths pass through.
+ */
+export function publicAlive(session: GameSession, p: Player): boolean {
+  if (p.alive) return true;
+  if (
+    !overnightDeathsArePublic(session) &&
+    session.diedTonightIds.includes(p.id)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Strip killer/ability cause text from events sent to TV / public clients. */
+export function sanitizePublicLog(events: PublicEvent[]): PublicEvent[] {
+  const out: PublicEvent[] = [];
+  for (const e of events) {
+    if (e.type !== "other_death") {
+      out.push(e);
+      continue;
+    }
+    // Infer overnight before dropping reason (legacy Imp kills used reason "Demon").
+    let duringNight = e.duringNight;
+    if (
+      duringNight === undefined &&
+      /imp|demon|star.?pass|night/i.test(e.reason ?? "")
+    ) {
+      duringNight = true;
+    }
+    // Overnight other_death is ST bookkeeping — public announcement is night_death at dawn.
+    if (duringNight) continue;
+    out.push({
+      type: "other_death",
+      playerId: e.playerId,
+      dayNumber: e.dayNumber,
+      duringNight: false,
+      at: e.at,
+      // reason intentionally omitted — never leak Demon / Virgin / Slayer / etc.
+    });
+  }
+  return out;
+}
+
 export function livingCount(session: GameSession): number {
-  return session.players.filter((p) => p.alive).length;
+  return session.players.filter((p) => p.alive && !p.leftGame).length;
 }
 
 export function majorityNeeded(session: GameSession): number {
@@ -23,36 +85,64 @@ export function emptyCounts(): SetupCounts {
 export function assignedCounts(session: GameSession, script: ScriptData): SetupCounts {
   const counts = emptyCounts();
   for (const p of session.players) {
-    if (!p.characterId) continue;
+    if (!p.characterId || p.isTraveller || p.leftGame) continue;
     const c = script.characters.find((x) => x.id === p.characterId);
-    if (!c) continue;
-    counts[c.team] += 1;
+    if (!c || c.team === "traveller") continue;
+    counts[c.team as keyof SetupCounts] += 1;
   }
   return counts;
 }
 
 export function setupForCount(script: ScriptData, n: number): SetupCounts | null {
-  return script.setupByPlayerCount[String(n)] ?? null;
+  const townsfolkSeats = sessionTownsfolkSeats(n);
+  return script.setupByPlayerCount[String(townsfolkSeats)] ?? script.setupByPlayerCount[String(n)] ?? null;
 }
 
-export function setupWarning(
-  session: GameSession,
-  script: ScriptData,
-): string | null {
-  const n = session.players.length;
-  const required = setupForCount(script, n);
-  if (!required) {
-    return `No official Trouble Brewing bag for ${n} players (use 5–15, or Travellers for larger games).`;
+function sessionTownsfolkSeats(n: number): number {
+  return n;
+}
+
+export function setupWarning(session: GameSession, script: ScriptData): string | null {
+  const townsfolkPlayers = session.players.filter((p) => !p.isTraveller && !p.leftGame);
+  const n = townsfolkPlayers.length;
+  const base = script.setupByPlayerCount[String(n)] ?? null;
+  if (!base) {
+    return `No official Trouble Brewing bag for ${n} townsfolk seats (Travellers are extra). Use 5–15.`;
   }
+  const required = adjustSetupForBaron(base, session) ?? base;
+  const baronInPlay = session.players.some((p) => p.characterId === "baron" && !p.leftGame);
   const assigned = assignedCounts(session, script);
-  const teams: Team[] = ["townsfolk", "outsider", "minion", "demon"];
+  const teams: (keyof SetupCounts)[] = ["townsfolk", "outsider", "minion", "demon"];
   const mismatches = teams.filter((t) => assigned[t] !== required[t]);
   if (mismatches.length === 0) return null;
-  return `Bag counts: need T${required.townsfolk}/O${required.outsider}/M${required.minion}/D${required.demon}, have T${assigned.townsfolk}/O${assigned.outsider}/M${assigned.minion}/D${assigned.demon}.`;
+  const baronNote = baronInPlay ? " (Baron: +2 Outsiders / −2 Townsfolk)" : "";
+  return `Bag counts (excl. Travellers)${baronNote}: need T${required.townsfolk}/O${required.outsider}/M${required.minion}/D${required.demon}, have T${assigned.townsfolk}/O${assigned.outsider}/M${assigned.minion}/D${assigned.demon}.`;
 }
 
-export function playerName(session: GameSession, id: string): string {
-  return session.players.find((p) => p.id === id)?.name ?? id;
+export function findCharacter(script: ScriptData, id: string | null) {
+  if (!id) return undefined;
+  return script.characters.find((c) => c.id === id) || script.travellers.find((c) => c.id === id);
+}
+
+export function buildReveal(session: GameSession, script: ScriptData): RevealPlayer[] {
+  return session.players
+    .filter((p) => !p.leftGame)
+    .map((p) => {
+      const c = findCharacter(script, p.characterId);
+      return {
+        id: p.id,
+        seat: p.seat,
+        name: p.name,
+        alive: p.alive,
+        usedGhostVote: p.usedGhostVote,
+        isTraveller: p.isTraveller,
+        leftGame: p.leftGame,
+        characterId: p.characterId,
+        characterName: c?.name ?? null,
+        team: (c?.team as Team) ?? null,
+        abilityUsed: p.abilityUsed,
+      };
+    });
 }
 
 export function toPublicState(
@@ -65,24 +155,31 @@ export function toPublicState(
   },
 ): PublicState {
   const majority = majorityNeeded(session);
+  const ended = session.phase === "ended";
+  const votesForCount = session.nomination ? effectiveVoteCount(session) : 0;
+  const deathsPublic = overnightDeathsArePublic(session);
   return {
     scriptId: session.scriptId,
     scriptName: script.name,
     phase: session.phase,
     dayNumber: session.dayNumber,
     seq: extras?.seq ?? 0,
-    players: session.players.map((p) => ({
-      id: p.id,
-      seat: p.seat,
-      name: p.name,
-      alive: p.alive,
-      usedGhostVote: p.usedGhostVote,
-    })),
+    players: session.players
+      .filter((p) => !p.leftGame)
+      .map((p) => ({
+        id: p.id,
+        seat: p.seat,
+        name: p.name,
+        alive: publicAlive(session, p),
+        usedGhostVote: p.usedGhostVote,
+        isTraveller: p.isTraveller,
+        leftGame: p.leftGame,
+      })),
     fabled: session.fabled
       .map((id) => script.fabled.find((f) => f.id === id))
       .filter(Boolean)
       .map((f) => ({ id: f!.id, name: f!.name })),
-    publicLog: session.publicLog.slice(-30),
+    publicLog: sanitizePublicLog(session.publicLog.slice(-40)),
     timer: session.timer,
     nomination: session.nomination
       ? {
@@ -90,14 +187,19 @@ export function toPublicState(
           nomineeId: session.nomination.nomineeId,
           votesFor: session.nomination.votesFor,
           majority,
-          votesForCount: session.nomination.votesFor.length,
+          votesForCount,
         }
       : null,
-    dawnDeathIds: session.dawnDeathIds,
+    // Names only after announceDawnDeaths — avoid leaking kills at goDawn.
+    dawnDeathIds: deathsPublic ? session.dawnDeathIds : [],
+    dawnDeathsAnnounced: deathsPublic && session.phase === "dawn",
     executionPendingId: session.executionPendingId,
     storytellerConnected: session.storytellerConnected,
     soundCue: extras?.soundCue ?? null,
+    ambiance: toAmbiancePublic(normalizeAmbiance(session.ambiance)),
     hueScene: extras?.hueScene ?? null,
+    winner: session.winner,
+    reveal: ended ? buildReveal(session, script) : null,
   };
 }
 
@@ -111,20 +213,34 @@ export function toStorytellerState(
   },
 ): StorytellerState {
   const pub = toPublicState(session, script, extras);
+  const townsfolkCount = session.players.filter((p) => !p.isTraveller && !p.leftGame).length;
+  const baseSetup = script.setupByPlayerCount[String(townsfolkCount)] ?? null;
   return {
     ...pub,
     players: session.players,
     night: session.night,
-    setup: setupForCount(script, session.players.length),
+    setup: adjustSetupForBaron(baseSetup, session),
     assignedCounts: assignedCounts(session, script),
     setupWarning: setupWarning(session, script),
     characters: script.characters,
+    travellers: script.travellers,
     allFabled: script.fabled,
     pinRequired: true,
+    dayAbilities: dayAbilityTips(session, script),
+    executedTodayId: session.executedTodayId,
+    diedTonightIds: session.diedTonightIds,
+    // ST edits the real list before announce; public projection may withhold it.
+    dawnDeathIds: session.dawnDeathIds,
+    dawnDeathsAnnounced: Boolean(session.dawnDeathsAnnounced),
+    stNotices: session.stNotices ?? [],
+    audioCues: listAudioCues(),
+    ambianceCatalog: listAmbianceCatalog(),
   };
 }
 
 export function canPlayerVote(p: Player): boolean {
+  if (p.leftGame) return false;
   if (p.alive) return true;
+  if (p.isTraveller) return false;
   return !p.usedGhostVote;
 }

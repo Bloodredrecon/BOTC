@@ -5,15 +5,24 @@ import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { Server } from "socket.io";
+import {
+  CUSTOM_AUDIO_DIR,
+  ensureAudioDirs,
+  ensureIntroPlaceholder,
+  listAudioCues,
+} from "./audio-library.js";
 import { GameEngine } from "./game.js";
 import { createHueDriver } from "./hue.js";
 import { loadConfig, loadScript, loadSession, ROOT } from "./persistence.js";
-import type { Phase } from "./types.js";
+import type { AmbianceState, Phase } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const config = loadConfig();
 const script = loadScript();
 const hue = createHueDriver(config.hue);
+
+ensureAudioDirs();
+ensureIntroPlaceholder();
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
@@ -29,6 +38,14 @@ app.get("/api/config/public", async () => ({
   port: config.port,
 }));
 
+app.get("/api/audio/cues", async () => ({ cues: listAudioCues() }));
+
+await app.register(fastifyStatic, {
+  root: CUSTOM_AUDIO_DIR,
+  prefix: "/custom-audio/",
+  decorateReply: false,
+});
+
 const webDistCandidates = [
   join(ROOT, "web", "dist"),
   join(__dirname, "..", "..", "web", "dist"),
@@ -39,10 +56,19 @@ const webDist = webDistCandidates.find((p) => existsSync(join(p, "index.html")))
 if (webDist) {
   await app.register(fastifyStatic, {
     root: webDist,
-    wildcard: false,
+    // Must stay true so rebuilt hashed assets (/assets/index-*.js) are found
+    // without restarting; wildcard:false freezes the file list at boot.
+    wildcard: true,
   });
   app.setNotFoundHandler((req, reply) => {
-    if (req.raw.url?.startsWith("/api") || req.raw.url?.startsWith("/socket.io")) {
+    const url = req.raw.url ?? "";
+    if (
+      url.startsWith("/api") ||
+      url.startsWith("/socket.io") ||
+      url.startsWith("/custom-audio") ||
+      url.startsWith("/assets/") ||
+      url.startsWith("/audio/")
+    ) {
       return reply.status(404).send({ error: "Not found" });
     }
     return reply.sendFile("index.html");
@@ -53,11 +79,7 @@ if (webDist) {
     reply.type("text/html").send(`<!doctype html>
 <html><body style="font-family:sans-serif;background:#0b1220;color:#f2e8d5;padding:2rem">
 <h1>BOTC Companion API</h1>
-<p>UI build not found. Run <code>npm run build</code> then restart, or use Vite:</p>
-<ul>
-<li><a href="http://localhost:5173/tv" style="color:#c9a45c">TV display</a></li>
-<li><a href="http://localhost:5173/storyteller" style="color:#c9a45c">Storyteller</a></li>
-</ul>
+<p>UI build not found. Run <code>npm run build</code> then restart.</p>
 </body></html>`),
   );
   console.warn("web/dist not found — API only. Run: npm run build");
@@ -99,7 +121,7 @@ io.on("connection", (socket) => {
     return socket.data.role === "storyteller" && socket.data.authenticated === true;
   }
 
-  type Handler = (data: Record<string, unknown>) => void;
+  type Handler = (data: Record<string, unknown>) => unknown;
 
   const actions: Record<string, Handler> = {
     "game:reset": () => engine.resetGame(),
@@ -115,8 +137,10 @@ io.on("connection", (socket) => {
     "game:goDawn": () => engine.goDawn(),
     "game:setDawnDeaths": (d) => engine.setDawnDeaths(d.playerIds as string[]),
     "game:announceDawnDeaths": () => engine.announceDawnDeaths(),
+    "game:announceDawnThenDay": () => engine.announceDawnThenDay(),
     "game:finishDawn": () => engine.finishDawn(),
     "game:goDay": () => engine.goDay(),
+    "game:advancePhase": () => engine.advancePhase(),
     "game:startNomination": (d) =>
       engine.startNomination(String(d.nominatorId), String(d.nomineeId)),
     "game:startVote": (d) => engine.startVote(Number(d.seconds ?? 30)),
@@ -124,26 +148,55 @@ io.on("connection", (socket) => {
     "game:resolveVote": (d) =>
       engine.resolveVote(d.outcome as "majority" | "no_majority" | "tie" | undefined),
     "game:confirmExecution": (d) => engine.confirmExecution(Boolean(d.died)),
-    "game:otherDeath": (d) => engine.otherDeath(String(d.playerId), String(d.reason ?? "")),
+    "game:otherDeath": (d) =>
+      engine.otherDeath(String(d.playerId), String(d.reason ?? "")),
     "game:startTimer": (d) => engine.startTimer(Number(d.seconds), String(d.label ?? "Timer")),
     "game:cancelTimer": () => engine.cancelTimer(),
     "game:timerEnded": () => engine.timerEnded(),
     "game:scene": (d) => engine.scene(d.scene as "day" | "night" | "hush"),
-    "game:endGame": () => engine.endGame(),
+    "game:endGame": (d) =>
+      engine.endGame((d.winner as "good" | "evil" | null | undefined) ?? null),
     "game:setPhase": (d) => engine.setPhase(d.phase as Phase),
+    "game:playSound": (d) => engine.playSound(String(d.cueId ?? "")),
+    "game:setAmbiance": (d) =>
+      engine.setAmbiance({
+        masterVolume: typeof d.masterVolume === "number" ? d.masterVolume : undefined,
+        layers: Array.isArray(d.layers) ? (d.layers as AmbianceState["layers"]) : undefined,
+      }),
+    "game:addTraveller": (d) =>
+      engine.addTraveller(String(d.name ?? ""), String(d.characterId ?? "")),
+    "game:leaveTraveller": (d) => engine.leaveTraveller(String(d.playerId)),
+    "game:markNightStepDone": () => engine.markNightStepDone(),
+    "game:rebuildNight": () => engine.rebuildNight(),
+    "game:applyInfoReminders": (d) =>
+      engine.applyInfoReminders({
+        roleId: d.roleId != null ? String(d.roleId) : undefined,
+        playerIds: Array.isArray(d.playerIds) ? (d.playerIds as string[]) : undefined,
+        characterId: d.characterId != null ? String(d.characterId) : null,
+        zeroOutsiders: Boolean(d.zeroOutsiders),
+        redHerringPlayerId:
+          d.redHerringPlayerId != null ? String(d.redHerringPlayerId) : null,
+      }),
+    "game:applyNightReminder": (d) =>
+      engine.applyNightReminder(String(d.playerId ?? ""), String(d.reminder ?? "")),
+    "game:clearStNotices": () => engine.clearStNotices(),
+    "game:dismissStNotice": (d) => engine.dismissStNotice(String(d.id ?? "")),
+    "game:refresh": () => engine.emit(),
   };
 
   for (const [event, handler] of Object.entries(actions)) {
-    socket.on(event, (data) => {
+    socket.on(event, (data, ack?: (result: unknown) => void) => {
       if (!requireStoryteller()) {
         socket.emit("auth:error", { message: "Storyteller auth required" });
         return;
       }
       try {
-        handler((data ?? {}) as Record<string, unknown>);
+        const result = handler((data ?? {}) as Record<string, unknown>);
+        if (typeof ack === "function") ack(result ?? { ok: true });
       } catch (err) {
         app.log.error(err);
         socket.emit("action:error", { message: String(err) });
+        if (typeof ack === "function") ack({ ok: false, error: String(err) });
       }
     });
   }

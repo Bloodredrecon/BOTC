@@ -19,8 +19,9 @@ export function useSocket() {
     };
   }, []);
 
-  const emit = useCallback((event: string, data?: unknown) => {
-    socketRef.current?.emit(event, data);
+  const emit = useCallback((event: string, data?: unknown, ack?: (result: unknown) => void) => {
+    if (ack) socketRef.current?.emit(event, data, ack);
+    else socketRef.current?.emit(event, data);
   }, []);
 
   return { socketRef, connected, emit };

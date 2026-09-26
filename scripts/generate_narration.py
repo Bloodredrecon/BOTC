@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+"""Generate BOTC narration mp3s (TTS + SFX layered) from docs/NARRATION_SCRIPT.md."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "docs" / "NARRATION_SCRIPT.md"
+OUT_DIR = ROOT / "data" / "audio"
+WORK = OUT_DIR / "_batch_build"
+VOICE_ID = "bGaEqnGM5jPt52TO9tMX"
+FFMPEG = None
+FFPROBE = None
+
+SKIP = {"intro.mp3"}  # already generated with custom mix
+# rules_full is stitched from modular rules_* at the end
+STITCH_RULES_FULL = True
+
+
+@dataclass
+class Cue:
+    filename: str
+    spoken: str = ""
+    ambiences: list[tuple[str, float, bool]] = field(default_factory=list)  # text, dur, loop
+    sfx: list[tuple[str, float]] = field(default_factory=list)  # text, dur
+    whisper: bool = False
+    # Mix modes from [Mix: …] tags: "", "no-sfx", "voice-only", "quiet-sfx"
+    mix_mode: str = ""
+
+
+def find_ffmpeg() -> tuple[str, str]:
+    which = subprocess.run(["where", "ffmpeg"], capture_output=True, text=True, shell=True)
+    ff = which.stdout.strip().splitlines()[0] if which.returncode == 0 else None
+    if not ff:
+        winget = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft/WinGet/Packages"
+        hits = list(winget.glob("**/ffmpeg.exe")) if winget.exists() else []
+        if hits:
+            ff = str(hits[0])
+    if not ff:
+        raise SystemExit("ffmpeg not found")
+    fp = str(Path(ff).with_name("ffprobe.exe"))
+    return ff, fp
+
+
+def api_key() -> str:
+    key = os.environ.get("BOTC_ELEVENLABS_API_KEY") or os.environ.get("ELEVENLABS_API_KEY")
+    if not key:
+        key = os.environ.get("BOTC_ELEVENLABS_API_KEY")  # process
+    if not key:
+        # User env on Windows
+        import ctypes
+        from ctypes import wintypes
+
+        key = None
+        # fallback: already set by launcher
+    if not key:
+        raise SystemExit("BOTC_ELEVENLABS_API_KEY not set")
+    return key
+
+
+def http_post_json(url: str, payload: dict, headers: dict, out_path: Path, retries: int = 4) -> None:
+    data = json.dumps(payload).encode("utf-8")
+    for attempt in range(retries):
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                out_path.write_bytes(resp.read())
+            if out_path.stat().st_size < 200:
+                raise RuntimeError(f"tiny response for {out_path.name}: {out_path.read_text(errors='replace')[:300]}")
+            return
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            if e.code in (429, 500, 502, 503) and attempt < retries - 1:
+                wait = 2 ** attempt + 1
+                print(f"  retry {attempt+1} after HTTP {e.code} ({wait}s)")
+                time.sleep(wait)
+                continue
+            raise RuntimeError(f"HTTP {e.code} {url}: {body[:500]}") from e
+
+
+def tts(text: str, out: Path, whisper: bool, key: str) -> None:
+    settings = (
+        {"stability": 0.7, "similarity_boost": 0.85}
+        if whisper
+        else {"stability": 0.45, "similarity_boost": 0.75}
+    )
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}?output_format=mp3_44100_128"
+    http_post_json(
+        url,
+        {"text": text, "model_id": "eleven_multilingual_v2", "voice_settings": settings},
+        {"xi-api-key": key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
+        out,
+    )
+
+
+def sfx(text: str, out: Path, duration: float, loop: bool, key: str) -> None:
+    payload = {
+        "text": text,
+        "duration_seconds": max(0.5, min(30.0, duration)),
+        "prompt_influence": 0.5,
+        "model_id": "eleven_text_to_sound_v2",
+    }
+    if loop:
+        payload["loop"] = True
+    url = "https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128"
+    http_post_json(url, payload, {"xi-api-key": key, "Content-Type": "application/json"}, out)
+
+
+def duration(path: Path) -> float:
+    r = subprocess.run(
+        [FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return float(r.stdout.strip())
+
+
+def parse_script(md: str) -> list[Cue]:
+    parts = re.split(r"^### `([^`]+)`[^\n]*\n", md, flags=re.M)
+    cues: list[Cue] = []
+    # parts[0]=preamble, then filename, body, filename, body...
+    for i in range(1, len(parts), 2):
+        filename = parts[i].strip()
+        body = parts[i + 1]
+        # stop at next ## section header leftover — body already split by ###
+        # cut at following ## if any slipped in
+        body = re.split(r"^## ", body, maxsplit=1, flags=re.M)[0]
+        cue = Cue(filename=filename)
+        spoken_lines: list[str] = []
+        for raw in body.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith("##"):
+                break
+            tone = re.match(r"^\[Tone:\s*(.+?)\]\s*$", line, re.I)
+            if tone:
+                if re.search(r"whisper", tone.group(1), re.I):
+                    cue.whisper = True
+                continue
+            if re.match(r"^\[Fade", line, re.I):
+                continue
+            mix = re.match(r"^\[Mix:\s*(.+?)\]\s*$", line, re.I)
+            if mix:
+                mode = mix.group(1).strip().lower().replace("_", "-")
+                if mode in {"no-sfx", "nosfx", "voice-only", "voiceonly", "quiet-sfx", "quietsfx"}:
+                    if mode in {"nosfx"}:
+                        mode = "no-sfx"
+                    elif mode in {"voiceonly"}:
+                        mode = "voice-only"
+                    elif mode in {"quietsfx"}:
+                        mode = "quiet-sfx"
+                    cue.mix_mode = mode
+                continue
+            if re.match(r"^\[Pause", line, re.I):
+                m = re.search(r"([\d.]+)\s*s", line, re.I)
+                sec = m.group(1) if m else "0.8"
+                spoken_lines.append(f'<break time="{sec}s" />')
+                continue
+            amb = re.match(
+                r'^\[Ambience\s*\|\s*(?:loop\s*\|\s*)?~?([\d.]+)s\]:\s*"([^"]+)"\s*$',
+                line,
+                re.I,
+            )
+            if amb:
+                loop = "loop" in line.lower()
+                cue.ambiences.append((amb.group(2), float(amb.group(1)), loop))
+                continue
+            # alternate ambience with optional loop token mid-tag already handled
+            amb2 = re.match(
+                r'^\[Ambience[^\]]*~?([\d.]+)s\]:\s*"([^"]+)"\s*$',
+                line,
+                re.I,
+            )
+            if amb2 and "Ambience" in line:
+                loop = "loop" in line.lower()
+                cue.ambiences.append((amb2.group(2), float(amb2.group(1)), loop))
+                continue
+            sx = re.match(r'^\[SFX\s*\|\s*~?([\d.]+)s\]:\s*"([^"]+)"\s*$', line, re.I)
+            if sx:
+                cue.sfx.append((sx.group(2), float(sx.group(1))))
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                continue
+            if line.startswith("*(") or line.startswith("(No spoken") or line.startswith("*(Wordless"):
+                continue
+            if line.startswith("[Record by") or line.startswith("Or stitch"):
+                continue
+            # strip leading italic note wrappers
+            if line.startswith("*") and line.endswith("*") and "ambience only" in line.lower():
+                continue
+            spoken_lines.append(line)
+
+        # join spoken, collapse break-only runs
+        text = "\n".join(spoken_lines).strip()
+        # remove markdown bold leftovers
+        text = text.replace("**", "")
+        cue.spoken = text
+        # Apply mix-mode overrides after collecting layers
+        if cue.mix_mode == "voice-only":
+            cue.ambiences = []
+            cue.sfx = []
+        elif cue.mix_mode == "no-sfx":
+            cue.sfx = []
+        cues.append(cue)
+    return cues
+
+
+def mix_cue(cue: Cue, stem_dir: Path, out_path: Path) -> None:
+    """Layer voice + ambience + sfx into one mp3."""
+    voice = stem_dir / "voice.mp3"
+    inputs: list[Path] = []
+    filters: list[str] = []
+    labels: list[str] = []
+
+    idx = 0
+    total = 2.0
+    if voice.exists() and voice.stat().st_size > 500:
+        vd = duration(voice)
+        total = vd + 1.2
+        # slight lead-in
+        lead_ms = 400
+        filters.append(
+            f"[{idx}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+            f"volume=1.05,adelay={lead_ms}|{lead_ms}[v]"
+        )
+        inputs.append(voice)
+        labels.append("[v]")
+        idx += 1
+        voice_start = lead_ms / 1000.0
+    else:
+        voice_start = 0.0
+        vd = 0.0
+
+    # ambience under full length
+    if cue.ambiences:
+        amb_path = stem_dir / "amb0.mp3"
+        if amb_path.exists():
+            inputs.append(amb_path)
+            fade_out_at = max(0.1, total - 1.8)
+            filters.append(
+                f"[{idx}:a]aloop=loop=-1:size=2e+09,atrim=0:{total:.3f},"
+                f"aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+                f"volume=0.26,afade=t=in:st=0:d=0.6,afade=t=out:st={fade_out_at:.3f}:d=1.6[amb]"
+            )
+            labels.append("[amb]")
+            idx += 1
+
+    # place up to 3 sfx across the voice
+    for si, _ in enumerate(cue.sfx[:3]):
+        sp = stem_dir / f"sfx{si}.mp3"
+        if not sp.exists():
+            continue
+        inputs.append(sp)
+        if vd > 0:
+            frac = 0.12 + si * 0.28
+            at = voice_start + vd * min(0.85, frac)
+        else:
+            at = 0.05 + si * 0.4
+        ms = int(at * 1000)
+        if cue.mix_mode == "quiet-sfx":
+            vol = 0.18 if si == 0 else 0.14
+        else:
+            vol = 0.62 if si == 0 else 0.55
+        filters.append(
+            f"[{idx}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+            f"volume={vol},adelay={ms}|{ms}[s{si}]"
+        )
+        labels.append(f"[s{si}]")
+        idx += 1
+
+    if not inputs:
+        raise RuntimeError(f"no stems for {cue.filename}")
+
+    if len(labels) == 1:
+        # single stream — still normalize
+        filters.append(f"{labels[0]}loudnorm=I=-16:TP=-1.5:LRA=11[out]")
+    else:
+        n = len(labels)
+        filters.append(
+            f"{''.join(labels)}amix=inputs={n}:duration=longest:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[out]"
+        )
+
+    filter_path = stem_dir / "mix.filter"
+    filter_path.write_text(";".join(filters), encoding="utf-8")
+
+    cmd = [FFMPEG, "-y"]
+    for p in inputs:
+        cmd += ["-i", str(p)]
+    cmd += ["-filter_complex_script", str(filter_path), "-map", "[out]", "-c:a", "libmp3lame", "-b:a", "192k", str(out_path)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"ffmpeg mix failed for {cue.filename}:\n{r.stderr[-800:]}")
+
+
+def process_cue(cue: Cue, key: str, force: bool = False, skip_existing: bool = False) -> str:
+    out_path = OUT_DIR / cue.filename
+    if cue.filename in SKIP and out_path.exists() and not force:
+        return f"skip {cue.filename} (kept)"
+    if skip_existing and out_path.exists() and out_path.stat().st_size > 1000 and not force:
+        return f"skip {cue.filename} (exists)"
+    if cue.filename == "rules_full.mp3":
+        return f"defer {cue.filename}"
+
+    stem_dir = WORK / cue.filename.replace(".mp3", "")
+    stem_dir.mkdir(parents=True, exist_ok=True)
+
+    has_speech = bool(re.sub(r"<break[^>]*>", "", cue.spoken).strip())
+
+    # Drop stale sting stems when this cue no longer uses SFX
+    if not cue.sfx:
+        for stale in stem_dir.glob("sfx*.mp3"):
+            stale.unlink(missing_ok=True)
+    if not cue.ambiences:
+        amb_stale = stem_dir / "amb0.mp3"
+        if amb_stale.exists():
+            amb_stale.unlink(missing_ok=True)
+
+    # Ambience-only / SFX-only
+    if not has_speech:
+        if cue.ambiences:
+            text, dur, loop = cue.ambiences[0]
+            sfx(text, out_path, dur, True, key)
+            return f"ambience {cue.filename}"
+        if cue.sfx:
+            text, dur = cue.sfx[0]
+            sfx(text, out_path, dur, False, key)
+            return f"sfx-only {cue.filename}"
+        return f"empty {cue.filename}"
+
+    # TTS
+    voice_path = stem_dir / "voice.mp3"
+    tts(cue.spoken, voice_path, cue.whisper, key)
+    time.sleep(0.15)
+
+    vd = duration(voice_path)
+    # Ambience long enough to cover
+    if cue.ambiences:
+        text, dur, loop = cue.ambiences[0]
+        amb_dur = max(dur, min(30.0, vd + 2.0))
+        sfx(text, stem_dir / "amb0.mp3", amb_dur, True, key)
+        time.sleep(0.1)
+
+    for i, (text, dur) in enumerate(cue.sfx[:3]):
+        sfx(text, stem_dir / f"sfx{i}.mp3", dur, False, key)
+        time.sleep(0.1)
+
+    # If no ambience/sfx, just copy voice with loudnorm
+    if not cue.ambiences and not cue.sfx:
+        cmd = [
+            FFMPEG, "-y", "-i", str(voice_path),
+            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-c:a", "libmp3lame", "-b:a", "192k", str(out_path),
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr[-500:])
+        # Keep stem notes accurate (no leftover amb/sfx mix script)
+        (stem_dir / "mix.filter").write_text(
+            "[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[out]", encoding="utf-8"
+        )
+        mode_note = f" ({cue.mix_mode})" if cue.mix_mode else ""
+        return f"voice{mode_note} {cue.filename}"
+
+    mix_cue(cue, stem_dir, out_path)
+    mode_note = f" ({cue.mix_mode})" if cue.mix_mode else ""
+    return f"mixed{mode_note} {cue.filename}"
+
+
+def stitch_rules_full() -> None:
+    order = [
+        "rules_overview.mp3",
+        "rules_teams.mp3",
+        "rules_setup.mp3",
+        "rules_night.mp3",
+        "rules_day.mp3",
+        "rules_execution.mp3",
+        "rules_death.mp3",
+        "rules_abilities.mp3",
+        "rules_win.mp3",
+        "rules_travellers.mp3",
+        "rules_etiquette.mp3",
+    ]
+    missing = [f for f in order if not (OUT_DIR / f).exists()]
+    if missing:
+        print("rules_full skipped, missing:", missing)
+        return
+    list_path = WORK / "rules_concat.txt"
+    lines = []
+    for f in order:
+        # ffmpeg concat needs forward slashes or escaped
+        p = (OUT_DIR / f).as_posix().replace("'", r"'\''")
+        lines.append(f"file '{p}'")
+    list_path.write_text("\n".join(lines), encoding="utf-8")
+    out = OUT_DIR / "rules_full.mp3"
+    cmd = [FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(list_path), "-c", "copy", str(out)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        # re-encode if copy fails
+        cmd = [FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(list_path), "-c:a", "libmp3lame", "-b:a", "192k", str(out)]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr[-600:])
+    print(f"stitched rules_full.mp3 ({out.stat().st_size} bytes)")
+
+
+def main() -> None:
+    global FFMPEG, FFPROBE
+    FFMPEG, FFPROBE = find_ffmpeg()
+    key = os.environ.get("BOTC_ELEVENLABS_API_KEY") or os.environ.get("ELEVENLABS_API_KEY")
+    if not key:
+        raise SystemExit("Set BOTC_ELEVENLABS_API_KEY")
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    WORK.mkdir(parents=True, exist_ok=True)
+
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    force = "--force" in flags
+    skip_existing = "--skip-existing" in flags or "--only-missing" in flags
+    variants_only = "--variants" in flags
+
+    md = SCRIPT.read_text(encoding="utf-8")
+    cues = parse_script(md)
+    # Only keep .mp3 cues from A/B/C/F/G (all ### blocks)
+    cues = [c for c in cues if c.filename.endswith(".mp3")]
+
+    if variants_only:
+        cues = [c for c in cues if re.search(r"_[bcd]\.mp3$", c.filename, re.I)]
+        skip_existing = True
+
+    only = set(args) if args else None
+    if only:
+        cues = [c for c in cues if c.filename in only or c.filename.replace(".mp3", "") in only]
+
+    print(f"Parsed {len(cues)} cues (force={force} skip_existing={skip_existing})")
+    ok = 0
+    err = 0
+    for i, cue in enumerate(cues, 1):
+        try:
+            msg = process_cue(cue, key, force=force, skip_existing=skip_existing)
+            print(f"[{i}/{len(cues)}] {msg}")
+            ok += 1
+        except Exception as e:
+            err += 1
+            print(f"[{i}/{len(cues)}] FAIL {cue.filename}: {e}")
+            # continue batch
+            time.sleep(1)
+
+    want_stitch = STITCH_RULES_FULL and not variants_only and (not only or "rules_full.mp3" in (only or set()))
+    if want_stitch:
+        try:
+            stitch_rules_full()
+        except Exception as e:
+            print("rules_full stitch failed:", e)
+            err += 1
+
+    print(f"Done. ok={ok} err={err}")
+    # summary
+    files = sorted(OUT_DIR.glob("*.mp3"))
+    print(f"{len(files)} mp3 files in {OUT_DIR}")
+
+
+if __name__ == "__main__":
+    main()
