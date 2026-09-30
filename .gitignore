@@ -3,11 +3,22 @@ dist/
 web/dist/
 server/dist/
 data/session.json
+data/server.pid
+data/logs/
 config/hue.json
 config/local.json
 data/audio/*
 !data/audio/README.txt
 .env
+__pycache__/
+*.pyc
+
+# TV dev artifacts (kept on disk, not versioned)
+docs/tv-design/_verify/
+web/public/tv/_alpha_probe/
+web/public/tv/_prior_plates/
+web/public/tv/_design_plates/
+web/public/tv/elements/_prior/
 *.log
 .DS_Store
 *.tsbuildinfo
