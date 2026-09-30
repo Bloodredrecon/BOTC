@@ -1,0 +1,10 @@
+{
+  "_doc": "Per-plate flags for the live bg-* scene plates (see docs/TV_SCENE_PLATES.md). hasLogo: the plate has the Blood on the Clocktower logo painted top-left, so /tv hides its own wordmark and keeps the left column clear of it. Update when swapping a plate, then restart Vite / rebuild.",
+  "night": { "hasLogo": true },
+  "dawn": { "hasLogo": true },
+  "day": { "hasLogo": true },
+  "nomination": { "hasLogo": false },
+  "gallows": { "hasLogo": false },
+  "good-win": { "hasLogo": true },
+  "evil-win": { "hasLogo": false }
+}

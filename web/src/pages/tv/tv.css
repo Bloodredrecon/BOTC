@@ -1,0 +1,1564 @@
+/* ——— /tv — Ravenswood Bluff overhaul ———
+ * Comps: docs/tv-design/{A-G-H, E-C-B, F}.
+ * Every word/number is live text; art is blank chrome from scripts/build_tv_overhaul_assets.py.
+ * All overlay geometry uses cqw/cqh of .tv-stage16 (a centred 16:9 box) so 1080p and 4K match.
+ */
+
+.tv {
+  --ink-parch: #efe2c4;
+  --ink-parch-dim: #d9c7a2;
+  --brass: #b8924a;
+  --brass-bright: #dcb66e;
+  --blood: #8b1518;
+  --blood-bright: #c4302a;
+  --ink-paper: #24160e;
+  --f-phase: "Libre Caslon Condensed", "Old Standard TT", Georgia, serif;
+  --f-label: "Cormorant SC", "Cormorant Garamond", Georgia, serif;
+  --f-script: "Italianno", "Great Vibes", cursive;
+  --f-paper: "Old Standard TT", Georgia, serif;
+  --f-brand: "Cinzel Decorative", "Cinzel", Georgia, serif;
+  --oak: url("/tv/elements/plaque-oak.png");
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  color: var(--ink-parch);
+}
+
+.tv-stage16 {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  width: min(100vw, calc(100dvh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  transform: translate(-50%, -50%);
+  container-type: size;
+  pointer-events: none;
+}
+
+/* ——— Atmosphere (scene plates are loved — unchanged grades) ——— */
+.tv-atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: #050203;
+  overflow: hidden;
+}
+
+.tv-atmosphere-plate {
+  position: absolute;
+  inset: 0;
+  background-color: #050203;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+}
+
+.tv-atmosphere-tint {
+  position: absolute;
+  inset: 0;
+  transition: background 1.1s ease, opacity 1.1s ease;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.tv-atmosphere-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 75% 65% at 50% 40%, transparent 35%, rgba(0, 0, 0, 0.45) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0%, transparent 22%, transparent 55%, rgba(0, 0, 0, 0.4) 100%);
+}
+
+.tv-atmosphere-mist {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22%;
+  background: linear-gradient(180deg, transparent, rgba(20, 12, 14, 0.35));
+  opacity: 0.7;
+  transition: opacity 1.1s ease, height 1.1s ease;
+}
+
+.tv-atmosphere-dawn-ink {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 1.4s ease;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 42%, transparent 20%, rgba(20, 4, 6, 0.55) 100%),
+    linear-gradient(180deg, rgba(120, 50, 20, 0.12) 0%, transparent 40%, rgba(40, 8, 10, 0.35) 100%);
+}
+
+.tv.tv-dawn-funeral .tv-atmosphere-dawn-ink {
+  opacity: 1;
+}
+
+.tv.phase-lobby .tv-atmosphere-tint {
+  background: rgba(18, 12, 10, 0.22);
+}
+.tv.phase-night .tv-atmosphere-tint,
+.tv.phase-firstNight .tv-atmosphere-tint {
+  background: linear-gradient(180deg, rgba(4, 8, 22, 0.28), rgba(2, 4, 12, 0.14)), rgba(4, 6, 14, 0.2);
+}
+.tv.phase-dawn .tv-atmosphere-tint {
+  background: linear-gradient(180deg, rgba(200, 100, 45, 0.16), rgba(50, 10, 12, 0.2));
+}
+.tv.phase-day .tv-atmosphere-tint {
+  background: linear-gradient(180deg, rgba(70, 55, 40, 0.08), rgba(30, 22, 16, 0.12)), rgba(40, 28, 18, 0.08);
+}
+.tv.phase-nomination .tv-atmosphere-tint,
+.tv.phase-vote .tv-atmosphere-tint,
+.tv.phase-execution .tv-atmosphere-tint {
+  background: radial-gradient(ellipse 80% 70% at 50% 40%, rgba(90, 8, 12, 0.12), transparent 70%), rgba(50, 4, 8, 0.28);
+}
+.tv.phase-ended .tv-atmosphere-tint {
+  background: rgba(30, 18, 8, 0.22);
+}
+.tv.tv-plate-dawn.phase-dawn .tv-atmosphere-tint {
+  background: rgba(8, 4, 4, 0.05);
+}
+/* Without bg-nomination, dusk reuses the dawn plate graded toward nightfall: indigo sky over an ember horizon. */
+.tv.tv-plate-dawn.phase-dusk .tv-atmosphere-tint {
+  background:
+    linear-gradient(180deg, rgba(18, 16, 48, 0.55) 0%, rgba(40, 18, 40, 0.32) 45%, rgba(120, 40, 16, 0.2) 75%, rgba(10, 4, 8, 0.45) 100%);
+}
+.tv.phase-dusk .tv-atmosphere-mist {
+  opacity: 0.7;
+  height: 22%;
+}
+.tv.tv-plate-day.phase-day .tv-atmosphere-tint,
+.tv.tv-plate-day.phase-lobby .tv-atmosphere-tint {
+  background: rgba(0, 0, 0, 0.04);
+}
+.tv.tv-plate-gallows.phase-nomination .tv-atmosphere-tint,
+.tv.tv-plate-gallows.phase-vote .tv-atmosphere-tint,
+.tv.tv-plate-gallows.phase-execution .tv-atmosphere-tint {
+  background: rgba(20, 4, 8, 0.1);
+}
+.tv.tv-plate-good-win.phase-ended .tv-atmosphere-tint,
+.tv.tv-plate-evil-win.phase-ended .tv-atmosphere-tint {
+  background: rgba(0, 0, 0, 0.05);
+}
+.tv.tv-plate-nomination.phase-dusk .tv-atmosphere-tint {
+  background: linear-gradient(180deg, rgba(10, 8, 24, 0.1), rgba(10, 4, 8, 0.12));
+}
+.tv.phase-night .tv-atmosphere-mist,
+.tv.phase-firstNight .tv-atmosphere-mist {
+  opacity: 0.9;
+  height: 28%;
+}
+.tv.phase-day .tv-atmosphere-mist {
+  opacity: 0.35;
+  height: 14%;
+}
+/* Drama: darken the plate so the ring / placards own the frame */
+.tv.tv-drama-focus .tv-atmosphere-vignette {
+  background:
+    radial-gradient(ellipse 60% 62% at 50% 50%, transparent 30%, rgba(0, 0, 0, 0.62) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.3) 0%, transparent 25%, transparent 60%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+/* ——— Brand wordmark ——— */
+.tv-brand {
+  position: absolute;
+  z-index: 3;
+  left: 2cqw;
+  top: 3cqh;
+  width: 20cqw;
+  color: var(--blood);
+  filter: drop-shadow(0 0.2cqw 0.6cqw rgba(0, 0, 0, 0.7));
+}
+
+.tv-brand-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 0.92;
+  text-align: center;
+}
+
+.tv-brand-blood,
+.tv-brand-clock {
+  font-family: var(--f-brand);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: transparent;
+  background: linear-gradient(180deg, #f2ebe0 12%, #c9b896 55%, #8a7348 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.tv-brand-blood {
+  font-size: 3.3cqw;
+}
+
+.tv-brand-clock {
+  font-size: 2cqw;
+  letter-spacing: 0.08em;
+  margin-top: 0.08em;
+}
+
+.tv-brand-on {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5cqw;
+  margin: 0.2cqw 0 0.1cqw;
+  width: 100%;
+}
+
+.tv-brand-on em {
+  font-family: "Cinzel", Georgia, serif;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.9cqw;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: #c41e24;
+  text-shadow: 0 1px 2px #000, 0 0 0.5cqw rgba(196, 30, 36, 0.45);
+}
+
+.tv-brand-rule {
+  flex: 1;
+  height: 1px;
+  max-width: 4cqw;
+  background: linear-gradient(90deg, transparent, rgba(196, 30, 36, 0.85), transparent);
+  display: block;
+}
+
+.tv-brand-drips {
+  display: block;
+  width: 92%;
+  height: 1.5cqw;
+  margin: -0.05cqw auto 0;
+  color: #9a1418;
+  opacity: 0.92;
+}
+
+/* ——— Oak + brass plaque: 9-slice of plaque-oak.png, grows with content ——— */
+.tv-oak {
+  --oak-s: 0.008cqw; /* cqw per source pixel */
+  position: relative;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  border-image-source: var(--oak);
+  border-image-slice: 300 335 305 330 fill;
+  border-image-repeat: stretch;
+  border-width: calc(300 * var(--oak-s)) calc(335 * var(--oak-s)) calc(305 * var(--oak-s))
+    calc(330 * var(--oak-s));
+  filter: drop-shadow(0 0.6cqw 1.2cqw rgba(0, 0, 0, 0.6));
+  text-align: center;
+}
+
+/* ——— Type set (E–C–B hierarchy) ——— */
+.tv-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7cqw;
+  margin: 0;
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: 1.05cqw;
+  line-height: 1.1;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #dcc18a;
+  text-shadow: 0 1px 2px #000;
+}
+
+.tv-fleur {
+  flex: none;
+  width: 2cqw;
+  height: 1cqw;
+  color: var(--brass);
+}
+
+.tv-fleur.flip {
+  transform: scaleX(-1);
+}
+
+.tv-phase-word {
+  margin: 0;
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: 6.4cqw;
+  line-height: 0.98;
+  letter-spacing: 0.012em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  filter: drop-shadow(0 0 0.04cqw rgba(24, 12, 6, 0.95)) drop-shadow(0 0.2cqw 0 rgba(0, 0, 0, 0.85))
+    drop-shadow(0 0 0.7cqw rgba(0, 0, 0, 0.5));
+}
+
+.tv-phase-word.long {
+  font-size: 5cqw;
+}
+
+/* Parchment face with blood grime + craquelure as colour only: the opaque gradient is the
+   bottom layer, so the glyphs stay solid (no mask — masks punch holes through strokes). */
+.tv-phase-word-ink {
+  display: inline-block;
+  padding: 0.04em 0.08em 0;
+  color: transparent;
+  background-image:
+    url("/tv/elements/phase-blood.png"),
+    url("/tv/elements/phase-ink-tex.png"),
+    linear-gradient(178deg, #f1e0ba 0%, #e2c898 40%, #cfab76 75%, #b38756 100%);
+  background-size: 26cqw 100%, 20cqw auto, 100% 100%;
+  background-repeat: repeat-x, repeat, no-repeat;
+  background-position: 37% 100%, 0 0, 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.tv-script {
+  margin: 0;
+  font-family: var(--f-script);
+  font-weight: 400;
+  font-size: 2.1cqw;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  color: #ead8b2;
+  text-shadow: 0 1px 2px #000, 0 0 0.6cqw rgba(0, 0, 0, 0.6);
+}
+
+.tv-dot {
+  display: inline-block;
+  margin: 0 0.45em;
+  color: var(--brass);
+  font-family: var(--f-phase);
+  font-size: 0.6em;
+  vertical-align: 0.2em;
+}
+
+.tv-blood-drop {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.66em;
+  margin-left: 0.25em;
+  color: #9c1a1a;
+  filter: drop-shadow(0 0 0.3cqw rgba(196, 30, 36, 0.5));
+  vertical-align: -0.02em;
+}
+
+/* ——— Hero phase plaque ——— */
+.tv-hero {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 3cqh;
+  transform: translateX(-50%);
+  animation: tv-rise 0.9s ease both;
+}
+
+.tv-hero-plaque {
+  --oak-s: 0.0078cqw;
+  min-width: 30cqw;
+  max-width: 40cqw;
+  padding: 0.1cqw 1.2cqw 0.2cqw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15cqw;
+}
+
+.tv-meta {
+  font-size: 1.95cqw;
+  max-width: 36cqw;
+}
+
+/* Day screen: who is on the block between nominations (public table info). */
+.tv-block-line {
+  font-size: 2.3cqw;
+  max-width: 36cqw;
+  color: #f0c9a8;
+  text-shadow: 0 1px 2px #000, 0 0 0.8cqw rgba(160, 20, 24, 0.7);
+  animation: tv-block-in 0.8s ease both;
+}
+.tv-block-line.tied {
+  color: var(--ink-parch-dim);
+  text-shadow: 0 1px 2px #000, 0 0 0.6cqw rgba(0, 0, 0, 0.6);
+}
+
+@keyframes tv-block-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.3cqw);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tv-rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -0.8cqw);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ——— Corner day tag (F map) ——— */
+.tv-day-tag {
+  --oak-s: 0.0032cqw;
+  position: absolute;
+  z-index: 3;
+  right: 2cqw;
+  top: 3.2cqh;
+  display: flex;
+  align-items: center;
+  gap: 0.45cqw;
+  padding: 0 0.5cqw;
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: 1.25cqw;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #e6cf9c;
+  text-shadow: 0 1px 2px #000;
+}
+
+.tv-day-tag-icon {
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", serif;
+  color: var(--brass-bright);
+  letter-spacing: 0;
+}
+
+/* ——— Timer ——— */
+/* Town/gazette phases: centred over the gazette, clear of the left column */
+.tv-timer-slot {
+  position: absolute;
+  z-index: 4;
+  right: calc(1.8cqw + 31.5cqw / 2);
+  top: 12.5cqh;
+  transform: translateX(50%);
+}
+
+.tv-timer-slot.drama {
+  right: 50%;
+  top: 3cqh;
+}
+
+.tv-timer {
+  --oak-s: 0.0042cqw;
+  padding: 0 1.2cqw;
+  min-width: 13cqw;
+}
+
+.tv-timer-digits {
+  margin: 0;
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: 3.6cqw;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #f5c66a;
+  text-shadow: 0 0.1cqw 0 #000, 0 0 1cqw rgba(255, 170, 60, 0.55);
+}
+
+.tv-timer.urgent .tv-timer-digits {
+  color: #e2463c;
+  text-shadow: 0 0.1cqw 0 #000, 0 0 1.2cqw rgba(214, 54, 60, 0.7);
+  animation: tv-pulse 1s ease-in-out infinite;
+}
+
+@keyframes tv-pulse {
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* ——— Dawn: “THE NIGHT CLAIMED” graveyard banner ——— */
+/* Left column: dawn banner on top, town anchored to the bottom; they never overlap */
+.tv-left {
+  position: absolute;
+  z-index: 2;
+  left: 1.8cqw;
+  width: 61cqw;
+  top: 31cqh;
+  bottom: 2.4cqh;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2cqh;
+}
+
+/* Plates with a painted logo (public/tv/plates.json hasLogo): it covers x ≈ 2–30.3%,
+   y ≈ 5–36.5% (drips included). Keep the left column and hero plaque clear of it.
+   A 4+-row town (16+ seats) leaves the dawn banner no room below 37cqh, so it keeps 31cqh. */
+.tv-plate-logo:not(.tv-town-tall) .tv-left {
+  top: 37cqh;
+}
+.tv-plate-logo .tv-hero-plaque {
+  max-width: 38cqw;
+}
+
+.tv-dawn {
+  position: relative;
+  z-index: 1;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: calc(1.3cqw * var(--fit, 1)) 3cqw calc(2.4cqw * var(--fit, 1));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: calc(0.6cqw * var(--fit, 1));
+  animation: tv-fade 1.4s ease both;
+}
+
+.tv-dawn-sky {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center 62%;
+  -webkit-mask-image: radial-gradient(ellipse 52% 60% at 50% 50%, #000 55%, transparent 100%);
+  mask-image: radial-gradient(ellipse 52% 60% at 50% 50%, #000 55%, transparent 100%);
+  opacity: 0.95;
+}
+
+.tv-dawn-label {
+  font-size: 1.35cqw;
+  color: #f0dcb0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.tv-dawn-none {
+  margin: 0.2cqw 0 0;
+  font-family: var(--f-script);
+  font-size: calc(4cqw * var(--fit, 1));
+  line-height: 1;
+  color: #f3e3c0;
+  text-shadow: 0 0.15cqw 0.4cqw rgba(0, 0, 0, 0.85);
+}
+
+.tv-dawn-names {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  column-gap: 1cqw;
+  row-gap: 0.3cqw;
+}
+
+.tv-dawn-names li {
+  position: relative;
+  max-width: 100%;
+  text-align: center;
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: calc(3.2cqw * var(--fit, 1));
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e9d4a8;
+  text-shadow: 0 0.12cqw 0 rgba(0, 0, 0, 0.9), 0 0 0.9cqw rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  animation: tv-dawn-ink 1.1s ease forwards;
+  --fade: calc(1 - var(--age, 0) * 0.13);
+}
+
+.tv-dawn-names li + li::before {
+  content: "—";
+  display: inline-block;
+  margin-right: 1cqw;
+  vertical-align: 0.3em;
+  color: var(--brass);
+  font-size: 0.6em;
+}
+
+.tv-dawn-names li.first {
+  color: #b3221d;
+  text-shadow: 0 0.12cqw 0 #000, 0 0 1cqw rgba(0, 0, 0, 0.8), 0 0 1.6cqw rgba(139, 21, 24, 0.6);
+}
+
+@keyframes tv-dawn-ink {
+  from {
+    opacity: 0;
+    transform: translateY(0.5cqw);
+    filter: blur(0.3cqw);
+  }
+  to {
+    opacity: var(--fade);
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes tv-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ——— THE TOWN (blank ornate frame, 9-slice; live title) ——— */
+.tv-town {
+  --tf: 0.0117cqw; /* cqw per town-frame source px */
+  position: relative;
+  z-index: 2;
+  flex: none;
+  margin-top: auto;
+  width: 100%;
+  box-sizing: border-box;
+  padding: calc(300 * var(--tf) + 0.8cqw) calc(241 * var(--tf) + 0.9cqw) calc(175 * var(--tf) + 0.7cqw);
+  transition: opacity 0.45s ease, visibility 0.45s ease;
+}
+
+.tv-town::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: calc(290 * var(--tf)) calc(236 * var(--tf)) calc(170 * var(--tf));
+  background:
+    radial-gradient(ellipse 80% 90% at 50% 45%, rgba(40, 24, 16, 0.55), transparent 80%),
+    linear-gradient(180deg, rgba(18, 11, 8, 0.86), rgba(8, 5, 4, 0.92));
+  box-shadow: inset 0 0 1.4cqw rgba(0, 0, 0, 0.85);
+}
+
+.tv-town-frame {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  border-image-source: url("/tv/elements/town-frame-blank.png");
+  border-image-slice: 380 330 400 330;
+  border-image-repeat: stretch;
+  border-width: calc(380 * var(--tf)) calc(330 * var(--tf)) calc(400 * var(--tf)) calc(330 * var(--tf));
+  filter: drop-shadow(0 0.8cqw 1.6cqw rgba(0, 0, 0, 0.6));
+  pointer-events: none;
+}
+
+.tv-town-title {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: calc(189 * var(--tf));
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 0.8cqw;
+  margin: 0;
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: 1.75cqw;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(180deg, #f3d99a 10%, #c89b52 60%, #8e6630 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 0.1cqw 0 #000);
+}
+
+.tv-town-title .tv-fleur {
+  width: 2.4cqw;
+  height: 1.2cqw;
+  color: #c79a52;
+}
+
+.tv-town-grid {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+  gap: 0.55cqw 0.6cqw;
+}
+
+/* Live text sized by FitText (font-size: calc(base * var(--fit, 1))) */
+.tv-fit {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+.tv-fit[data-wrap="1"] {
+  white-space: normal;
+  text-wrap: balance;
+}
+
+/* Seat chip — A–G–H seat states on a mini oak plaque */
+.tv-seat {
+  --oak-s: 0.0021cqw;
+  position: relative;
+  box-sizing: border-box;
+  min-height: 4.3cqw;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45cqw;
+  padding: 0.05cqw 0.55cqw 0.05cqw 0;
+  border-style: solid;
+  border-color: transparent;
+  border-image-source: var(--oak);
+  border-image-slice: 300 335 305 330 fill;
+  border-width: calc(300 * var(--oak-s)) calc(335 * var(--oak-s)) calc(305 * var(--oak-s))
+    calc(330 * var(--oak-s));
+  filter: drop-shadow(0 0.25cqw 0.5cqw rgba(0, 0, 0, 0.55));
+}
+
+.tv-seat-emblem {
+  position: relative;
+  z-index: 1;
+  width: 2.9cqw;
+  aspect-ratio: 1;
+  flex: none;
+  margin-left: -0.25cqw;
+}
+
+.tv-seat-emblem img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 0.1cqw 0.2cqw rgba(0, 0, 0, 0.7));
+}
+
+.tv-seat-text {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.05cqw;
+  text-align: left;
+}
+
+.tv-seat-name {
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: calc(1.55cqw * var(--fit, 1));
+  line-height: 1.08;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #f2e6cc;
+  text-shadow: 0 0.08cqw 0 #000, 0 0 0.4cqw rgba(0, 0, 0, 0.8);
+}
+
+.tv-seat-status {
+  font-family: var(--f-script);
+  font-size: calc(1.45cqw * var(--fit, 1));
+  line-height: 1.05;
+  color: #d8bd84;
+  text-shadow: 0 1px 2px #000;
+}
+
+.tv-seat-num {
+  position: absolute;
+  z-index: 1;
+  right: 0.25cqw;
+  top: 0.05cqw;
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: 0.72cqw;
+  letter-spacing: 0.08em;
+  color: rgba(220, 193, 138, 0.6);
+}
+
+.tv-seat.ghost::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  right: 0;
+  bottom: 0.15cqw;
+  height: 34%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(118, 12, 14, 0.62) 10%,
+    rgba(140, 18, 18, 0.7) 50%,
+    rgba(118, 12, 14, 0.62) 90%,
+    transparent
+  );
+  -webkit-mask-image: url("/tv/elements/distress-mask.png");
+  mask-image: url("/tv/elements/distress-mask.png");
+  -webkit-mask-size: 10cqw auto;
+  mask-size: 10cqw auto;
+}
+
+.tv-seat.ghost .tv-seat-status {
+  color: #f0b39a;
+}
+
+.tv-seat.ghost .tv-seat-emblem img,
+.tv-seat.spent .tv-seat-emblem img {
+  filter: grayscale(0.35) brightness(0.9) drop-shadow(0 0.1cqw 0.2cqw rgba(0, 0, 0, 0.7));
+}
+
+.tv-seat.spent .tv-seat-name {
+  color: #b9ab93;
+}
+
+.tv-seat.spent .tv-seat-status {
+  color: #a58f76;
+}
+
+.tv-seat-x::before,
+.tv-seat-x::after {
+  content: "";
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  top: 50%;
+  height: 12%;
+  border-radius: 0.2cqw;
+  background: linear-gradient(90deg, rgba(120, 14, 16, 0.2), #a3201c 20%, #8b1518 80%, rgba(120, 14, 16, 0.2));
+  box-shadow: 0 0 0.3cqw rgba(0, 0, 0, 0.6);
+  transform: translateY(-50%) rotate(42deg);
+}
+
+.tv-seat-x::after {
+  transform: translateY(-50%) rotate(-42deg);
+}
+
+/* Ended: roles revealed in the town (public at game end only) */
+.tv-seat[class*="team-"] .tv-seat-status {
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: calc(0.95cqw * var(--fit, 1));
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+.tv-seat.team-townsfolk .tv-seat-status,
+.tv-seat.team-outsider .tv-seat-status {
+  color: #e7c878;
+}
+.tv-seat.team-minion .tv-seat-status,
+.tv-seat.team-demon .tv-seat-status {
+  color: #e2554a;
+}
+.tv-seat.team-traveller .tv-seat-status {
+  color: #d9c7a2;
+}
+
+/* 13–20 seats: five columns — smaller medallion leaves room for long names */
+.tv-town.dense .tv-seat {
+  --oak-s: 0.0017cqw;
+  gap: 0.35cqw;
+  padding-right: 0.5cqw;
+}
+.tv-town.dense .tv-seat-emblem {
+  width: 2.45cqw;
+  margin-left: -0.4cqw;
+}
+
+/* 21+ seats (travellers): six narrower columns */
+.tv-town.compact .tv-seat {
+  min-height: 3.9cqw;
+  gap: 0.35cqw;
+}
+.tv-town.compact .tv-seat-emblem {
+  width: 2.2cqw;
+}
+.tv-town.compact .tv-seat-name {
+  font-size: calc(1.3cqw * var(--fit, 1));
+}
+.tv-town.compact .tv-seat-status {
+  font-size: calc(1.25cqw * var(--fit, 1));
+}
+
+/* ——— The Ravenswood Gazette (oak/brass frame + parchment; live masthead) ——— */
+.tv-gazette {
+  --oak-s: 0.0074cqw;
+  position: absolute;
+  z-index: 2;
+  right: 1.8cqw;
+  top: 31cqh;
+  bottom: 2.4cqh;
+  width: 31.5cqw;
+  transition: opacity 0.45s ease, visibility 0.45s ease;
+}
+
+.tv-gazette-frame {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  border-image-source: var(--oak);
+  border-image-slice: 300 335 305 330;
+  border-image-repeat: stretch;
+  border-width: calc(300 * var(--oak-s)) calc(335 * var(--oak-s)) calc(305 * var(--oak-s))
+    calc(330 * var(--oak-s));
+  filter: drop-shadow(0 0.8cqw 1.6cqw rgba(0, 0, 0, 0.6));
+  pointer-events: none;
+}
+
+.tv-gazette-sheet {
+  position: absolute;
+  z-index: 0;
+  inset: calc(270 * var(--oak-s)) calc(300 * var(--oak-s)) calc(275 * var(--oak-s)) calc(290 * var(--oak-s));
+  box-sizing: border-box;
+  padding: 1.1cqw 1.6cqw 1cqw;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink-paper);
+  background:
+    radial-gradient(ellipse 90% 70% at 50% 40%, transparent 55%, rgba(92, 52, 20, 0.35) 100%),
+    url("/tv/elements/parchment-tex.jpg") center / cover;
+  box-shadow: inset 0 0 1.8cqw rgba(70, 36, 12, 0.75), inset 0 0 0.3cqw rgba(40, 20, 8, 0.8);
+  overflow: hidden;
+}
+
+.tv-gazette-sheet::after {
+  content: "";
+  position: absolute;
+  left: -2cqw;
+  top: -1cqw;
+  width: 12cqw;
+  height: 10cqw;
+  background: url("/tv/elements/blood-wear.png") 0 60% / 14cqw auto no-repeat;
+  opacity: 0.55;
+  transform: rotate(180deg);
+  -webkit-mask-image: radial-gradient(circle at 70% 70%, #000 20%, transparent 65%);
+  mask-image: radial-gradient(circle at 70% 70%, #000 20%, transparent 65%);
+  pointer-events: none;
+}
+
+.tv-gazette-head {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding-bottom: 0.5cqw;
+  border-bottom: 0.25cqw double rgba(42, 26, 16, 0.7);
+}
+
+.tv-gazette-kicker {
+  margin: 0 0 -0.5cqw;
+  font-family: var(--f-script);
+  font-size: 1.9cqw;
+  line-height: 1;
+  color: #5a2a1a;
+}
+
+.tv-gazette-title {
+  margin: 0;
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: 2.55cqw;
+  line-height: 1;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+  color: #1c110a;
+  text-shadow: 0 1px 0 rgba(255, 240, 210, 0.35);
+}
+
+.tv-gazette-dateline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6cqw;
+  margin: 0.45cqw 0 0;
+  padding-top: 0.3cqw;
+  border-top: 1px solid rgba(42, 26, 16, 0.45);
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: 0.95cqw;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #3a2416;
+}
+
+.tv-gazette-dateline .tv-fleur {
+  color: #6b4524;
+}
+
+.tv-gazette-lines {
+  position: relative;
+  z-index: 1;
+  list-style: none;
+  margin: 0.4cqw 0 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 82%, transparent 100%);
+}
+
+.tv-gazette-lines li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.6cqw;
+  padding: 0.5cqw 0 0.4cqw;
+  border-bottom: 1px solid rgba(70, 42, 22, 0.3);
+  opacity: calc(1 - var(--age, 0) * 0.075);
+}
+
+.tv-gazette-text {
+  font-family: var(--f-phase);
+  font-weight: 600;
+  font-size: 1.42cqw;
+  line-height: 1.08;
+  letter-spacing: 0.02em;
+  color: #3e2718;
+  overflow-wrap: anywhere;
+}
+
+.tv-gazette-lines li.fresh .tv-gazette-text {
+  color: #1d120b;
+  font-weight: 700;
+}
+
+.tv-gazette-lines li.death .tv-gazette-text {
+  color: #7d1512;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.035em;
+}
+
+.tv-gazette-lines li.empty .tv-gazette-text {
+  font-family: var(--f-script);
+  font-size: 2cqw;
+  font-weight: 400;
+}
+
+.tv-gazette-marker {
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: 0.9cqw;
+  letter-spacing: 0.1em;
+  color: #5a3820;
+  white-space: nowrap;
+}
+
+.tv-gazette-marker.night {
+  color: #3a2a3a;
+}
+
+/* ——— Drama stages ——— */
+.tv-stage {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: tv-stage-in 0.8s ease both;
+}
+
+@keyframes tv-stage-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 1cqw);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.tv-stage-label {
+  font-size: 1.5cqw;
+  gap: 1cqw;
+}
+
+.tv-stage-tag {
+  --oak-s: 0.0042cqw;
+  padding: 0.35cqw 1.6cqw 0.25cqw;
+}
+
+.tv-stage-tag .tv-stage-label {
+  margin: 0;
+  font-size: 1.7cqw;
+}
+
+.tv-stage-script {
+  font-size: 2.3cqw;
+  margin-top: 0.6cqw;
+}
+
+/* Nomination (F “5”) */
+.tv-nomination {
+  top: 33cqh;
+  width: 74cqw;
+  gap: 0.6cqw;
+}
+
+.tv-nom-bar {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2333 / 597;
+}
+
+.tv-nom-chrome {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 1cqw 2cqw rgba(0, 0, 0, 0.65));
+}
+
+.tv-nom-side {
+  position: absolute;
+  top: 26%;
+  bottom: 26%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2cqw;
+  min-width: 0;
+}
+
+.tv-nom-side.left {
+  left: 10%;
+  right: 61%;
+}
+
+.tv-nom-side.right {
+  left: 61%;
+  right: 10%;
+}
+
+.tv-nom-role {
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: 0.95cqw;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: #c9a76a;
+}
+
+.tv-nom-name {
+  align-self: stretch;
+  text-align: center;
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: calc(3.4cqw * var(--fit, 1));
+  line-height: 1.02;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+  text-shadow: 0 0.15cqw 0 #000, 0 0 0.8cqw rgba(0, 0, 0, 0.8);
+}
+
+.tv-nom-name.nominator {
+  color: #eedcb4;
+}
+
+.tv-nom-name.nominee {
+  color: #cf3a31;
+  text-shadow: 0 0.15cqw 0 #000, 0 0 0.8cqw rgba(0, 0, 0, 0.8), 0 0 1.4cqw rgba(139, 21, 24, 0.55);
+}
+
+/* Vote (E–C–B centre) */
+.tv-vote {
+  --D: 62cqh; /* ring box; ring art outer radius = 0.464 × D */
+  top: 16.5cqh;
+}
+
+.tv-vote-ring {
+  position: relative;
+  width: var(--D);
+  height: var(--D);
+}
+
+.tv-vote-ring-chrome {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 1.2cqw 2.4cqw rgba(0, 0, 0, 0.7));
+}
+
+.tv-vote-studs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  inset: 0;
+}
+
+.tv-stud {
+  --size: calc(var(--D) * 0.058 * var(--stud, 1));
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--size);
+  height: var(--size);
+  margin: calc(var(--size) / -2) 0 0 calc(var(--size) / -2);
+  border-radius: 50%;
+  transform: rotate(var(--a)) translateX(calc(var(--D) * 0.3745)) rotate(calc(-1 * var(--a)));
+  background:
+    radial-gradient(circle at 35% 30%, #d8b777 0%, #9c7a3e 32%, #5c4222 70%, #2e2012 100%);
+  box-shadow:
+    0 0.12cqw 0.2cqw rgba(0, 0, 0, 0.8),
+    inset 0 -0.12cqw 0.2cqw rgba(0, 0, 0, 0.55),
+    inset 0 0.08cqw 0.1cqw rgba(255, 230, 170, 0.35);
+  transition: background 0.35s ease, box-shadow 0.35s ease, filter 0.35s ease;
+  filter: brightness(0.62) saturate(0.7);
+}
+
+.tv-stud.lit {
+  filter: none;
+  background:
+    radial-gradient(circle at 35% 30%, #fff1c4 0%, #f2c866 28%, #c08a32 62%, #6a4414 100%);
+  box-shadow:
+    0 0 0.6cqw rgba(255, 190, 80, 0.85),
+    0 0 1.4cqw rgba(255, 150, 40, 0.45),
+    inset 0 -0.12cqw 0.2cqw rgba(90, 40, 0, 0.5);
+  animation: tv-stud-in 0.5s ease;
+}
+
+.tv-stud.spent {
+  filter: brightness(0.35) grayscale(0.8);
+}
+
+.tv-stud.nominee {
+  outline: 0.14cqw solid rgba(170, 30, 28, 0.9);
+  outline-offset: 0.12cqw;
+}
+
+@keyframes tv-stud-in {
+  from {
+    transform: rotate(var(--a)) translateX(calc(var(--D) * 0.3745)) rotate(calc(-1 * var(--a))) scale(1.45);
+  }
+}
+
+.tv-vote-plaque {
+  --oak-s: 0.0074cqw;
+  position: absolute;
+  left: 50%;
+  top: 42.5%;
+  width: calc(var(--D) * 0.9);
+  transform: translate(-50%, -50%);
+  padding: 0.2cqw 0.8cqw 0.1cqw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tv-vote-kicker {
+  font-size: 1.08cqw;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+}
+
+.tv-vote-nominee {
+  margin: 0.25cqw 0 0;
+  align-self: stretch;
+  text-align: center;
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: calc(3.5cqw * var(--fit, 1));
+  line-height: 1.02;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #c3342c;
+  text-shadow: 0 0.15cqw 0 #000, 0 0 0.9cqw rgba(0, 0, 0, 0.85), 0 0 1.4cqw rgba(139, 21, 24, 0.5);
+}
+
+.tv-vote-tally {
+  margin: 0.1cqw 0 0;
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: 6.6cqw;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #f0c066;
+  text-shadow:
+    0 0.18cqw 0 #1a0d04,
+    0 0 1.1cqw rgba(255, 170, 60, 0.6),
+    0 0 2.6cqw rgba(255, 130, 30, 0.35);
+}
+
+.tv-vote-tally .sep {
+  margin: 0 0.06em;
+  opacity: 0.85;
+}
+
+.tv-vote.majority .tv-vote-tally {
+  color: #ffd98a;
+  text-shadow:
+    0 0.18cqw 0 #1a0d04,
+    0 0 1.4cqw rgba(255, 190, 80, 0.85),
+    0 0 3.2cqw rgba(255, 140, 40, 0.55);
+}
+
+.tv-vote.majority .tv-vote-kicker {
+  color: #f3cf86;
+}
+
+.tv-vote.beat .tv-vote-plaque {
+  animation: tv-beat 1.1s ease;
+}
+
+@keyframes tv-beat {
+  30% {
+    transform: translate(-50%, -50%) scale(1.05);
+    filter: drop-shadow(0 0 2.4cqw rgba(255, 170, 60, 0.7));
+  }
+}
+
+.tv-vote .tv-stage-script {
+  margin-top: 0.2cqw;
+}
+
+.tv-vote-raised {
+  margin: 0.3cqw 0 0;
+  max-width: 70cqw;
+  max-height: 3.45cqw; /* two lines at full size; FitBox shrinks longer lists */
+  overflow: hidden;
+  font-family: var(--f-phase);
+  font-weight: 600;
+  font-size: calc(1.35cqw * var(--fit, 1));
+  line-height: 1.25;
+  letter-spacing: 0.03em;
+  color: #e6d2a8;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px #000;
+}
+
+.tv-vote-raised-label {
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: calc(0.95cqw * var(--fit, 1));
+  letter-spacing: 0.24em;
+  color: #c9a76a;
+  margin-right: 0.6cqw;
+}
+
+/* Execution (F “7”) */
+.tv-execution {
+  top: 24cqh;
+  gap: 1.4cqw;
+}
+
+.tv-exec-bar {
+  position: relative;
+  width: 58cqw;
+  aspect-ratio: 2332 / 504;
+}
+
+.tv-exec-chrome {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 1cqw 2cqw rgba(0, 0, 0, 0.65));
+}
+
+.tv-exec-word {
+  position: absolute;
+  inset: 0 9% 0 20%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 4.9cqw;
+}
+
+.tv-exec-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 2.4cqw;
+}
+
+.tv-exec-plaque {
+  --oak-s: 0.0074cqw;
+  min-width: 30cqw;
+  max-width: 48cqw;
+  padding: 0.2cqw 1.4cqw 0.3cqw;
+}
+
+.tv-exec-name {
+  margin: 0.2cqw 0 0;
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: calc(5.4cqw * var(--fit, 1));
+  line-height: 1.02;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  color: #c9372e;
+  text-shadow: 0 0.2cqw 0 #000, 0 0 1cqw rgba(0, 0, 0, 0.85), 0 0 1.8cqw rgba(139, 21, 24, 0.55);
+}
+
+.tv-candles {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.7cqw;
+  padding-bottom: 0.6cqw;
+}
+
+.tv-candles span {
+  position: relative;
+  width: 0.55cqw;
+  height: 2.4cqw;
+  background: linear-gradient(90deg, #cdbd98, #f4ead2 45%, #b9a47a);
+  border-radius: 0.1cqw 0.1cqw 0 0;
+  box-shadow: 0 -0.3cqw 1.2cqw rgba(255, 180, 80, 0.45);
+}
+
+.tv-candles span:nth-child(2) {
+  height: 3.2cqw;
+}
+
+.tv-candles span:nth-child(3) {
+  height: 1.8cqw;
+}
+
+.tv-candles span::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -0.9cqw;
+  width: 0.55cqw;
+  height: 0.9cqw;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at 50% 80%, #fff2b8, #ff9a36 55%, transparent 72%);
+  border-radius: 50% 50% 40% 40%;
+  filter: drop-shadow(0 0 0.5cqw rgba(255, 170, 60, 0.9));
+  animation: tv-candle 1.6s ease-in-out infinite alternate;
+}
+
+.tv-candles span:nth-child(2)::before {
+  animation-delay: 0.35s;
+}
+
+.tv-candles span:nth-child(3)::before {
+  animation-delay: 0.7s;
+}
+
+@keyframes tv-candle {
+  from {
+    opacity: 0.75;
+    transform: translateX(-50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.08);
+  }
+}
+
+/* ——— F overlay map: hidden panels ——— */
+.tv-panel-hidden {
+  opacity: 0 !important;
+  visibility: hidden;
+}
+
+/* Character sheet (Storyteller toggle): one parchment across the town + gazette slots. */
+.tv-sheet {
+  --oak-s: 0.0074cqw;
+  position: absolute;
+  z-index: 3;
+  left: 1.8cqw;
+  right: 1.8cqw;
+  top: 31cqh;
+  bottom: 2.4cqh;
+  animation: tv-sheet-in 0.6s ease both;
+}
+@keyframes tv-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(1cqw);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.tv-plate-logo .tv-sheet {
+  top: 37cqh;
+}
+.tv-sheet-body {
+  padding: calc(0.9cqw * var(--fit, 1)) 1.8cqw;
+  gap: calc(0.5cqw * var(--fit, 1));
+}
+.tv-sheet-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2cqw;
+  border-bottom: 0.12cqw solid rgba(40, 22, 10, 0.55);
+  padding-bottom: calc(0.35cqw * var(--fit, 1));
+}
+.tv-sheet-head .tv-gazette-title {
+  font-size: calc(2.1cqw * var(--fit, 1));
+}
+.tv-sheet-counts {
+  margin: 0;
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: calc(1.15cqw * var(--fit, 1));
+  letter-spacing: 0.06em;
+}
+.tv-sheet-body > * {
+  flex: none;
+  position: relative;
+  z-index: 1;
+}
+.tv-sheet-grid {
+  display: grid;
+  grid-template-columns: 3fr 1.1fr 1.1fr 0.9fr;
+  gap: 1.4cqw;
+}
+.tv-sheet-col h3 {
+  margin: 0 0 calc(0.25cqw * var(--fit, 1));
+  font-family: var(--f-label);
+  font-weight: 700;
+  font-size: calc(1.2cqw * var(--fit, 1));
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.tv-sheet-col.team-townsfolk h3,
+.tv-sheet-col.team-outsider h3 {
+  color: #1d3d6b;
+}
+.tv-sheet-col.team-minion h3,
+.tv-sheet-col.team-demon h3 {
+  color: #7a1612;
+}
+.tv-sheet-col.team-traveller h3 {
+  color: #4a3212;
+}
+.tv-sheet-col dl {
+  margin: 0;
+  display: grid;
+  gap: calc(0.3cqw * var(--fit, 1)) 1.2cqw;
+}
+.tv-sheet-col.team-townsfolk dl,
+.tv-sheet-travellers dl {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.tv-sheet-travellers {
+  border-top: 0.1cqw solid rgba(40, 22, 10, 0.4);
+  padding-top: calc(0.35cqw * var(--fit, 1));
+}
+.tv-sheet-col dt {
+  font-family: var(--f-phase);
+  font-weight: 700;
+  font-size: calc(1.05cqw * var(--fit, 1));
+  line-height: 1.1;
+}
+.tv-sheet-col dd {
+  margin: 0;
+  font-family: var(--f-paper);
+  font-size: calc(0.86cqw * var(--fit, 1));
+  line-height: 1.22;
+}

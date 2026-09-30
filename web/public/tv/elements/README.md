@@ -1,46 +1,58 @@
 # TV overlay elements
 
 Modular UI chrome for `/tv`, stacked over any scene plate.
+Design comps: `docs/tv-design/tv-design-{A-G-H,E-C-B,F}-*.png`.
 
-## Files (primary)
+**No baked text.** Every label, number, name and phase word on `/tv` is live text
+rendered by React (`web/src/pages/tv/*`). Chrome files below are blank.
 
-| File | Role |
-|------|------|
-| `day-marker.png` | Soft phase scrim (clean alpha; CSS also adds mask/falloff) |
-| `town-frame.png` | THE TOWN wood/brass placard (title baked in; transparent seat hollow) |
-| `ledger-panel.png` | Ravenswood Gazette on wood with matching brass corners (masthead baked in) |
-| `vote-chrome.png` | Nomination / vote plaque + ring |
-| `logo.png` | Legacy AI wordmark (unused — `/tv` uses typographic `.tv-brand`) |
+## Live files (referenced by `web/src/pages/tv/assets.ts` / `tv.css`)
 
-Alternates from processing: `ledger-panel-generated.png`, `ledger-panel-from-bg.png`, `logo-from-bg.png`.
+| File | Role | How it is used |
+|------|------|----------------|
+| `plaque-oak.png` | Oak + brass plaque (hero phase word, day tag, nomination label, vote tally) | 9-slice `border-image-slice: 300 335 305 330 fill`, scaled by `--oak-s` |
+| `town-frame-blank.png` | Town wood/brass frame | 9-slice `380 330 400 330`, scaled by `--tf` |
+| `vote-ring-blank.png` | Brass seat ring behind the vote stud arc | `<img>` in `VoteStage`; studs are CSS |
+| `nomination-plaque-clean.png` | Nomination bar + medallion | `NominationStage` |
+| `execution-placard-clean.png` | Execution placard | `ExecutionStage` |
+| `emblem-sun.png` / `emblem-skull.png` | Seat chip emblems (alive / ghost) | `TownBoard` seat chips; spent vote X is CSS |
+| `dawn-graveyard.jpg` | "The night claimed" banner backdrop | `DawnReveal` |
+| `parchment-tex.jpg` | Gazette sheet texture | `.tv-gazette` |
+| `phase-ink-tex.png` | Craquelure / mottle for the phase word face | `background-clip: text` layer on `.tv-phase-word-ink` |
+| `phase-blood.png` | Dried-blood grime toward the phase word baseline | `background-clip: text` layer (repeat-x) on `.tv-phase-word-ink` |
+| `distress-mask.png` | Worn band edge | `mask-image` on the ghost seat blood band only |
+| `blood-wear.png` | Blood smear accents | gazette |
 
-## Shared visual system (storyteller table)
+Built by `python scripts/build_tv_overhaul_assets.py`; the two `phase-*` textures by
+`python scripts/build_tv_phase_ink.py`. Phase words must not use `distress-mask.png`: its alpha
+(35% floor, zero-alpha specks and scratches) punches holes through the glyphs.
 
-Town + Gazette are one material language:
-- **Backing:** dark weathered oak / stone
-- **Corners:** matching aged brass filigree + diamond rivets
-- **Ink:** dried-blood accents; parchment cream for Gazette sheet
-- **Type:** Cinzel Decorative mastheads (baked); UnifrakturCook / Old Standard for chronicle body
+## Source inputs (not loaded by the page)
 
-## Brand logo
+`vote-plaque.png`, `vote-ring.png`, `town-frame.png`, `nomination-plaque.png`,
+`execution-placard.png`, `day-marker.png` are the inputs `build_tv_overhaul_assets.py`
+strips into the clean files above. `day-marker.png` is now a blank copy of the oak plaque;
+the original baked "DAY 3" version is archived as `_prior/day-marker-baked-day3.png`.
 
-The live `/tv` brand is CSS: Cinzel Decorative stack + SVG drips (`.tv-brand`). Prefer that over `logo.png`, which had muddy bright fringe on dark plates.
+Retired assets (old ledger panel, logo, seat chips, combined vote chrome) are in `_prior/legacy-*.png`.
 
-## Gazette / Town notes
+## Fonts (self-hosted, bundled by Vite from npm — `web/src/pages/tv/fonts.ts`)
 
-- **Ravenswood Gazette** masthead is in the PNG — do not CSS-print a second title. Body text uses UnifrakturCook / Old Standard via `--font-gothic` / `--font-gazette`.
-- Chronicle insets (`.tv-ledger-body`) must clear left blood, brass corners, and clocktower watermark — keep `left` ≥ ~22% with `object-fit: fill` on the chrome.
-- **THE TOWN** title is in `town-frame.png` — seat grid only in markup. Default grid: 5 columns (fits 20 seats as 5×4); scrolls if needed.
+| Role | Family | Package | Licence |
+|------|--------|---------|---------|
+| Phase word, nominee | Libre Caslon Condensed | `@fontsource/libre-caslon-condensed` | SIL OFL 1.1 |
+| Script meta, statuses | Italianno | `@fontsource/italianno` | SIL OFL 1.1 |
+| Spaced small-caps labels | Cormorant SC | `@fontsource/cormorant-sc` | SIL OFL 1.1 |
+| Gazette body | Old Standard TT | `@fontsource/old-standard-tt` | SIL OFL 1.1 |
+| Brand wordmark | Cinzel Decorative, Cinzel | `@fontsource/cinzel-decorative`, `@fontsource/cinzel` | SIL OFL 1.1 |
 
-## Swap backgrounds
+Sources: <https://fontsource.org> (mirrors Google Fonts, <https://fonts.google.com>).
 
-1. Drop a scene-only JPG/PNG in `web/public/tv/` (prefer no baked logo/ledger).
-2. Point the plate at it:
-   - CSS: `.tv { --tv-bg: url("/tv/your-scene.jpg"); }`
-   - or `<Atmosphere backgroundSrc="/tv/your-scene.jpg" />`
-3. Keep `--tv-bg-w` / `--tv-bg-h` matching the plate so `.tv-bg-align` % stay correct.
-4. Current `bg-night.jpg` is a scene-only gothic plate (no baked UI). Modular overlays sit on top. `bg-night-prev.jpg` / `bg-night-4x3.jpg` archive prior plates.
+## Phase overlay rules (F map)
 
-Regenerate gazette + town: `python scripts/process_tv_gazette_town.py`  
-Other alpha PNGs: `python scripts/process_tv_elements.py`  
-Clean day-marker only: `python scripts/_fix_day_marker.py`
+| Phase | Town | Gazette |
+|-------|------|---------|
+| Lobby | visible | hidden |
+| Night | hidden | hidden |
+| Dawn / Day / Ended | visible | visible |
+| Nomination / Vote / Execution | hidden | hidden |
