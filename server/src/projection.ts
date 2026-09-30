@@ -1,15 +1,21 @@
 import { listAmbianceCatalog, normalizeAmbiance, toAmbiancePublic } from "./ambiance.js";
 import { listAudioCues } from "./audio-library.js";
 import { dayAbilityTips } from "./night.js";
+import { nominationRules } from "./nominations.js";
 import type { ScriptData } from "./persistence.js";
+import { exileThreshold } from "./nominations.js";
 import {
   adjustSetupForBaron,
+  alignmentOf,
+  butlerVoteWarning,
   effectiveVoteCount,
+  trueCharacterId,
 } from "./rules.js";
 import type {
   GameSession,
   Player,
   PublicEvent,
+  PublicSheet,
   PublicState,
   RevealPlayer,
   SetupCounts,
@@ -86,7 +92,8 @@ export function assignedCounts(session: GameSession, script: ScriptData): SetupC
   const counts = emptyCounts();
   for (const p of session.players) {
     if (!p.characterId || p.isTraveller || p.leftGame) continue;
-    const c = script.characters.find((x) => x.id === p.characterId);
+    const id = trueCharacterId(script, p);
+    const c = script.characters.find((x) => x.id === id);
     if (!c || c.team === "traveller") continue;
     counts[c.team as keyof SetupCounts] += 1;
   }
@@ -110,7 +117,8 @@ export function setupWarning(session: GameSession, script: ScriptData): string |
     return `No official Trouble Brewing bag for ${n} townsfolk seats (Travellers are extra). Use 5–15.`;
   }
   const required = adjustSetupForBaron(base, session) ?? base;
-  const baronInPlay = session.players.some((p) => p.characterId === "baron" && !p.leftGame);
+  const baronInPlay =
+    Boolean(session.baronInSetup) || session.players.some((p) => p.characterId === "baron" && !p.leftGame);
   const assigned = assignedCounts(session, script);
   const teams: (keyof SetupCounts)[] = ["townsfolk", "outsider", "minion", "demon"];
   const mismatches = teams.filter((t) => assigned[t] !== required[t]);
@@ -128,7 +136,9 @@ export function buildReveal(session: GameSession, script: ScriptData): RevealPla
   return session.players
     .filter((p) => !p.leftGame)
     .map((p) => {
-      const c = findCharacter(script, p.characterId);
+      const id = trueCharacterId(script, p);
+      const c = findCharacter(script, id);
+      const thinks = id === "drunk" ? findCharacter(script, p.thinksCharacterId ?? (p.characterId !== "drunk" ? p.characterId : null)) : undefined;
       return {
         id: p.id,
         seat: p.seat,
@@ -137,13 +147,34 @@ export function buildReveal(session: GameSession, script: ScriptData): RevealPla
         usedGhostVote: p.usedGhostVote,
         isTraveller: p.isTraveller,
         leftGame: p.leftGame,
-        characterId: p.characterId,
+        travellerCharacterName: p.isTraveller ? (c?.name ?? null) : null,
+        characterId: id,
         characterName: c?.name ?? null,
         team: (c?.team as Team) ?? null,
         abilityUsed: p.abilityUsed,
+        alignment: alignmentOf(script, p),
+        thinksCharacterName: thinks?.name ?? null,
       };
     });
 }
+
+/** Public character sheet: script characters + official counts for the seat count (never Baron-adjusted). */
+export function buildPublicSheet(session: GameSession, script: ScriptData): PublicSheet {
+  const n = session.players.filter((p) => !p.isTraveller && !p.leftGame).length;
+  const travellerIds = new Set(
+    session.players.filter((p) => p.isTraveller && !p.leftGame && p.characterId).map((p) => p.characterId!),
+  );
+  return {
+    playerCount: n,
+    counts: script.setupByPlayerCount[String(n)] ?? null,
+    characters: script.characters.map((c) => ({ id: c.id, name: c.name, team: c.team as Team, ability: c.ability })),
+    travellers: script.travellers
+      .filter((t) => travellerIds.has(t.id))
+      .map((t) => ({ id: t.id, name: t.name, ability: t.ability })),
+  };
+}
+
+const SHEET_PHASES = new Set(["lobby", "day", "dusk"]);
 
 export function toPublicState(
   session: GameSession,
@@ -174,6 +205,8 @@ export function toPublicState(
         usedGhostVote: p.usedGhostVote,
         isTraveller: p.isTraveller,
         leftGame: p.leftGame,
+        // Travellers declare their character publicly; residents never appear here before the reveal.
+        travellerCharacterName: p.isTraveller ? (findCharacter(script, p.characterId)?.name ?? null) : null,
       })),
     fabled: session.fabled
       .map((id) => script.fabled.find((f) => f.id === id))
@@ -188,18 +221,32 @@ export function toPublicState(
           votesFor: session.nomination.votesFor,
           majority,
           votesForCount,
+          toBeat: session.block?.votes ?? null,
         }
       : null,
     // Names only after announceDawnDeaths — avoid leaking kills at goDawn.
     dawnDeathIds: deathsPublic ? session.dawnDeathIds : [],
     dawnDeathsAnnounced: deathsPublic && session.phase === "dawn",
     executionPendingId: session.executionPendingId,
+    nominationsToday: session.nominationsToday ?? [],
+    block: session.block ?? null,
+    nominationsOpen: Boolean(session.nominationsOpen),
     storytellerConnected: session.storytellerConnected,
     soundCue: extras?.soundCue ?? null,
     ambiance: toAmbiancePublic(normalizeAmbiance(session.ambiance)),
     hueScene: extras?.hueScene ?? null,
     winner: session.winner,
+    winReason: session.phase === "ended" ? session.winReason : null,
     reveal: ended ? buildReveal(session, script) : null,
+    exile: session.exile
+      ? {
+          travellerId: session.exile.travellerId,
+          calledById: session.exile.calledById,
+          supporters: session.exile.supporters,
+          threshold: exileThreshold(session),
+        }
+      : null,
+    sheet: session.tvSheet && SHEET_PHASES.has(session.phase) ? buildPublicSheet(session, script) : null,
   };
 }
 
@@ -228,6 +275,13 @@ export function toStorytellerState(
     pinRequired: true,
     dayAbilities: dayAbilityTips(session, script),
     executedTodayId: session.executedTodayId,
+    executionOccurredToday: Boolean(session.executionOccurredToday),
+    newDemons: session.newDemons ?? [],
+    tvSheet: Boolean(session.tvSheet),
+    allowOver15: Boolean(session.allowOver15),
+    butlerWarning: session.nomination ? butlerVoteWarning(session, session.nomination.votesFor) : null,
+    nightPending: Boolean(session.nightPending),
+    nominationRules: nominationRules(session),
     diedTonightIds: session.diedTonightIds,
     // ST edits the real list before announce; public projection may withhold it.
     dawnDeathIds: session.dawnDeathIds,
@@ -241,6 +295,6 @@ export function toStorytellerState(
 export function canPlayerVote(p: Player): boolean {
   if (p.leftGame) return false;
   if (p.alive) return true;
-  if (p.isTraveller) return false;
+  // Dead players — Travellers included — keep one ghost vote.
   return !p.usedGhostVote;
 }

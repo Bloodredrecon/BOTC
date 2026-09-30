@@ -155,8 +155,8 @@
       "ability": "You do not know you are the Drunk. You think you are a Townsfolk character, but you are not.",
       "firstNight": 0,
       "otherNight": 0,
-      "reminders": ["Drunk"],
-      "storytellerNotes": "No Drunk wake. Put the Townsfolk they think they are on the grimoire (characterId = that Townsfolk) and toggle the Drunk reminder on that player — do not set characterId to drunk unless you prefer that. Their info is wrong when Poisoned/Drunk rules apply. Night helper wakes the apparent Townsfolk ability; ST overrides shown info."
+      "reminders": ["Is the Drunk"],
+      "storytellerNotes": "No Drunk wake. Set their character to Drunk and pick the Townsfolk they think they are (not one in play) — or put that Townsfolk on them and toggle Is the Drunk. They wake as that Townsfolk and get false-able info; everything that learns true characters (Undertaker, Ravenkeeper, Librarian, end reveal) sees the Drunk."
     },
     {
       "id": "recluse",
@@ -234,29 +234,29 @@
       "id": "beggar",
       "name": "Beggar",
       "team": "traveller",
-      "ability": "You must use a vote token to vote. Dead players may choose to vote with you for free.",
+      "ability": "You must use a vote token to vote. If a dead player gives you theirs, you learn their alignment. You are sober and healthy.",
       "reminders": [],
-      "storytellerNotes": "Traveller. Exile instead of execute. Does not count for Scarlet Woman's 5."
+      "storytellerNotes": "Traveller. Only a dead player with an unused vote token can give one (Travel tab → Give vote token; you learn their alignment privately). Each Beggar vote spends a token. Exile instead of execute; does not count for the Scarlet Woman's 5."
     },
     {
       "id": "bureaucrat",
       "name": "Bureaucrat",
       "team": "traveller",
-      "ability": "Each night, choose a player (not another Traveller): their vote counts as 3 votes tomorrow.",
+      "ability": "Each night, choose a player (not yourself): their vote counts as 3 votes tomorrow.",
       "firstNight": 1,
       "otherNight": 1,
       "reminders": ["3 votes"],
-      "storytellerNotes": "Traveller night ability. Place 3 votes reminder."
+      "storytellerNotes": "Traveller night ability. Place 3 votes reminder. The token lapses if the Bureaucrat dies (including exile)."
     },
     {
       "id": "thief",
       "name": "Thief",
       "team": "traveller",
-      "ability": "Each night, choose a player (not another Traveller): their vote counts negatively tomorrow.",
+      "ability": "Each night, choose a player (not yourself): their vote counts negatively tomorrow.",
       "firstNight": 1,
       "otherNight": 1,
       "reminders": ["Negative vote"],
-      "storytellerNotes": "Traveller night ability."
+      "storytellerNotes": "Traveller night ability. The token lapses immediately if the Thief dies (including exile)."
     },
     {
       "id": "gunslinger",
@@ -271,9 +271,9 @@
       "id": "scapegoat",
       "name": "Scapegoat",
       "team": "traveller",
-      "ability": "If a player of your alignment is about to be executed, you may die instead.",
+      "ability": "If a player of your alignment is executed, you might be executed instead.",
       "reminders": [],
-      "storytellerNotes": "Reactive day ability when execution looms."
+      "storytellerNotes": "Your choice at execution (Votes tab → execute the Scapegoat instead). Still counts as today's execution; the Undertaker sees the Scapegoat."
     },
     {
       "id": "apprentice",
@@ -290,15 +290,15 @@
       "id": "matron",
       "name": "Matron",
       "team": "traveller",
-      "ability": "Each day, you may choose up to 3 living players: they must vote today. Force the vote if needed.",
+      "ability": "Each day, you may choose up to 3 sets of 2 players to swap seats. Players may not leave their seats to talk in private.",
       "reminders": [],
-      "storytellerNotes": "DAY ability."
+      "storytellerNotes": "DAY ability. Use Grimoire → Move seat to match the swaps (seat order drives Empath / Chef / vote order)."
     },
     {
       "id": "judge",
       "name": "Judge",
       "team": "traveller",
-      "ability": "Once per game, if another player nominated, you may force a final vote tied to that nomination.",
+      "ability": "Once per game, if another player nominated, you may choose to force the current execution to pass or fail.",
       "reminders": ["No ability"],
       "oncePerGame": true,
       "storytellerNotes": "ONCE PER GAME day ability."
@@ -307,7 +307,7 @@
       "id": "voudon",
       "name": "Voudon",
       "team": "traveller",
-      "ability": "Only you and the dead can vote. They don't need a vote token to do so. A 50% majority is still needed.",
+      "ability": "Only you & the dead can vote. They don't need a vote token to do so. A 50% majority isn't required.",
       "reminders": [],
       "storytellerNotes": "Changes voting rules while in play."
     },
@@ -315,7 +315,7 @@
       "id": "bishop",
       "name": "Bishop",
       "team": "traveller",
-      "ability": "Only the Storyteller can nominate. At least 1 opposition player must be nominated each day.",
+      "ability": "Only the Storyteller can nominate. At least 1 opposing player must be nominated each day.",
       "reminders": [],
       "storytellerNotes": "Changes nomination rules while in play."
     }
@@ -346,8 +346,8 @@
   },
   "firstNightMeta": [
     { "id": "dusk", "name": "Dusk", "wakeText": "Wait for everyone to close their eyes. Night begins." },
-    { "id": "demon-info", "name": "Demon info", "wakeText": "Wake the Demon. Show the Minions. Show three bluffs. Put the Demon to sleep. (Imp does not kill on night one.)" },
-    { "id": "minion-info", "name": "Minion info", "wakeText": "Wake each Minion. Show them the Demon. Put them to sleep." }
+    { "id": "minion-info", "name": "Minion info", "wakeText": "7+ players only. Wake all the Minions. Show them the Demon (they see each other). Put them to sleep." },
+    { "id": "demon-info", "name": "Demon info", "wakeText": "7+ players only. Wake the Demon. Show the Minions. Show three bluffs. Put the Demon to sleep. (Imp does not kill on night one.)" }
   ],
   "otherNightMeta": [
     { "id": "dusk", "name": "Dusk", "wakeText": "Wait for everyone to close their eyes. Night begins. Clear expired night reminders as needed." }

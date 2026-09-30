@@ -16,26 +16,96 @@ import {
   placeInfoPairReminders,
 } from "./reminders.js";
 import {
-  butlerCanRaiseHand,
+  alignmentOf,
+  butlerVoteWarning,
   effectiveVoteCount,
+  endPoisonWithPoisoner,
   findDef,
+  impKillFailReason,
   isOvernightPhase,
-  livingButler,
+  livingPoisoner,
   mayorWinAtDusk,
-  masterPlayer,
   nightKillBlockReason,
   pushStNotice,
   resolveDemonDeath,
-  saintEvilWin,
+  saintExecutedWin,
+  slayerShotOutcome,
+  standingWin,
+  starPassCandidates,
+  trueCharacterId,
   virginShouldTrigger,
+  type WinResult,
 } from "./rules.js";
+import {
+  applyVoteToBlock,
+  dayLimitReason,
+  exileThreshold,
+  nominationsClosedReason,
+  nominatorReason,
+  nomineeReason,
+  notOpenReason,
+  travellerNomineeReason,
+} from "./nominations.js";
 import type {
+  Alignment,
+  DayNomination,
   GameSession,
   HueScene,
   Phase,
+  Player,
   PublicState,
   StorytellerState,
 } from "./types.js";
+
+/** Official games seat at most 15 non-Traveller players; the house-rule override allows 20. */
+export const MAX_OFFICIAL_PLAYERS = 15;
+export const MAX_HOUSE_PLAYERS = 20;
+
+function bySeat(a: Player, b: Player) {
+  return a.seat - b.seat;
+}
+
+/** Renumber seats 1..n in the given order and keep the players array in seat order. */
+function applySeatOrder(s: GameSession, ordered: Player[]) {
+  ordered.forEach((p, i) => {
+    p.seat = i + 1;
+  });
+  s.players = ordered;
+}
+
+/**
+ * Rebuild tonight's steps after the grimoire changed, without losing our place:
+ * steps already passed stay as they were, the current step keeps its position (by id), and
+ * the rest comes from the fresh build. Returns a Storyteller notice if a newly-needed wake
+ * now falls before the current step (it would otherwise be silently skipped).
+ */
+function rebuildNightInPlace(s: GameSession, script: ScriptData): string | null {
+  if (!s.night) return null;
+  const old = s.night.steps;
+  const idx = Math.max(0, Math.min(s.night.stepIndex, old.length - 1));
+  const fresh = buildNightSteps(s, script, s.night.isFirstNight);
+  const past = old.slice(0, idx);
+  const pastIds = new Set(past.map((x) => x.id));
+  const current = old[idx];
+
+  let start = current ? fresh.findIndex((x) => x.id === current.id) : 0;
+  if (start < 0 && current) {
+    for (let j = idx + 1; j < old.length && start < 0; j++) {
+      start = fresh.findIndex((x) => x.id === old[j]!.id);
+    }
+  }
+  if (start < 0) start = fresh.length - 1;
+
+  const missed = fresh.slice(0, start).filter((x) => !pastIds.has(x.id) && !x.skipped && x.id !== "dusk");
+  const rest = fresh.slice(start).filter((x) => !pastIds.has(x.id));
+  // The player acting right now (e.g. the Imp who just killed themselves) keeps their step.
+  if (current && rest[0]?.id === current.id && rest[0].skipped && !current.skipped) rest[0] = current;
+  s.night.steps = [...past, ...rest];
+  s.night.stepIndex = past.length;
+  return missed.length
+    ? `Night order changed: ${missed.map((m) => m.name).join(", ")} would have woken earlier tonight — handle it now if needed.`
+    : null;
+}
 
 export type BroadcastFn = (payload: {
   public: PublicState;
@@ -88,6 +158,57 @@ function clearDawnReminders(s: GameSession) {
   }
 }
 
+function resetDayNominations(s: GameSession) {
+  s.nominationsToday = [];
+  s.block = null;
+  s.nominationsOpen = false;
+  s.nightPending = false;
+}
+
+/** Where the open nomination's vote hands back to (dusk unless opened by override during the day). */
+function nominationReturnPhase(s: GameSession): "day" | "dusk" {
+  return s.nomination?.returnPhase ?? "dusk";
+}
+
+/** Someone was executed today (a survived execution and the Virgin count too). */
+function executionHappenedToday(s: GameSession): boolean {
+  const day = Math.max(1, s.dayNumber || 1);
+  return (
+    s.executionOccurredToday ||
+    Boolean(s.executedTodayId) ||
+    s.publicLog.some((e) => e.type === "execution" && e.dayNumber === day)
+  );
+}
+
+function lastIndexWhere<T>(list: T[], pred: (x: T) => boolean): number {
+  for (let i = list.length - 1; i >= 0; i -= 1) if (pred(list[i])) return i;
+  return -1;
+}
+
+/** The open nomination's record in nominationsToday (outcome still null). */
+function openNominationRecord(s: GameSession): DayNomination | undefined {
+  const open = s.nomination;
+  if (!open) return undefined;
+  const idx = lastIndexWhere(
+    s.nominationsToday,
+    (n) => n.outcome === null && n.nominatorId === open.nominatorId && n.nomineeId === open.nomineeId,
+  );
+  return idx >= 0 ? s.nominationsToday[idx] : undefined;
+}
+
+/** Forget the still-open nomination as if it was never made (record + its chronicle line). */
+function dropOpenNomination(s: GameSession) {
+  const open = s.nomination;
+  if (!open) return;
+  const rec = openNominationRecord(s);
+  if (rec) s.nominationsToday.splice(s.nominationsToday.indexOf(rec), 1);
+  const logIdx = lastIndexWhere(
+    s.publicLog,
+    (e) => e.type === "nomination" && e.nominatorId === open.nominatorId && e.nomineeId === open.nomineeId,
+  );
+  if (logIdx >= 0) s.publicLog.splice(logIdx, 1);
+}
+
 /** Narration cue for the start of a numbered day (random among lettered takes). */
 function daySoundCue(dayNumber: number): string {
   const base = dayNumber <= 1 ? "day_1" : dayNumber === 2 ? "day_2" : dayNumber === 3 ? "day_3" : "day_n";
@@ -124,6 +245,15 @@ function dawnDeathCueHoldMs(cueId: string | null): number {
 }
 
 /**
+ * Waits before the win cue so it does not cut the line already playing (playCue stops the sting).
+ * Measured with ffprobe (2026-09-26): execution_* / death_* ≤9.0s, public_shot 7.97s,
+ * public_shot_true / public_shot_false ≤7.35s.
+ */
+const EXECUTION_CUE_HOLD_MS = 9500;
+const SHOT_CUE_HOLD_MS = 8400;
+const SHOT_RESULT_HOLD_MS = 7800;
+
+/**
  * Randomly pick one interchangeable cue (same moment, different take).
  * Also expands lettered siblings on disk (`nomination` + `nomination_b` + `nomination_c`).
  */
@@ -141,6 +271,16 @@ export class GameEngine {
   private seq = 0;
   /** Schedules finishDawn after announce so Day narration does not cut the death line. */
   private dawnThenDayTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Game over detected; announced once the current cue finishes (or at the next phase action). */
+  private pendingWin: {
+    result: WinResult;
+    sound?: string;
+    timer: ReturnType<typeof setTimeout>;
+  } | null = null;
+  /** Plays the Slayer shot result after the shot cue. */
+  private shotTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Starts the night once the end-of-day execution cue has finished. */
+  private nightTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     session: GameSession,
@@ -158,8 +298,75 @@ export class GameEngine {
     }
   }
 
+  private clearShotTimer() {
+    if (this.shotTimer) {
+      clearTimeout(this.shotTimer);
+      this.shotTimer = null;
+    }
+  }
+
+  private clearNightTimer() {
+    if (this.nightTimer) {
+      clearTimeout(this.nightTimer);
+      this.nightTimer = null;
+    }
+  }
+
+  private cancelPendingWin() {
+    if (this.pendingWin) {
+      clearTimeout(this.pendingWin.timer);
+      this.pendingWin = null;
+    }
+  }
+
+  /** ST learns immediately; the TV announces after `holdMs` so the current line finishes. */
+  private scheduleWin(result: WinResult, holdMs: number, sound?: string) {
+    if (this.session.phase === "ended" || this.pendingWin) return;
+    this.clearDawnThenDayTimer();
+    const team = result.winner === "good" ? "Good" : "Evil";
+    this.mutate((s) => pushStNotice(s, `GAME OVER — ${team} wins. ${result.stReason}`));
+    const timer = setTimeout(() => this.flushPendingWin(), holdMs);
+    this.pendingWin = { result, sound, timer };
+  }
+
+  /** Announce a scheduled game over now. Returns true if the game ended. */
+  flushPendingWin(): boolean {
+    const pending = this.pendingWin;
+    if (!pending) return false;
+    this.cancelPendingWin();
+    this.endGame(pending.result.winner, { reason: pending.result.reason, sound: pending.sound });
+    return true;
+  }
+
+  /** Demon dead / two left alive — schedule the win if either holds. */
+  private checkStandingWin(holdMs: number): boolean {
+    const win = standingWin(this.session, this.script);
+    if (!win) return false;
+    this.scheduleWin(win, holdMs);
+    return true;
+  }
+
+  /** Safety net at phase changes (e.g. grimoire edits): end immediately if a win already holds. */
+  private endIfStandingWin(): boolean {
+    if (this.flushPendingWin()) return true;
+    const win = standingWin(this.session, this.script);
+    if (!win) return false;
+    const team = win.winner === "good" ? "Good" : "Evil";
+    this.mutate((s) => pushStNotice(s, `GAME OVER — ${team} wins. ${win.stReason}`));
+    this.endGame(win.winner, { reason: win.reason });
+    return true;
+  }
+
   mutate(fn: (s: GameSession) => void, opts?: { sound?: string | null; hue?: HueScene }) {
+    const hadLivingPoisoner = Boolean(livingPoisoner(this.session));
     fn(this.session);
+    // Poison ends the moment the Poisoner dies or stops being the Poisoner (star-pass).
+    const cured = endPoisonWithPoisoner(this.session, hadLivingPoisoner);
+    if (cured.length) {
+      pushStNotice(this.session, `The Poisoner is gone — poison ends now (${cured.join(", ")} healthy again).`);
+      const moved = rebuildNightInPlace(this.session, this.script);
+      if (moved) pushStNotice(this.session, moved);
+    }
     if (opts?.sound !== undefined) {
       this.lastSound = opts.sound === null ? null : resolveSoundCueId(opts.sound);
     }
@@ -210,6 +417,9 @@ export class GameEngine {
 
   resetGame() {
     this.clearDawnThenDayTimer();
+    this.clearShotTimer();
+    this.clearNightTimer();
+    this.cancelPendingWin();
     const townsfolk = this.session.players.filter((p) => !p.isTraveller).length || 8;
     const tvConnected = this.session.tvConnected;
     const storytellerConnected = this.session.storytellerConnected;
@@ -225,25 +435,59 @@ export class GameEngine {
     this.lastHue = null;
   }
 
-  setPlayerCount(count: number) {
-    const n = Math.max(5, Math.min(20, Math.floor(count)));
+  /**
+   * Resident (non-Traveller) seat count. Official games cap at 15; `allowOver15` is a house rule
+   * up to 20. Seats keep their order — residents are added / removed at the end of the circle.
+   */
+  setPlayerCount(count: number, opts: { allowOver15?: boolean } = {}) {
+    const allow = opts.allowOver15 ?? this.session.allowOver15;
+    const cap = allow ? MAX_HOUSE_PLAYERS : MAX_OFFICIAL_PLAYERS;
+    const requested = Math.floor(Number(count) || 0);
+    const n = Math.max(5, Math.min(cap, requested));
     this.mutate((s) => {
-      const travellers = s.players.filter((p) => p.isTraveller && !p.leftGame);
-      const existing = s.players.filter((p) => !p.isTraveller);
-      const townsfolk = Array.from({ length: n }, (_, i) => {
-        const prev = existing[i];
-        if (prev) return normalizePlayer({ ...prev, seat: i + 1, isTraveller: false });
-        return normalizePlayer({
-          id: `p${i + 1}`,
-          seat: i + 1,
-          name: `Player ${i + 1}`,
-        });
-      });
-      const travellerSeats = travellers.map((t, i) =>
-        normalizePlayer({ ...t, seat: n + i + 1 }),
-      );
-      s.players = [...townsfolk, ...travellerSeats];
+      s.allowOver15 = allow;
+      if (requested > cap) {
+        pushStNotice(
+          s,
+          allow
+            ? `At most ${MAX_HOUSE_PLAYERS} players (plus Travellers) — set to ${n}.`
+            : `Official games have at most ${MAX_OFFICIAL_PLAYERS} players (plus Travellers) — set to ${n}. Turn on "Allow more than 15" in Setup for up to ${MAX_HOUSE_PLAYERS}.`,
+        );
+      }
+      const ordered = s.players.filter((p) => !(p.isTraveller && p.leftGame)).sort(bySeat);
+      const residents = ordered.filter((p) => !p.isTraveller);
+      const keep = new Set(residents.slice(0, n).map((p) => p.id));
+      const kept = ordered
+        .filter((p) => p.isTraveller || keep.has(p.id))
+        .map((p) => normalizePlayer({ ...p }));
+      const used = new Set(kept.map((p) => p.id));
+      let next = 1;
+      for (let i = residents.filter((p) => keep.has(p.id)).length; i < n; i++) {
+        while (used.has(`p${next}`)) next++;
+        const id = `p${next}`;
+        used.add(id);
+        kept.push(normalizePlayer({ id, seat: 0, name: `Player ${kept.length + 1}` }));
+      }
+      applySeatOrder(s, kept);
     });
+  }
+
+  /** Move a player to another seat (Traveller arrivals, Matron swaps, fixing the grimoire). */
+  moveSeat(playerId: string, toSeat: number): { ok: boolean; message?: string } {
+    const ordered = this.session.players.filter((p) => !p.leftGame).sort(bySeat);
+    const from = ordered.findIndex((p) => p.id === playerId);
+    if (from < 0) return { ok: false, message: "Player not found." };
+    const to = Math.max(0, Math.min(ordered.length - 1, Math.floor(Number(toSeat) || 1) - 1));
+    this.mutate((s) => {
+      const list = s.players.filter((p) => !p.leftGame).sort(bySeat);
+      const [p] = list.splice(from, 1);
+      list.splice(to, 0, p!);
+      const left = s.players.filter((x) => x.leftGame);
+      applySeatOrder(s, [...list, ...left]);
+      pushStNotice(s, `${p!.name} moved to seat ${to + 1}. Neighbours (Empath / Chef) and vote order follow the new seating.`);
+      rebuildNightInPlace(s, this.script);
+    });
+    return { ok: true };
   }
 
   updatePlayer(
@@ -257,25 +501,91 @@ export class GameEngine {
       alive: boolean;
       usedGhostVote: boolean;
       abilityUsed: boolean;
+      thinksCharacterId: string | null;
+      alignment: Alignment | null;
     }>,
   ) {
     let rebuildNight = false;
     this.mutate((s) => {
       const p = s.players.find((x) => x.id === playerId);
       if (!p) return;
+      const isTownsfolk = (id: string | null | undefined) =>
+        this.script.characters.some((c) => c.id === id && c.team === "townsfolk");
+      const hadDrunkToken = p.reminders.some((r) => r === "Is the Drunk" || r === "Drunk");
+      const before = { characterId: p.characterId, thinks: p.thinksCharacterId, alive: p.alive };
+
       if (patch.name !== undefined) p.name = patch.name.slice(0, 32);
       if (patch.characterId !== undefined) {
-        if (p.characterId !== patch.characterId) rebuildNight = true;
         p.characterId = patch.characterId;
         const trav = this.script.travellers.some((t) => t.id === patch.characterId);
-        if (trav) p.isTraveller = true;
+        if (trav) {
+          p.isTraveller = true;
+          p.alignment = p.alignment ?? "good";
+        }
+        if (patch.characterId !== "drunk" && before.characterId === "drunk") {
+          p.thinksCharacterId = null;
+          p.reminders = p.reminders.filter((r) => r !== "Is the Drunk" && r !== "Drunk");
+        }
+        if (patch.characterId === "drunk" && !p.thinksCharacterId) {
+          pushStNotice(s, `${p.name} is the Drunk — pick the Townsfolk they think they are (not one in play).`);
+        }
       }
-      if (patch.reminders !== undefined) p.reminders = patch.reminders;
+      if (patch.reminders !== undefined) {
+        let next = [...patch.reminders];
+        if (p.characterId === "butler" && next.includes("Master")) {
+          next = next.filter((r) => r !== "Master");
+          pushStNotice(s, `The Butler (${p.name}) cannot choose themselves as Master.`);
+        }
+        p.reminders = next;
+        const hasDrunkToken = next.some((r) => r === "Is the Drunk" || r === "Drunk");
+        if (hasDrunkToken && !hadDrunkToken && isTownsfolk(p.characterId)) {
+          // Drunk token on the Townsfolk they think they are → they are really the Drunk.
+          p.thinksCharacterId = p.characterId;
+          p.characterId = "drunk";
+          p.reminders = [...next.filter((r) => r !== "Drunk" && r !== "Is the Drunk"), "Is the Drunk"];
+        } else if (!hasDrunkToken && hadDrunkToken && p.characterId === "drunk" && p.thinksCharacterId) {
+          p.characterId = p.thinksCharacterId;
+          p.thinksCharacterId = null;
+        }
+      }
+      if (patch.thinksCharacterId !== undefined) {
+        const id = patch.thinksCharacterId;
+        if (id && !isTownsfolk(id)) {
+          pushStNotice(s, "The Drunk must think they are a Townsfolk.");
+        } else {
+          p.thinksCharacterId = id;
+        }
+      }
+      if (p.characterId === "drunk" && p.thinksCharacterId) {
+        const clash = s.players.find(
+          (x) => x.id !== p.id && !x.leftGame && trueCharacterId(this.script, x) === p.thinksCharacterId,
+        );
+        if (clash && (p.thinksCharacterId !== before.thinks || before.characterId !== "drunk")) {
+          const name = findDef(this.script, p.thinksCharacterId)?.name ?? p.thinksCharacterId;
+          pushStNotice(s, `${p.name} (Drunk) thinks they are the ${name}, but ${clash.name} really is — pick a Townsfolk not in play.`);
+        }
+      }
+      if (p.characterId !== before.characterId || p.thinksCharacterId !== before.thinks) rebuildNight = true;
+      if (patch.alignment !== undefined && p.isTraveller) {
+        p.alignment = patch.alignment === "evil" ? "evil" : "good";
+        if (p.alignment === "good") p.learnedDemon = false;
+        rebuildNight = true;
+      }
       if (patch.notes !== undefined) p.notes = patch.notes;
-      if (patch.bluffs !== undefined) p.bluffs = patch.bluffs;
+      if (patch.bluffs !== undefined) p.bluffs = this.validBluffs(s, p, patch.bluffs);
       if (patch.alive !== undefined) {
         p.alive = patch.alive;
         if (patch.alive) p.usedGhostVote = false;
+        // Marked dead overnight → a death to announce at dawn (and their wake is skipped).
+        if (isOvernightPhase(s.phase) && before.alive !== p.alive) {
+          if (!p.alive && !s.diedTonightIds.includes(p.id)) s.diedTonightIds.push(p.id);
+          if (p.alive) {
+            s.diedTonightIds = s.diedTonightIds.filter((id) => id !== p.id);
+            s.dawnDeathIds = s.dawnDeathIds.filter((id) => id !== p.id);
+          }
+          if (s.phase === "dawn" && !p.alive && !s.dawnDeathIds.includes(p.id)) s.dawnDeathIds.push(p.id);
+          rebuildNight = true;
+        }
       }
       if (patch.usedGhostVote !== undefined) p.usedGhostVote = patch.usedGhostVote;
       if (patch.abilityUsed !== undefined) {
@@ -287,11 +597,43 @@ export class GameEngine {
           p.reminders = p.reminders.filter((r) => r !== "No ability");
         }
       }
+      // Grimoire edits never end the game on their own — warn so the ST can confirm.
+      if (patch.alive !== undefined || patch.characterId !== undefined) {
+        const win = standingWin(s, this.script);
+        if (win) {
+          pushStNotice(
+            s,
+            `Win condition met: ${win.winner === "good" ? "Good" : "Evil"} wins — ${win.stReason} Declared automatically at the next dusk/dawn, or use End now.`,
+          );
+        }
+      }
     });
     // Night order is built from roles in play — rebuild when a role is set mid-night
     if (rebuildNight && (this.session.phase === "night" || this.session.phase === "firstNight")) {
       this.rebuildNight();
     }
+  }
+
+  /** Demon bluffs: up to 3 distinct good characters that are not in play. */
+  private validBluffs(s: GameSession, demon: Player, ids: string[]): string[] {
+    const inPlay = new Set(
+      s.players.filter((x) => !x.leftGame).map((x) => trueCharacterId(this.script, x)).filter(Boolean) as string[],
+    );
+    const dropped: string[] = [];
+    const out: string[] = [];
+    for (const raw of ids) {
+      const id = String(raw ?? "");
+      if (!id) continue;
+      const def = this.script.characters.find((c) => c.id === id);
+      const name = def?.name ?? id;
+      if (!def || (def.team !== "townsfolk" && def.team !== "outsider")) dropped.push(`${name} (not a good character)`);
+      else if (inPlay.has(id)) dropped.push(`${name} (in play)`);
+      else if (out.includes(id)) dropped.push(`${name} (duplicate)`);
+      else if (out.length >= 3) dropped.push(`${name} (only 3 bluffs)`);
+      else out.push(id);
+    }
+    if (dropped.length) pushStNotice(s, `Bluffs for ${demon.name}: dropped ${dropped.join(", ")}.`);
+    return out;
   }
 
   setFabled(ids: string[]) {
@@ -300,30 +642,49 @@ export class GameEngine {
     });
   }
 
-  addTraveller(name: string, characterId: string) {
+  /**
+   * A Traveller sits down: `seat` = where they sit in the circle (default: last), `alignment` is
+   * the Storyteller's secret choice. Their Traveller character is public.
+   */
+  addTraveller(
+    name: string,
+    characterId: string,
+    opts: { seat?: number | null; alignment?: Alignment | null } = {},
+  ) {
     const def = this.script.travellers.find((t) => t.id === characterId);
     if (!def) return;
     this.mutate(
       (s) => {
-        const seat = s.players.length + 1;
-        const id = `t${Date.now()}`;
+        let id = `t${Date.now()}`;
+        while (s.players.some((p) => p.id === id)) id = `${id}x`;
         const playerName = name.slice(0, 32) || def.name;
-        s.players.push(
-          normalizePlayer({
-            id,
-            seat,
-            name: playerName,
-            characterId,
-            isTraveller: true,
-          }),
-        );
+        const alignment: Alignment = opts.alignment === "evil" ? "evil" : "good";
+        const traveller = normalizePlayer({
+          id,
+          seat: 0,
+          name: playerName,
+          characterId,
+          isTraveller: true,
+          alignment,
+        });
+        const seated = s.players.filter((p) => !p.leftGame).sort(bySeat);
+        const at =
+          opts.seat != null && Number.isFinite(Number(opts.seat))
+            ? Math.max(0, Math.min(seated.length, Math.floor(Number(opts.seat)) - 1))
+            : seated.length;
+        seated.splice(at, 0, traveller);
+        applySeatOrder(s, [...seated, ...s.players.filter((p) => p.leftGame)]);
         s.publicLog.push({
           type: "traveller_join",
           playerId: id,
           playerName,
           characterId,
+          characterName: def.name,
           at: Date.now(),
         });
+        if (alignment === "evil") {
+          pushStNotice(s, `${playerName} is an evil ${def.name} — they learn who the Demon is at the next night (no bluffs, no other evil players).`);
+        }
       },
       { sound: pickSound("guest_arrive", "atm_guest") },
     );
@@ -344,22 +705,166 @@ export class GameEngine {
           at: Date.now(),
         });
         if (s.nomination?.nomineeId === playerId || s.nomination?.nominatorId === playerId) {
+          const back = nominationReturnPhase(s);
+          dropOpenNomination(s);
           s.nomination = null;
-          s.phase = "day";
+          s.phase = back;
         }
+        if (s.block?.nomineeId === playerId) s.block = null;
+        if (s.exile?.travellerId === playerId) s.exile = null;
+        if (s.exile) s.exile.supporters = s.exile.supporters.filter((id) => id !== playerId);
       },
       { sound: pickSound("guest_depart") },
     );
   }
 
+  /** Any player (alive or dead) calls for a Traveller's exile. Not a nomination: no abilities apply. */
+  callExile(travellerId: string, calledById: string | null): { ok: boolean; message?: string } {
+    const s0 = this.session;
+    const t = s0.players.find((p) => p.id === travellerId && !p.leftGame);
+    const today = Math.max(1, s0.dayNumber || 1);
+    const calledToday = s0.publicLog.some(
+      (x) => x.type === "exile" && x.playerId === travellerId && x.dayNumber === today,
+    );
+    const refused = !t
+      ? "Traveller not found."
+      : !t.isTraveller
+        ? `${t.name} is not a Traveller — residents are nominated, not exiled.`
+        : !t.alive
+          ? `${t.name} is already dead — exile is "the group decision to kill a Traveller"; no official rule covers exiling a dead one.`
+          : !["day", "dusk"].includes(s0.phase)
+            ? "Exiles happen during the day (not during an open nomination, vote or execution)."
+            : calledToday
+              ? `${t.name} was already called for exile today — "each Traveller can only be called to be exiled once per day".`
+              : null;
+    if (refused) {
+      this.mutate((s) => pushStNotice(s, `Exile not called — ${refused}`));
+      return { ok: false, message: refused };
+    }
+    this.mutate((s) => {
+      const caller = calledById ? s.players.find((p) => p.id === calledById && !p.leftGame) : undefined;
+      s.exile = { travellerId, calledById: caller?.id ?? null, supporters: [] };
+    });
+    return { ok: true };
+  }
+
+  /** Raise / lower a hand for the exile. Everyone may support — dead players too, no vote token spent. */
+  toggleExileSupport(playerId: string) {
+    this.mutate((s) => {
+      if (!s.exile) return;
+      const p = s.players.find((x) => x.id === playerId && !x.leftGame);
+      if (!p) return;
+      const i = s.exile.supporters.indexOf(playerId);
+      if (i >= 0) s.exile.supporters.splice(i, 1);
+      else s.exile.supporters.push(playerId);
+    });
+  }
+
+  /**
+   * Count the exile: at least half of all players in the game (rounded up) must support.
+   * `force` = the Storyteller's verdict. An exiled Traveller dies (it is not an execution).
+   */
+  resolveExile(force?: "exile" | "spare"): { ok: boolean; exiled: boolean } {
+    const ex = this.session.exile;
+    if (!ex) return { ok: false, exiled: false };
+    const threshold = exileThreshold(this.session);
+    const supporters = ex.supporters.length;
+    const exiled = force ? force === "exile" : supporters >= threshold;
+    this.mutate((s) => {
+      const t = s.players.find((p) => p.id === ex.travellerId);
+      if (t && exiled) t.alive = false;
+      s.publicLog.push({
+        type: "exile",
+        playerId: ex.travellerId,
+        playerName: t?.name,
+        supporters,
+        threshold,
+        exiled,
+        dayNumber: Math.max(1, s.dayNumber || 1),
+        at: Date.now(),
+      });
+      s.exile = null;
+      pushStNotice(
+        s,
+        exiled
+          ? `${t?.name ?? "The Traveller"} is exiled (${supporters}/${threshold}) and dies. Not an execution — the day's execution is still available.`
+          : `${t?.name ?? "The Traveller"} is not exiled (${supporters}/${threshold}).`,
+      );
+    });
+    if (exiled) this.checkStandingWin(0);
+    return { ok: true, exiled };
+  }
+
+  cancelExile() {
+    this.mutate((s) => {
+      s.exile = null;
+    });
+  }
+
+  /** Beggar: a dead player with an unused vote token hands it over; the Storyteller tells the Beggar their alignment. */
+  giveVoteToken(beggarId: string, donorId: string): { ok: boolean; message?: string } {
+    const s0 = this.session;
+    const beggar = s0.players.find((p) => p.id === beggarId && !p.leftGame);
+    const donor = s0.players.find((p) => p.id === donorId && !p.leftGame);
+    const refused = !beggar || beggar.characterId !== "beggar"
+      ? "Pick the Beggar."
+      : !donor || donor.id === beggar.id
+        ? "Pick the player giving their token."
+        : donor.alive
+          ? `${donor.name} is alive — only dead players give vote tokens.`
+          : donor.usedGhostVote
+            ? `${donor.name} has already used their vote token.`
+            : null;
+    if (refused) {
+      this.mutate((s) => pushStNotice(s, `Vote token not given — ${refused}`));
+      return { ok: false, message: refused };
+    }
+    const alignment = alignmentOf(this.script, donor!) ?? "unknown";
+    this.mutate((s) => {
+      const b = s.players.find((p) => p.id === beggarId)!;
+      const d = s.players.find((p) => p.id === donorId)!;
+      d.usedGhostVote = true;
+      b.voteTokens = (b.voteTokens ?? 0) + 1;
+      pushStNotice(s, `${d.name} gave their vote token to the Beggar (${b.name}). Tell the Beggar privately: ${d.name} is ${alignment}.`);
+    });
+    return { ok: true, message: `${donor!.name} is ${alignment}.` };
+  }
+
+  setTvSheet(on: boolean) {
+    this.mutate((s) => {
+      s.tvSheet = Boolean(on);
+    });
+  }
+
   startFirstNight() {
+    this.cancelPendingWin();
+    this.clearShotTimer();
+    this.clearNightTimer();
     this.mutate(
       (s) => {
         s.phase = "firstNight";
         s.dayNumber = 0;
+        s.winner = null;
+        s.winReason = null;
         s.diedTonightIds = [];
         s.dawnDeathsAnnounced = false;
         s.executedTodayId = null;
+        s.executionOccurredToday = false;
+        s.newDemons = [];
+        s.exile = null;
+        // The Baron's +2 Outsiders is fixed at setup; it does not revert if the Baron dies or star-passes.
+        s.baronInSetup = s.players.some((p) => p.characterId === "baron" && !p.leftGame);
+        for (const p of s.players) {
+          if (p.leftGame || p.characterId !== "drunk") continue;
+          if (!p.thinksCharacterId) {
+            pushStNotice(s, `${p.name} is the Drunk but has no "thinks they are" Townsfolk — set it in the Grimoire so they wake.`);
+          } else if (
+            s.players.some((x) => x.id !== p.id && !x.leftGame && trueCharacterId(this.script, x) === p.thinksCharacterId)
+          ) {
+            pushStNotice(s, `${p.name} (Drunk) thinks they are a Townsfolk that is in play — pick one not in play.`);
+          }
+        }
+        resetDayNominations(s);
         const poisonCleared = clearNightScopedReminders(s);
         if (poisonCleared.length) {
           pushStNotice(
@@ -380,13 +885,15 @@ export class GameEngine {
   }
 
   startNight() {
-    // Mayor win at dusk: 3 living non-travellers, no execution today
+    if (this.endIfStandingWin()) return;
+    this.clearNightTimer();
+    const fromDusk = this.session.phase === "dusk";
+    const endingDay = ["day", "dusk", "nomination", "vote", "execution"].includes(this.session.phase);
+    // Mayor win at the end of the day: exactly 3 alive (travellers count), no execution today
     const mayor = mayorWinAtDusk(this.session);
-    if (mayor?.win) {
-      this.mutate((s) => {
-        pushStNotice(s, mayor.reason);
-      });
-      this.endGame("good");
+    if (mayor) {
+      this.mutate((s) => pushStNotice(s, `GAME OVER — Good wins. ${mayor.stReason}`));
+      this.endGame("good", { reason: mayor.reason });
       return;
     }
 
@@ -395,6 +902,8 @@ export class GameEngine {
         s.phase = "night";
         s.diedTonightIds = [];
         s.dawnDeathsAnnounced = false;
+        s.exile = null;
+        s.newDemons = (s.newDemons ?? []).filter((d) => !d.duringNight);
         // Poison/Safe/Master/votes: survive the day after placement; clear here (next night), not at dawn
         const poisonCleared = clearNightScopedReminders(s);
         if (poisonCleared.length) {
@@ -410,10 +919,24 @@ export class GameEngine {
           steps: buildNightSteps(s, this.script, false),
           isFirstNight: false,
         };
+        if (endingDay && !executionHappenedToday(s)) {
+          const day = Math.max(1, s.dayNumber || 1);
+          if (s.block?.nomineeId) {
+            const name = s.players.find((p) => p.id === s.block?.nomineeId)?.name ?? "The block holder";
+            pushStNotice(s, `Night started without an execution — ${name} was on the block and was not executed.`);
+          }
+          if (!s.publicLog.some((e) => e.type === "no_execution" && e.dayNumber === day)) {
+            s.publicLog.push({ type: "no_execution", dayNumber: day, at: Date.now() });
+          }
+        }
         s.nomination = null;
         s.executionPendingId = null;
+        s.nominationsOpen = false;
+        s.nightPending = false;
+        s.timer = null;
       },
-      { hue: "night", sound: pickSound("night", "dusk") },
+      // Dusk already played its own line; a direct day → night jump keeps dusk takes in the pool.
+      { hue: "night", sound: fromDusk ? pickSound("night") : pickSound("night", "dusk") },
     );
   }
 
@@ -421,9 +944,26 @@ export class GameEngine {
    * Atomically place a night-choice reminder on the grimoire (Poisoned / Safe / Master / votes).
    * Exclusive marks clear the same token from every other player in one mutate/broadcast.
    */
-  applyNightReminder(playerId: string, reminder: string) {
+  applyNightReminder(playerId: string, reminder: string): { ok: boolean; message?: string } {
     const label = String(reminder ?? "").trim();
-    if (!label) return;
+    if (!label) return { ok: false };
+    const s0 = this.session;
+    const target = s0.players.find((x) => x.id === playerId);
+    const step = s0.night?.steps[s0.night.stepIndex];
+    // "(not yourself)": Monk → Safe, Butler → Master, Bureaucrat → 3 votes, Thief → Negative vote.
+    const selfRule: Record<string, string> = { Safe: "monk", Master: "butler", "3 votes": "bureaucrat", "Negative vote": "thief" };
+    const chooser = selfRule[label];
+    const selfPick =
+      target &&
+      chooser &&
+      ((step?.characterId === chooser && step.playerIds.includes(target.id)) ||
+        (label === "Master" && target.characterId === "butler"));
+    if (selfPick) {
+      const name = findDef(this.script, chooser)?.name ?? chooser;
+      const message = `The ${name} cannot choose themselves — pick another player.`;
+      this.mutate((s) => pushStNotice(s, message));
+      return { ok: false, message };
+    }
     this.mutate((s) => {
       const p = s.players.find((x) => x.id === playerId);
       if (!p || p.leftGame) return;
@@ -433,6 +973,7 @@ export class GameEngine {
         addReminder(p, label);
       }
     });
+    return { ok: true };
   }
 
   clearStNotices() {
@@ -449,16 +990,8 @@ export class GameEngine {
 
   rebuildNight() {
     this.mutate((s) => {
-      if (!s.night) return;
-      const idx = s.night.stepIndex;
-      const isFirst = s.night.isFirstNight;
-      s.night = {
-        stepIndex: Math.min(idx, 0),
-        steps: buildNightSteps(s, this.script, isFirst),
-        isFirstNight: isFirst,
-      };
-      // keep position if possible
-      s.night.stepIndex = Math.min(idx, s.night.steps.length - 1);
+      const moved = rebuildNightInPlace(s, this.script);
+      if (moved) pushStNotice(s, moved);
     });
   }
 
@@ -485,7 +1018,13 @@ export class GameEngine {
     this.mutate((s) => {
       if (!s.night) return;
       const step = s.night.steps[s.night.stepIndex];
-      if (step?.characterId && !step.skipped) {
+      if (step?.id === "evil-traveller-info") {
+        for (const id of step.playerIds) {
+          const p = s.players.find((x) => x.id === id);
+          if (p) p.learnedDemon = true;
+        }
+      }
+      if (step?.characterId && !step.skipped && step.id.startsWith("char-")) {
         const def =
           this.script.characters.find((c) => c.id === step.characterId) ||
           this.script.travellers.find((c) => c.id === step.characterId);
@@ -506,6 +1045,7 @@ export class GameEngine {
   }
 
   goDawn() {
+    if (this.flushPendingWin()) return;
     this.clearDawnThenDayTimer();
     this.mutate(
       (s) => {
@@ -513,6 +1053,7 @@ export class GameEngine {
         s.night = null;
         s.dawnDeathIds = [...s.diedTonightIds];
         s.dawnDeathsAnnounced = false;
+        s.newDemons = [];
         clearDawnReminders(s);
       },
       { hue: "dawn", sound: pickSound("dawn", "atm_dawn_waiting", "atm_dawn_dread") },
@@ -598,8 +1139,11 @@ export class GameEngine {
 
   setDawnDeaths(playerIds: string[]) {
     this.mutate((s) => {
+      // Living players (to kill at announce) or those already marked dead tonight.
       s.dawnDeathIds = playerIds.filter((id) =>
-        s.players.some((p) => p.id === id && p.alive && !p.leftGame),
+        s.players.some(
+          (p) => p.id === id && !p.leftGame && (p.alive || s.diedTonightIds.includes(id)),
+        ),
       );
     });
   }
@@ -625,7 +1169,7 @@ export class GameEngine {
           if (p.alive) {
             const block = nightKillBlockReason(s, p);
             if (block) {
-              pushStNotice(s, `Dawn: skipped ${p.name} — ${block}`);
+              pushStNotice(s, `Dawn: ${block}`);
               continue;
             }
             p.alive = false;
@@ -654,7 +1198,9 @@ export class GameEngine {
         sound,
       },
     );
-    return resolveSoundCueId(sound);
+    const cue = resolveSoundCueId(sound);
+    this.checkStandingWin(dawnDeathCueHoldMs(cue));
+    return cue;
   }
 
   /**
@@ -664,6 +1210,7 @@ export class GameEngine {
   announceDawnThenDay() {
     this.clearDawnThenDayTimer();
     const cue = this.announceDawnDeaths();
+    if (this.pendingWin || this.session.phase === "ended") return;
     const holdMs = dawnDeathCueHoldMs(cue);
     this.dawnThenDayTimer = setTimeout(() => {
       this.dawnThenDayTimer = null;
@@ -673,6 +1220,7 @@ export class GameEngine {
 
   finishDawn() {
     this.clearDawnThenDayTimer();
+    if (this.endIfStandingWin()) return;
     const nextDay = this.session.dayNumber === 0 ? 1 : this.session.dayNumber + 1;
     this.mutate(
       (s) => {
@@ -683,9 +1231,12 @@ export class GameEngine {
         s.dawnDeathsAnnounced = false;
         s.diedTonightIds = [];
         s.executedTodayId = null;
+        s.executionOccurredToday = false;
+        s.exile = null;
         s.night = null;
         s.nomination = null;
         s.executionPendingId = null;
+        resetDayNominations(s);
       },
       { hue: "day", sound: daySoundCue(nextDay) },
     );
@@ -693,6 +1244,7 @@ export class GameEngine {
 
   /** Enter day phase. From dawn this advances the day number (same as finishDawn). */
   goDay() {
+    if (this.flushPendingWin()) return;
     if (this.session.phase === "dawn") {
       this.finishDawn();
       return;
@@ -704,11 +1256,16 @@ export class GameEngine {
     this.mutate(
       (s) => {
         // Only bootstrap day 1 from lobby / pre-dawn first night — never skip dawn after a night
-        if (s.phase === "lobby" && s.dayNumber === 0) s.dayNumber = 1;
+        if (s.phase === "lobby" && s.dayNumber === 0) {
+          s.dayNumber = 1;
+          resetDayNominations(s);
+        }
         s.phase = "day";
         s.night = null;
         s.nomination = null;
         s.executionPendingId = null;
+        s.nominationsOpen = false;
+        s.nightPending = false;
       },
       { hue: "day", sound: daySoundCue(nextDay) },
     );
@@ -716,7 +1273,7 @@ export class GameEngine {
 
   /**
    * One-tap story flow:
-   * lobby → first night → dawn → day 1 → night → dawn → day 2 → …
+   * lobby → first night → dawn → day 1 → dusk → open nominations → close nominations → night → …
    */
   advancePhase() {
     const p = this.session.phase;
@@ -732,16 +1289,227 @@ export class GameEngine {
       this.finishDawn();
       return;
     }
-    if (p === "day" || p === "nomination" || p === "vote" || p === "execution") {
-      this.startNight();
+    if (p === "day") {
+      this.goDusk();
+      return;
+    }
+    if (p === "dusk" && !this.session.nominationsOpen && !this.session.nightPending) {
+      this.openNominations();
+      return;
+    }
+    if (p === "dusk" || p === "nomination" || p === "vote" || p === "execution") {
+      this.endDay();
       return;
     }
   }
 
-  startNomination(nominatorId: string, nomineeId: string) {
-    const virgin = virginShouldTrigger(this.session, this.script, nominatorId, nomineeId);
-    if (virgin.reason) {
-      this.mutate((s) => pushStNotice(s, virgin.reason!));
+  /** Close the open discussion: dusk falls (cue + chronicle line). Nominations open separately. */
+  goDusk(): { ok: boolean; message?: string } {
+    if (this.flushPendingWin()) return { ok: false, message: "The game is over." };
+    const s0 = this.session;
+    if (s0.phase === "dusk") return { ok: true };
+    const blocked =
+      s0.phase === "nomination" || s0.phase === "vote"
+        ? "Resolve or cancel the open nomination before going to dusk."
+        : s0.phase === "execution"
+          ? "Confirm the pending execution (death or lives) first."
+          : s0.phase !== "day"
+            ? "Dusk follows the day — it is not day right now."
+            : null;
+    if (blocked) {
+      this.mutate((s) => pushStNotice(s, blocked));
+      return { ok: false, message: blocked };
+    }
+    if (this.endIfStandingWin()) return { ok: false, message: "The game is over." };
+    this.mutate(
+      (s) => {
+        s.phase = "dusk";
+        s.nomination = null;
+        s.executionPendingId = null;
+        s.timer = null;
+        const day = Math.max(1, s.dayNumber || 1);
+        if (!s.publicLog.some((e) => e.type === "dusk" && e.dayNumber === day)) {
+          s.publicLog.push({ type: "dusk", dayNumber: day, at: Date.now() });
+        }
+      },
+      { hue: "dawn", sound: pickSound("dusk") },
+    );
+    return { ok: true };
+  }
+
+  /** After the dusk announcement: the town may nominate (picker, votes, on-the-block). */
+  openNominations(): { ok: boolean; message?: string } {
+    if (this.flushPendingWin()) return { ok: false, message: "The game is over." };
+    const s0 = this.session;
+    if (s0.phase === "dusk" && s0.nominationsOpen) return { ok: true };
+    const blocked =
+      s0.phase === "day"
+        ? "Go to dusk first — nominations open after the dusk announcement."
+        : s0.phase !== "dusk"
+          ? "Nominations open at dusk — it is not dusk right now."
+          : s0.nightPending
+            ? "The day is over — the night is starting."
+            : null;
+    if (blocked) {
+      this.mutate((s) => pushStNotice(s, blocked));
+      return { ok: false, message: blocked };
+    }
+    this.mutate(
+      (s) => {
+        s.nominationsOpen = true;
+        const day = Math.max(1, s.dayNumber || 1);
+        if (!s.publicLog.some((e) => e.type === "nominations_open" && e.dayNumber === day)) {
+          s.publicLog.push({ type: "nominations_open", dayNumber: day, at: Date.now() });
+        }
+      },
+      { hue: "nomination" },
+    );
+    return { ok: true };
+  }
+
+  /**
+   * Close nominations (end of day). The block holder goes to the execution step (Confirm death /
+   * Lives) and the night starts once that cue has played; with nobody on the block the night
+   * starts now. Mayor / standing wins are checked by startNight.
+   */
+  endDay(): { ok: boolean; message?: string } {
+    if (this.flushPendingWin()) return { ok: false, message: "The game is over." };
+    const s0 = this.session;
+    const blocked =
+      s0.phase === "nomination" || s0.phase === "vote"
+        ? "Resolve or cancel the open nomination before ending the day."
+        : s0.phase === "execution"
+          ? "Confirm the pending execution (death or lives) first."
+          : s0.phase !== "day" && s0.phase !== "dusk"
+            ? "It is not day right now."
+            : null;
+    if (blocked) {
+      this.mutate((s) => pushStNotice(s, blocked));
+      return { ok: false, message: blocked };
+    }
+    if (s0.nightPending) {
+      this.startNight();
+      return { ok: true };
+    }
+    if (this.endIfStandingWin()) return { ok: false, message: "The game is over." };
+
+    const holderId = s0.block?.nomineeId ?? null;
+    const holder = holderId ? s0.players.find((p) => p.id === holderId && !p.leftGame) : undefined;
+    if (holder && !executionHappenedToday(s0)) {
+      this.mutate(
+        (s) => {
+          s.phase = "execution";
+          s.executionPendingId = holder.id;
+          s.nominationsOpen = false;
+          s.nightPending = true;
+          s.timer = null;
+        },
+        { hue: "execution", sound: pickSound("about_to_die") },
+      );
+      return { ok: true };
+    }
+    if (holder && executionHappenedToday(s0)) {
+      this.mutate((s) =>
+        pushStNotice(s, `${holder.name} stays alive — someone was already executed today (one execution per day).`),
+      );
+    }
+    this.startNight();
+    return { ok: true };
+  }
+
+  /** Close the open nomination without a vote (mis-tap / wrong pair); frees both players again. */
+  cancelNomination() {
+    if (!this.session.nomination || !["nomination", "vote"].includes(this.session.phase)) return;
+    this.mutate((s) => {
+      const pair = s.nomination;
+      const back = nominationReturnPhase(s);
+      dropOpenNomination(s);
+      s.nomination = null;
+      s.timer = null;
+      s.phase = back;
+      const restore = pair?.virginRestore;
+      const virgin = restore ? s.players.find((p) => p.id === restore.playerId) : undefined;
+      if (restore && virgin) {
+        virgin.abilityUsed = restore.abilityUsed;
+        if (!restore.hadNoAbility) virgin.reminders = virgin.reminders.filter((r) => r !== "No ability");
+      }
+      if (pair) {
+        const name = (id: string) => s.players.find((p) => p.id === id)?.name ?? id;
+        pushStNotice(
+          s,
+          `Nomination cancelled (${name(pair.nominatorId)} → ${name(pair.nomineeId)}) — neither is used up.${virgin ? ` Virgin (${virgin.name}) keeps her ability.` : ""}`,
+        );
+      }
+    });
+  }
+
+  startNomination(
+    nominatorId: string,
+    nomineeId: string,
+    opts: { spyRegistersAsTownsfolk?: boolean; override?: boolean } = {},
+  ): { ok: boolean; message?: string } {
+    if (this.flushPendingWin()) return { ok: false, message: "The game is over." };
+    const override = Boolean(opts.override);
+    const nameOf = (id: string) => this.session.players.find((p) => p.id === id)?.name ?? id;
+    const hard =
+      nominationsClosedReason(this.session) ??
+      (this.session.players.some((p) => p.id === nominatorId && !p.leftGame) ? null : "Nominator is not in the game.") ??
+      (this.session.players.some((p) => p.id === nomineeId && !p.leftGame) ? null : "Nominee is not in the game.") ??
+      travellerNomineeReason(this.session, nomineeId);
+    const soft = override
+      ? null
+      : (notOpenReason(this.session) ??
+        dayLimitReason(this.session) ??
+        (nominatorReason(this.session, nominatorId) ? `${nameOf(nominatorId)}: ${nominatorReason(this.session, nominatorId)}.` : null) ??
+        (nomineeReason(this.session, nomineeId) ? `${nameOf(nomineeId)}: ${nomineeReason(this.session, nomineeId)}.` : null));
+    const refused = hard ?? soft;
+    if (refused) {
+      this.mutate((s) => pushStNotice(s, `Nomination not opened — ${refused}`));
+      return { ok: false, message: refused };
+    }
+    const returnPhase: "day" | "dusk" = this.session.phase === "day" ? "day" : "dusk";
+    const bypassed = override
+      ? [
+          notOpenReason(this.session),
+          dayLimitReason(this.session),
+          nominatorReason(this.session, nominatorId) && `${nameOf(nominatorId)}: ${nominatorReason(this.session, nominatorId)}`,
+          nomineeReason(this.session, nomineeId) && `${nameOf(nomineeId)}: ${nomineeReason(this.session, nomineeId)}`,
+        ].filter(Boolean)
+      : [];
+    const record = (outcome: DayNomination["outcome"]): DayNomination => ({
+      nominatorId,
+      nomineeId,
+      votes: null,
+      majority: null,
+      outcome,
+      ...(bypassed.length ? { override: true } : {}),
+      at: Date.now(),
+    });
+    if (bypassed.length) {
+      this.mutate((s) => pushStNotice(s, `Storyteller override: ${bypassed.join("; ")}.`));
+    }
+
+    const virgin = virginShouldTrigger(this.session, this.script, nominatorId, nomineeId, opts);
+    const virginBefore = this.session.players.find((p) => p.id === nomineeId);
+    const virginRestore =
+      virgin.spend && !virgin.trigger && virginBefore
+        ? {
+            playerId: nomineeId,
+            abilityUsed: virginBefore.abilityUsed,
+            hadNoAbility: virginBefore.reminders.includes("No ability"),
+          }
+        : undefined;
+    if (virgin.reason || (virgin.spend && !virgin.trigger)) {
+      this.mutate((s) => {
+        if (virgin.reason) pushStNotice(s, virgin.reason);
+        if (virgin.spend && !virgin.trigger) {
+          const v = s.players.find((p) => p.id === nomineeId);
+          if (v) {
+            v.abilityUsed = true;
+            if (!v.reminders.includes("No ability")) v.reminders = [...v.reminders, "No ability"];
+          }
+        }
+      });
     }
 
     if (virgin.trigger) {
@@ -757,10 +1525,14 @@ export class GameEngine {
             }
           }
           s.executedTodayId = nominatorId;
+          s.executionOccurredToday = true;
           if (nominator) placeExclusiveReminder(s, nominatorId, "Died today");
-          s.phase = "day";
+          s.phase = returnPhase;
           s.nomination = null;
           s.executionPendingId = null;
+          s.nominationsToday.push(record("virgin"));
+          // The Virgin's execution is today's execution — nobody else can die at the end of the day.
+          s.block = null;
           s.publicLog.push({
             type: "nomination",
             nominatorId,
@@ -781,14 +1553,22 @@ export class GameEngine {
         },
         { hue: "execution", sound: pickSound("execution", "death") },
       );
-      return;
+      this.checkStandingWin(EXECUTION_CUE_HOLD_MS);
+      return { ok: true, message: "Virgin: the nominator was executed." };
     }
 
     this.mutate(
       (s) => {
         s.phase = "nomination";
-        s.nomination = { nominatorId, nomineeId, votesFor: [] };
+        s.nomination = {
+          nominatorId,
+          nomineeId,
+          votesFor: [],
+          returnPhase,
+          ...(virginRestore ? { virginRestore } : {}),
+        };
         s.executionPendingId = null;
+        s.nominationsToday.push(record(null));
         s.publicLog.push({
           type: "nomination",
           nominatorId,
@@ -798,9 +1578,11 @@ export class GameEngine {
       },
       { hue: "nomination", sound: pickSound("nomination", "atm_nominate_tension") },
     );
+    return { ok: true };
   }
 
   startVote(seconds = 30) {
+    if (this.flushPendingWin()) return;
     this.mutate(
       (s) => {
         if (!s.nomination) return;
@@ -822,21 +1604,12 @@ export class GameEngine {
         // raised a ghost hand (usedGhostVote is only consumed on resolveVote).
         s.nomination.votesFor.splice(idx, 1);
         if (!p.alive) p.usedGhostVote = false;
-        // Drop Butler if Master lowers their hand
-        const master = masterPlayer(s);
-        const butler = livingButler(s);
-        if (master && master.id === playerId && butler) {
-          const bIdx = s.nomination.votesFor.indexOf(butler.id);
-          if (bIdx >= 0) {
-            s.nomination.votesFor.splice(bIdx, 1);
-            pushStNotice(s, `Butler (${butler.name}) hand lowered — Master stopped voting.`);
-          }
-        }
+        // The Butler's hand is never lowered for them: an illegal Butler vote is the Butler's
+        // mistake and still counts (the Storyteller sees a private warning).
       } else {
         if (!canPlayerVote(p)) return;
-        const butlerCheck = butlerCanRaiseHand(s, playerId, s.nomination.votesFor);
-        if (!butlerCheck.ok) {
-          pushStNotice(s, butlerCheck.reason || "Butler cannot vote.");
+        if (p.alive && p.characterId === "beggar" && (p.voteTokens ?? 0) < 1) {
+          pushStNotice(s, `Beggar (${p.name}) has no vote token — a dead player must give them one first.`);
           return;
         }
         s.nomination.votesFor.push(playerId);
@@ -845,80 +1618,120 @@ export class GameEngine {
     });
   }
 
+  /**
+   * Close the vote and update the block. Nobody dies here — the block holder is executed at the
+   * end of the day. `outcome` is the Storyteller's manual verdict (force onto block / tie / fail).
+   */
   resolveVote(outcome?: "majority" | "no_majority" | "tie") {
     if (!this.session.nomination) return;
     const votes = effectiveVoteCount(this.session);
     const maj = majorityNeeded(this.session);
-    const result = outcome ?? (votes >= maj ? "majority" : "no_majority");
+    const { outcome: result, block } = applyVoteToBlock(
+      this.session.block,
+      this.session.nomination.nomineeId,
+      votes,
+      maj,
+      outcome,
+    );
     const sound =
       result === "majority"
-        ? pickSound("majority", "about_to_die")
+        ? pickSound("majority")
         : result === "tie"
           ? pickSound("tie")
           : pickSound("no_majority", "lives");
-    const hue: HueScene = result === "majority" ? "execution" : "day";
+    const back = nominationReturnPhase(this.session);
+    const hue: HueScene = result === "majority" ? "nomination" : back === "dusk" ? "dawn" : "day";
 
     this.mutate(
       (s) => {
         if (!s.nomination) return;
-        // Consume ghost votes for dead players whose hands stayed up through resolve.
+        const butlerWarning = butlerVoteWarning(s, s.nomination.votesFor);
+        if (butlerWarning) pushStNotice(s, butlerWarning);
+        // Consume ghost votes (dead Travellers too) and Beggar tokens for hands up at resolve.
         for (const id of s.nomination.votesFor) {
           const voter = s.players.find((x) => x.id === id);
-          if (voter && !voter.alive && !voter.isTraveller) voter.usedGhostVote = true;
+          if (!voter) continue;
+          if (!voter.alive) voter.usedGhostVote = true;
+          else if (voter.characterId === "beggar") voter.voteTokens = Math.max(0, (voter.voteTokens ?? 0) - 1);
         }
-        const tally = effectiveVoteCount(s);
+        const rec = openNominationRecord(s);
+        if (rec) {
+          rec.votes = votes;
+          rec.majority = maj;
+          rec.outcome = result;
+        }
         s.publicLog.push({
           type: "vote_result",
           nomineeId: s.nomination.nomineeId,
-          votesFor: tally,
-          majority: majorityNeeded(s),
+          votesFor: votes,
+          majority: maj,
           outcome: result,
           at: Date.now(),
         });
+        s.block = block;
         s.timer = null;
-        if (result === "majority") {
-          s.phase = "execution";
-          s.executionPendingId = s.nomination.nomineeId;
-        } else {
-          s.phase = "day";
-          s.nomination = null;
-          s.executionPendingId = null;
-        }
+        s.phase = back;
+        s.nomination = null;
+        s.executionPendingId = null;
       },
       { sound, hue },
     );
   }
 
-  confirmExecution(died: boolean) {
-    let saintWin = false;
+  /**
+   * The day's execution. `died` = Confirm death vs Lives (both count as the execution).
+   * `substituteId` = a Scapegoat executed instead (Storyteller's choice).
+   * Executing an already-dead player counts as the execution but nobody dies — no Saint win,
+   * no Demon death, no "Died today" (the Undertaker learns nothing).
+   */
+  confirmExecution(died: boolean, opts: { substituteId?: string | null } = {}) {
+    let saintWin: WinResult | null = null;
     let demonId: string | null = null;
+    let killed = false;
+    const toNight = this.session.nightPending;
+    const s0 = this.session;
+    const pendingId = s0.executionPendingId ?? s0.nomination?.nomineeId ?? null;
+    const sub = opts.substituteId
+      ? s0.players.find((p) => p.id === opts.substituteId && p.characterId === "scapegoat" && p.alive && !p.leftGame)
+      : undefined;
+    const targetId = sub?.id ?? pendingId;
+    const target = targetId ? s0.players.find((x) => x.id === targetId) : undefined;
+    const alreadyDead = Boolean(target && died && !target.alive);
 
     this.mutate(
       (s) => {
-        const id = s.executionPendingId ?? s.nomination?.nomineeId;
+        const id = targetId;
         if (!id) return;
         const p = s.players.find((x) => x.id === id);
-        if (p && died) {
+        if (sub) {
+          const orig = s.players.find((x) => x.id === pendingId);
+          pushStNotice(s, `Scapegoat (${sub.name}) is executed instead of ${orig?.name ?? "the nominee"}.`);
+        }
+        if (p && died && p.alive) {
           p.alive = false;
+          killed = true;
           s.executedTodayId = id;
           placeExclusiveReminder(s, id, "Died today");
-          if (saintEvilWin(s, id)) {
-            saintWin = true;
-            pushStNotice(s, `Saint (${p.name}) executed — Evil wins.`);
-          }
+          saintWin = saintExecutedWin(s, id);
           const def = findDef(this.script, p.characterId);
           if (def?.team === "demon") demonId = id;
+        } else if (p && alreadyDead) {
+          pushStNotice(s, `${p.name} was already dead — the execution counts, but nobody dies (no Saint / Demon effects).`);
         } else if (p && !died && p.characterId === "saint") {
           pushStNotice(s, "Saint lived through execution — no Saint evil-win.");
         }
+        s.executionOccurredToday = true;
         s.publicLog.push({
           type: "execution",
           playerId: id,
-          died,
+          died: killed,
+          ...(alreadyDead ? { alreadyDead: true } : {}),
           dayNumber: Math.max(1, s.dayNumber || 1),
           at: Date.now(),
         });
-        s.phase = "day";
+        // End-of-day execution: back on the dusk screen (nominations closed) until the night starts.
+        s.phase = toNight ? "dusk" : "day";
+        s.nightPending = toNight;
         s.nomination = null;
         s.executionPendingId = null;
         s.timer = null;
@@ -932,30 +1745,92 @@ export class GameEngine {
         }
       },
       {
-        hue: died ? "execution" : "day",
-        sound: died ? pickSound("execution", "death") : pickSound("lives", "no_majority"),
+        hue: died && !alreadyDead ? "execution" : toNight ? "dawn" : "day",
+        sound: died && !alreadyDead ? pickSound("execution", "death") : pickSound("lives", "no_majority"),
       },
     );
-    if (died) {
+    if (killed) {
       setTimeout(() => {
         void this.hue.applyScene("death_settle");
       }, 2500);
     }
     if (saintWin) {
-      this.endGame("evil");
+      this.scheduleWin(saintWin, EXECUTION_CUE_HOLD_MS, pickSound("sacred_blood", "evil_wins"));
+    } else if (killed) {
+      this.checkStandingWin(EXECUTION_CUE_HOLD_MS);
+    }
+    if (toNight && !this.pendingWin && this.session.phase === "dusk") {
+      const mayor = mayorWinAtDusk(this.session);
+      if (mayor) {
+        this.scheduleWin(mayor, EXECUTION_CUE_HOLD_MS);
+        return;
+      }
+      // Let the execution line finish before the night narration (playCue cuts the sting).
+      this.clearNightTimer();
+      this.nightTimer = setTimeout(() => {
+        this.nightTimer = null;
+        if (this.session.phase !== "dusk" || !this.session.nightPending || this.pendingWin) return;
+        this.startNight();
+      }, EXECUTION_CUE_HOLD_MS);
     }
   }
 
-  otherDeath(playerId: string, reason: string): { ok: boolean; blocked: boolean } {
+  /** The Imp making tonight's kill: the current Imp wake step's player, else the living Imp. */
+  private actingImp() {
+    const s = this.session;
+    const step = s.night?.steps[s.night.stepIndex];
+    const isImp = (p: { characterId: string | null; leftGame: boolean }) =>
+      p.characterId === "imp" && !p.leftGame;
+    const fromStep =
+      step?.characterId === "imp"
+        ? s.players.find((p) => step.playerIds.includes(p.id) && isImp(p))
+        : undefined;
+    return fromStep ?? s.players.find((p) => p.alive && isImp(p));
+  }
+
+  /**
+   * `blocked` = the kill was chosen but fails (Poisoned/Drunk Imp, Soldier, Monk Safe):
+   * recorded for the ST, nobody dies, nothing reaches the TV. The night step may still advance.
+   */
+  otherDeath(
+    playerId: string,
+    reason: string,
+    opts: { starPassTo?: string | null } = {},
+  ): {
+    ok: boolean;
+    blocked: boolean;
+    message?: string;
+    needsStarPassChoice?: boolean;
+    candidates?: { id: string; name: string; characterId: string | null }[];
+  } {
     const overnight = isOvernightPhase(this.session.phase);
     const target = this.session.players.find((x) => x.id === playerId);
     if (!target || !target.alive) return { ok: false, blocked: false };
 
     if (overnight) {
-      const block = nightKillBlockReason(this.session, target);
+      const demonKill = /imp|demon|star.?pass/i.test(reason);
+      const block =
+        (demonKill ? impKillFailReason(this.actingImp(), target) : null) ??
+        nightKillBlockReason(this.session, target);
       if (block) {
-        this.mutate((s) => pushStNotice(s, block));
-        return { ok: false, blocked: true };
+        const who = demonKill ? "Imp chose" : "Kill on";
+        const message = `${who} ${block}`;
+        this.mutate((s) => pushStNotice(s, message));
+        return { ok: true, blocked: true, message };
+      }
+      // Imp self-kill: the Storyteller picks the new Imp (a healthy Scarlet Woman must take it).
+      if (demonKill && target.characterId === "imp") {
+        const { forced, candidates } = starPassCandidates(this.session, this.script, target);
+        const chosen = opts.starPassTo ? candidates.find((c) => c.id === opts.starPassTo) : undefined;
+        if (!forced && candidates.length > 1 && !chosen) {
+          return {
+            ok: false,
+            blocked: false,
+            needsStarPassChoice: true,
+            message: "Star-pass: choose which Minion becomes the Imp.",
+            candidates: candidates.map((c) => ({ id: c.id, name: c.name, characterId: c.characterId })),
+          };
+        }
       }
     }
 
@@ -993,23 +1868,106 @@ export class GameEngine {
         if (wasDemon) {
           for (const msg of resolveDemonDeath(s, this.script, playerId, {
             selfKill: !!selfKill,
+            starPassTo: opts.starPassTo ?? null,
           })) {
             pushStNotice(s, msg);
           }
         }
       },
-      overnight
-        ? { hue: "death_settle" }
-        : { hue: "death_settle", sound: pickSound("death") },
+      // Overnight deaths are secret until dawn — the lights must not react to them.
+      overnight ? undefined : { hue: "death_settle", sound: pickSound("death") },
     );
 
-    // Ravenkeeper (and any death-gated wakes) were built before the Imp kill —
-    // rebuild so they un-skip and can wake later tonight.
+    // Ravenkeeper (and any death-gated wakes), a new Imp's wake, and "died tonight" skips were
+    // built before this death — rebuild the rest of the night without losing our place.
     if (overnight && addedNightDeath && this.session.night) {
       this.rebuildNight();
     }
 
+    if (overnight) {
+      // Night deaths stay private until dawn; the win is declared when they are announced.
+      const win = standingWin(this.session, this.script);
+      if (win) {
+        this.mutate((s) =>
+          pushStNotice(
+            s,
+            `At dawn: ${win.winner === "good" ? "Good" : "Evil"} wins — ${win.stReason} Declared when dawn deaths are announced.`,
+          ),
+        );
+      }
+    } else {
+      this.checkStandingWin(EXECUTION_CUE_HOLD_MS);
+    }
+
     return { ok: true, blocked: false };
+  }
+
+  /**
+   * Slayer's public shot: shot cue, then hit/miss cue, then the win if the Demon died.
+   * A non-ending hit plays a plain death cue so a Scarlet Woman takeover is not revealed.
+   */
+  slayerShot(
+    shooterId: string,
+    targetId: string,
+    opts: { recluseRegistersAsDemon?: boolean } = {},
+  ): { ok: boolean; hit: boolean; message: string } {
+    if (this.session.phase === "ended" || this.pendingWin) {
+      return { ok: false, hit: false, message: "The game is already over." };
+    }
+    if (!["day", "dusk", "nomination", "vote", "execution"].includes(this.session.phase)) {
+      return { ok: false, hit: false, message: "The Slayer can only shoot during the day." };
+    }
+    const outcome = slayerShotOutcome(this.session, this.script, shooterId, targetId, opts);
+    this.clearShotTimer();
+
+    this.mutate(
+      (s) => {
+        const shooter = s.players.find((p) => p.id === shooterId);
+        const target = s.players.find((p) => p.id === targetId);
+        if (outcome.spend && shooter) {
+          shooter.abilityUsed = true;
+          if (!shooter.reminders.includes("No ability")) {
+            shooter.reminders = [...shooter.reminders, "No ability"];
+          }
+        }
+        pushStNotice(s, outcome.reason);
+        if (!outcome.hit || !target) return;
+        const wasDemon = findDef(this.script, target.characterId)?.team === "demon";
+        target.alive = false;
+        s.publicLog.push({
+          type: "other_death",
+          playerId: target.id,
+          reason: "Slayer",
+          dayNumber: Math.max(1, s.dayNumber || 1),
+          duringNight: false,
+          at: Date.now(),
+        });
+        if (wasDemon) {
+          for (const msg of resolveDemonDeath(s, this.script, target.id, { selfKill: false })) {
+            pushStNotice(s, msg);
+          }
+        }
+      },
+      { sound: pickSound("public_shot") },
+    );
+
+    const win = outcome.hit ? standingWin(this.session, this.script) : null;
+    const resultCue = !outcome.hit
+      ? pickSound("public_shot_false")
+      : win?.winner === "good"
+        ? pickSound("public_shot_true")
+        : pickSound("death");
+    this.shotTimer = setTimeout(() => {
+      this.shotTimer = null;
+      if (this.session.phase === "ended") return;
+      this.mutate(() => {}, {
+        sound: resultCue,
+        hue: outcome.hit ? "death_settle" : undefined,
+      });
+    }, SHOT_CUE_HOLD_MS);
+    if (win) this.scheduleWin(win, SHOT_CUE_HOLD_MS + SHOT_RESULT_HOLD_MS);
+
+    return { ok: true, hit: outcome.hit, message: outcome.reason };
   }
 
   startTimer(seconds: number, label: string) {
@@ -1040,17 +1998,26 @@ export class GameEngine {
     this.mutate(() => {}, { hue: m.hue, sound: m.sound });
   }
 
-  endGame(winner: "good" | "evil" | null = null) {
+  endGame(
+    winner: "good" | "evil" | null = null,
+    opts: { reason?: string | null; sound?: string } = {},
+  ) {
+    this.cancelPendingWin();
+    this.clearShotTimer();
+    this.clearDawnThenDayTimer();
+    this.clearNightTimer();
     const sound =
-      winner === "good"
+      opts.sound ??
+      (winner === "good"
         ? pickSound("good_wins", "atm_after_good")
         : winner === "evil"
           ? pickSound("evil_wins", "atm_after_evil")
-          : pickSound("reveal", "atm_before_reveal");
+          : pickSound("reveal", "atm_before_reveal"));
     this.mutate(
       (s) => {
         s.phase = "ended";
         s.winner = winner;
+        s.winReason = opts.reason ?? null;
         s.timer = null;
         s.night = null;
         s.nomination = null;
@@ -1064,6 +2031,7 @@ export class GameEngine {
     else if (phase === "night") this.startNight();
     else if (phase === "dawn") this.goDawn();
     else if (phase === "day") this.goDay();
+    else if (phase === "dusk") this.goDusk();
     else if (phase === "ended") this.endGame();
     else this.mutate((s) => {
       s.phase = phase;

@@ -7,6 +7,7 @@ export type Phase =
   | "nomination"
   | "vote"
   | "execution"
+  | "dusk"
   | "ended";
 
 export type Team = "townsfolk" | "outsider" | "minion" | "demon" | "traveller";
@@ -49,6 +50,27 @@ export type Player = {
   isTraveller: boolean;
   abilityUsed: boolean;
   leftGame: boolean;
+  /** Drunk only: the Townsfolk they believe they are (drives wake order / prompts). characterId stays "drunk". */
+  thinksCharacterId: string | null;
+  /** Travellers: the alignment the Storyteller chose (null for residents — derived from their character). */
+  alignment: Alignment | null;
+  /** Evil Traveller has been shown the Demon. */
+  learnedDemon: boolean;
+  /** Beggar: vote tokens given by dead players (one spent per vote). */
+  voteTokens: number;
+};
+
+export type Alignment = "good" | "evil";
+
+/** A Recluse / Spy may register differently: Storyteller-only alternatives for this info step. */
+export type RegistrationOptions = {
+  note: string;
+  /** Chef / Empath: every legal number when Recluse / Spy register differently. */
+  numbers?: number[];
+  /** WW / Librarian / Investigator: alternative pairs (e.g. Spy as a Townsfolk, Recluse as a Minion). */
+  pairs?: { label: string; playerIds: string[]; characterId: string | null }[];
+  /** Undertaker: character tokens the executed Recluse / Spy may register as. */
+  characterIds?: string[];
 };
 
 export type NightShowKind =
@@ -113,6 +135,11 @@ export type NightShowSpec = {
   resultLabel?: string;
   /** Label for demon bluffs section */
   bluffsLabel?: string;
+  /** Minion info: every Minion (the overlay shows the woken Minion the others). */
+  fellowPlayerIds?: string[];
+  fellowLabel?: string;
+  /** ST-only Recluse / Spy registration alternatives. */
+  registration?: RegistrationOptions;
 };
 
 export type NightStep = {
@@ -127,6 +154,27 @@ export type NightStep = {
   show: NightShowSpec;
 };
 
+/**
+ * majority = nominee goes on the block; tie = matched the block holder, block cleared;
+ * outvoted = reached majority but not above the block holder; no_majority = below half.
+ */
+export type VoteOutcome = "majority" | "no_majority" | "tie" | "outvoted";
+
+/** One nomination today. votes/outcome stay null while its vote is open. */
+export type DayNomination = {
+  nominatorId: string;
+  nomineeId: string;
+  votes: number | null;
+  majority: number | null;
+  outcome: VoteOutcome | "virgin" | null;
+  /** Opened with the Storyteller override (bypassed nomination limits). */
+  override?: boolean;
+  at: number;
+};
+
+/** Who is executed at the end of the day. nomineeId null = tied at `votes`, nobody on the block. */
+export type BlockState = { nomineeId: string | null; votes: number };
+
 export type PublicEvent =
   | { type: "night_death"; playerIds: string[]; dayNumber: number; at: number }
   | {
@@ -140,14 +188,29 @@ export type PublicEvent =
       nomineeId: string;
       votesFor: number;
       majority: number;
-      outcome: "majority" | "no_majority" | "tie";
+      outcome: VoteOutcome;
       at: number;
     }
+  | { type: "dusk"; dayNumber: number; at: number }
+  | { type: "nominations_open"; dayNumber: number; at: number }
+  | { type: "no_execution"; dayNumber: number; at: number }
   | {
       type: "execution";
       playerId: string;
       died: boolean;
+      /** The executed player was already dead (the execution still counts; nobody dies). */
+      alreadyDead?: boolean;
       /** Current day when logged (optional on older sessions). */
+      dayNumber?: number;
+      at: number;
+    }
+  | {
+      type: "exile";
+      playerId: string;
+      playerName?: string;
+      supporters: number;
+      threshold: number;
+      exiled: boolean;
       dayNumber?: number;
       at: number;
     }
@@ -167,6 +230,8 @@ export type PublicEvent =
       /** Display name at join time (survives later leave). */
       playerName?: string;
       characterId: string;
+      /** Public Traveller character name (declared to the town on arrival). */
+      characterName?: string;
       at: number;
     }
   | {
@@ -223,19 +288,58 @@ export type GameSession = {
     nominatorId: string;
     nomineeId: string;
     votesFor: string[];
+    /** Phase to return to when the vote closes (dusk; day only for a Storyteller-override nomination). */
+    returnPhase?: "day" | "dusk";
+    /** The Virgin's ability this nomination spent — restored if the nomination is cancelled. */
+    virginRestore?: { playerId: string; abilityUsed: boolean; hadNoAbility: boolean };
   } | null;
   dawnDeathIds: string[];
   /** True after announceDawnDeaths this dawn; overnight deaths stay private on TV until then. */
   dawnDeathsAnnounced: boolean;
   executionPendingId: string | null;
+  /** Who died by execution today (the Undertaker's answer). Null if nobody died by execution. */
   executedTodayId: string | null;
+  /** Today's one execution has happened — even if the player lived or was already dead. */
+  executionOccurredToday: boolean;
+  /** Players who became the Demon and still need their "You are the Imp" wake. */
+  newDemons: NewDemon[];
+  /** A Baron was in the bag at setup — the +2 Outsiders stays even if the Baron dies / star-passes. */
+  baronInSetup: boolean;
+  /** Open call to exile a Traveller (not a nomination; abilities don't apply). */
+  exile: ExileState | null;
+  /** Storyteller toggled the public character sheet / setup counts onto the TV. */
+  tvSheet: boolean;
+  /** House rule: allow more than 15 non-Traveller seats (official cap is 15). */
+  allowOver15: boolean;
+  /** Today's nominations; cleared when a new day starts. */
+  nominationsToday: DayNomination[];
+  block: BlockState | null;
+  /** Dusk sub-step: the Storyteller pressed Open nominations (cleared when nominations close / new day). */
+  nominationsOpen: boolean;
+  /** The pending execution was started by Close nominations — the night follows once its cue has played. */
+  nightPending: boolean;
   diedTonightIds: string[];
   winner: "good" | "evil" | null;
+  /** Public end-game reason (null for a manual End). */
+  winReason: string | null;
   /** Storyteller-only mechanical enforcement feedback (not shown on TV). */
   stNotices: { id: string; message: string; at: number }[];
   ambiance: AmbianceState;
   tvConnected: boolean;
   storytellerConnected: boolean;
+};
+
+export type NewDemon = {
+  playerId: string;
+  via: "scarletwoman" | "starpass";
+  /** Became the Demon during tonight's wakes (told right after the Imp; no kill tonight). */
+  duringNight: boolean;
+};
+
+export type ExileState = {
+  travellerId: string;
+  calledById: string | null;
+  supporters: string[];
 };
 
 export type PublicPlayer = {
@@ -246,6 +350,8 @@ export type PublicPlayer = {
   usedGhostVote: boolean;
   isTraveller: boolean;
   leftGame: boolean;
+  /** Travellers declare their character on arrival — public. Null for residents. */
+  travellerCharacterName?: string | null;
 };
 
 export type RevealPlayer = PublicPlayer & {
@@ -253,6 +359,17 @@ export type RevealPlayer = PublicPlayer & {
   characterName: string | null;
   team: Team | null;
   abilityUsed: boolean;
+  alignment: Alignment | null;
+  /** Drunk: the Townsfolk they believed they were. */
+  thinksCharacterName: string | null;
+};
+
+/** Public character sheet + official setup counts for the TV (no Baron adjustment — that is secret). */
+export type PublicSheet = {
+  playerCount: number;
+  counts: SetupCounts | null;
+  characters: { id: string; name: string; team: Team; ability: string }[];
+  travellers: { id: string; name: string; ability: string }[];
 };
 
 export type PublicState = {
@@ -271,17 +388,32 @@ export type PublicState = {
     votesFor: string[];
     majority: number;
     votesForCount: number;
+    /** Block holder's (or tied) vote count this vote must beat; null if the block is empty. */
+    toBeat: number | null;
   } | null;
   dawnDeathIds: string[];
   /** Overnight deaths are public on TV only after announceDawnDeaths. */
   dawnDeathsAnnounced: boolean;
   executionPendingId: string | null;
+  nominationsToday: DayNomination[];
+  block: BlockState | null;
+  /** Dusk sub-step: nominations are open (TV shows the nominations-open plaque). */
+  nominationsOpen: boolean;
   storytellerConnected: boolean;
   soundCue: string | null;
   ambiance: AmbiancePublicState;
   hueScene: HueScene | null;
   winner: "good" | "evil" | null;
+  winReason: string | null;
   reveal: RevealPlayer[] | null;
+  exile: {
+    travellerId: string;
+    calledById: string | null;
+    supporters: string[];
+    threshold: number;
+  } | null;
+  /** Non-null while the Storyteller shows the character sheet (lobby / day / dusk). */
+  sheet: PublicSheet | null;
 };
 
 export type DayAbilityTip = {
@@ -292,6 +424,18 @@ export type DayAbilityTip = {
   tip: string;
   oncePerGame: boolean;
   abilityUsed: boolean;
+};
+
+/** Why each player can't nominate / be nominated right now (null = allowed). */
+export type NominationRules = {
+  /** Why no nomination can open at all (phase, open vote, execution done). */
+  closedReason: string | null;
+  /** Day, or dusk before Open nominations: nominations aren't open yet; the Storyteller override may bypass. */
+  notOpenReason: string | null;
+  /** Day-wide limit the Storyteller override may bypass (execution already happened). */
+  dayLimitReason: string | null;
+  nominator: Record<string, string | null>;
+  nominee: Record<string, string | null>;
 };
 
 export type StorytellerState = PublicState & {
@@ -306,6 +450,14 @@ export type StorytellerState = PublicState & {
   pinRequired: boolean;
   dayAbilities: DayAbilityTip[];
   executedTodayId: string | null;
+  executionOccurredToday: boolean;
+  newDemons: NewDemon[];
+  tvSheet: boolean;
+  allowOver15: boolean;
+  /** Private: the Butler's hand is up without their Master's (the vote still counts). */
+  butlerWarning: string | null;
+  nightPending: boolean;
+  nominationRules: NominationRules;
   diedTonightIds: string[];
   stNotices: { id: string; message: string; at: number }[];
   audioCues: {

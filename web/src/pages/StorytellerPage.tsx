@@ -22,13 +22,54 @@ function nextDayNumber(dayNumber: number) {
   return dayNumber === 0 ? 1 : dayNumber + 1;
 }
 
-/** Match server rules.isPoisonedOrDrunk — Drunk is usually reminder on apparent Townsfolk. */
+/** Match server rules.isPoisonedOrDrunk (the Beggar is always sober & healthy). */
 function isPoisonedOrDrunkPlayer(p: Player | null | undefined): boolean {
-  if (!p) return false;
+  if (!p || p.characterId === "beggar") return false;
   return (
     p.reminders.includes("Poisoned") ||
     p.reminders.includes("Drunk") ||
+    p.reminders.includes("Is the Drunk") ||
     p.characterId === "drunk"
+  );
+}
+
+/** Match server rules.wakeCharacterId — the Drunk wakes as the Townsfolk they think they are. */
+function wakeCharacterId(p: Player | null | undefined): string | null {
+  if (!p) return null;
+  return p.characterId === "drunk" ? p.thinksCharacterId ?? null : p.characterId;
+}
+
+/** Match server rules.trueCharacterId — what abilities that learn characters see. */
+function trueCharacterId(p: Player | null | undefined, characters: { id: string; team: Team }[]): string | null {
+  if (!p) return null;
+  if (p.characterId === "drunk") return "drunk";
+  const legacy = p.reminders.includes("Drunk") || p.reminders.includes("Is the Drunk");
+  if (legacy && characters.find((c) => c.id === p.characterId)?.team === "townsfolk") return "drunk";
+  return p.characterId;
+}
+
+/** Match server rules.nightKillProtection — why a Demon kill on `target` fails tonight. */
+function nightKillProtection(players: Player[], target: Player | null | undefined): string | null {
+  if (!target || !target.alive) return null;
+  if (target.reminders.includes("Safe")) {
+    // Only the Monk's own health matters — the protected player's poison is irrelevant.
+    const monk = players.find((p) => wakeCharacterId(p) === "monk" && p.alive && !p.leftGame);
+    if (!monk || !isPoisonedOrDrunkPlayer(monk)) return "Protected by the Monk (Safe)";
+  }
+  if (target.characterId === "soldier" && !isPoisonedOrDrunkPlayer(target)) {
+    return "Soldier: safe from the Demon";
+  }
+  return null;
+}
+
+/** Match server rules.mayorBounceAvailable — a healthy, unprotected Mayor the Imp attacks. */
+function mayorBounceAvailable(players: Player[], target: Player | null | undefined): boolean {
+  return Boolean(
+    target &&
+      target.alive &&
+      target.characterId === "mayor" &&
+      !isPoisonedOrDrunkPlayer(target) &&
+      !nightKillProtection(players, target),
   );
 }
 
@@ -37,9 +78,11 @@ function pickWrongCharacterId(
   all: { id: string; team: Team }[],
   truthId: string | null | undefined,
   teams?: Team[],
+  ownRoleId?: string | null,
 ): string {
   const pool = all.filter((c) => {
     if (truthId && c.id === truthId) return false;
+    if (ownRoleId && c.id === ownRoleId) return false;
     if (teams?.length && !teams.includes(c.team)) return false;
     return true;
   });
@@ -64,13 +107,22 @@ function formatStatus(state: StorytellerState) {
       when = `Dawn → Day ${nextDayNumber(state.dayNumber)}`;
       break;
     case "day":
+      when = `Day ${state.dayNumber} · discussion`;
+      break;
     case "nomination":
     case "vote":
     case "execution":
-      when = `Day ${state.dayNumber}`;
+      when = `Day ${state.dayNumber} · nominations`;
+      break;
+    case "dusk":
+      when = state.nightPending
+        ? `Dusk · day ${state.dayNumber} · night next`
+        : state.nominationsOpen
+          ? `Dusk · day ${state.dayNumber} · nominations open`
+          : `Dusk · day ${state.dayNumber} · nominations not open yet`;
       break;
     case "ended":
-      when = "Ended";
+      when = state.winner === "good" ? "Ended · Good wins" : state.winner === "evil" ? "Ended · Evil wins" : "Ended";
       break;
     default:
       when = state.phase;
@@ -89,14 +141,152 @@ function advanceLabel(state: StorytellerState) {
     case "dawn":
       return `Finish dawn → Day ${nextDayNumber(state.dayNumber)}`;
     case "day":
+      return "Go to dusk";
+    case "dusk":
+      return state.nominationsOpen || state.nightPending ? endDayLabel(state) : "Open nominations";
     case "nomination":
     case "vote":
     case "execution":
-      return "Start night";
+      return endDayLabel(state);
     default:
       return "Advance";
   }
 }
+
+/** Nominations hub's end-of-day button: execute the block holder (if any), then the night. */
+function endDayLabel(state: StorytellerState) {
+  if (state.nightPending) return "Start night now";
+  const holderId = state.block?.nomineeId;
+  const holder = holderId ? state.players.find((p) => p.id === holderId && !p.leftGame)?.name : undefined;
+  return holder && !state.executedTodayId ? `Close nominations — execute ${holder}` : "Close nominations — no execution";
+}
+
+function endDayBlocked(state: StorytellerState): string | null {
+  if (state.phase === "nomination") return "A nomination is open — start the vote, resolve it or cancel it first.";
+  if (state.phase === "vote") return "A vote is open — resolve it (or cancel the nomination) first.";
+  if (state.phase === "execution") return "Confirm the execution (death or lives) first.";
+  return null;
+}
+
+const DAY_PHASES: StorytellerState["phase"][] = ["day", "dusk", "nomination", "vote", "execution"];
+
+type FlowStep = "dawn" | "day" | "dusk" | "nominations" | "night";
+const FLOW_STEPS: { id: FlowStep; label: string }[] = [
+  { id: "dawn", label: "Dawn" },
+  { id: "day", label: "Day" },
+  { id: "dusk", label: "Dusk" },
+  { id: "nominations", label: "Nominations" },
+  { id: "night", label: "Night" },
+];
+
+function flowStep(state: StorytellerState): FlowStep | null {
+  switch (state.phase) {
+    case "firstNight":
+    case "night":
+      return "night";
+    case "dawn":
+      return "dawn";
+    case "day":
+      return "day";
+    case "dusk":
+      return state.nominationsOpen || state.nightPending ? "nominations" : "dusk";
+    case "nomination":
+    case "vote":
+    case "execution":
+      return "nominations";
+    default:
+      return null;
+  }
+}
+
+/** One sentence: where the day is and what the Storyteller does next. */
+function flowStatus(state: StorytellerState): string {
+  switch (state.phase) {
+    case "firstNight":
+    case "night":
+      return "Night — work through the night order, then go to dawn.";
+    case "dawn":
+      return "Dawn — announce overnight deaths, then start the day.";
+    case "day":
+      return "Open discussion. Nominations are closed until dusk.";
+    case "dusk":
+      if (state.nightPending) return "Execution done — the night starts when the execution line finishes.";
+      return state.nominationsOpen
+        ? "Nominations are open — pick a nominator and a nominee below."
+        : "Dusk announcement. Nominations are not open yet — press Open nominations when the room is ready.";
+    case "nomination":
+      return "Nomination in progress — start the vote clock or resolve the vote below.";
+    case "vote":
+      return "Vote in progress — raise hands below, then resolve the vote.";
+    case "execution":
+      return "Execution — Confirm death or Lives below.";
+    default:
+      return "";
+  }
+}
+
+/** Day > Dusk > Nominations > Night indicator with the single next action. */
+function DayFlowBar({
+  state,
+  emit,
+  showNext,
+}: {
+  state: StorytellerState;
+  emit: (e: string, d?: unknown) => void;
+  showNext: boolean;
+}) {
+  const current = flowStep(state);
+  if (!current) return null;
+  const idx = FLOW_STEPS.findIndex((s) => s.id === current);
+  const blocked = showNext ? endDayBlocked(state) : null;
+  return (
+    <div className="panel" style={{ borderColor: "var(--gold, #c9a45c)" }}>
+      <div
+        className="row"
+        style={{ gap: "0.35rem", flexWrap: "wrap", alignItems: "center", fontFamily: "Cinzel, serif" }}
+        aria-label="Day steps"
+      >
+        {FLOW_STEPS.map((s, i) => (
+          <span key={s.id} style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+            <span
+              aria-current={i === idx ? "step" : undefined}
+              style={{
+                padding: "0.2rem 0.6rem",
+                borderRadius: "999px",
+                border: `1px solid ${i === idx ? "var(--blood-bright, #c44)" : "rgba(255,255,255,0.18)"}`,
+                background: i === idx ? "var(--blood-bright, #c44)" : "transparent",
+                color: i === idx ? "#fff" : i < idx ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.4)",
+                fontWeight: i === idx ? 700 : 400,
+              }}
+            >
+              {i < idx ? "✓ " : ""}
+              {s.label}
+            </span>
+            {i < FLOW_STEPS.length - 1 && <span className="muted">›</span>}
+          </span>
+        ))}
+      </div>
+      <p style={{ margin: "0.6rem 0" }}>{flowStatus(state)}</p>
+      {showNext && (
+        <div className="row">
+          <button
+            className="primary"
+            type="button"
+            disabled={Boolean(blocked)}
+            onClick={() => emit("game:advancePhase")}
+            style={{ fontSize: "1.05rem" }}
+          >
+            Next: {advanceLabel(state)}
+          </button>
+        </div>
+      )}
+      {blocked && <p className="muted">{blocked}</p>}
+    </div>
+  );
+}
+
+const SKIP_TO_NIGHT_CONFIRM =
+  "Skip to night without an execution? Nobody on the block is executed today and the chronicle notes “No execution today”.";
 
 /** Follow the story — don't leave the user on the wrong tab after a phase change. */
 function tabForPhase(phase: StorytellerState["phase"]): Tab {
@@ -112,6 +302,7 @@ function tabForPhase(phase: StorytellerState["phase"]): Tab {
     case "nomination":
     case "vote":
     case "execution":
+    case "dusk":
       return "votes";
     case "ended":
       return "control";
@@ -211,6 +402,10 @@ export function StorytellerPage() {
         ))}
       </div>
 
+      {(tab === "control" || tab === "votes") && (
+        <DayFlowBar state={state} emit={emit} showNext={tab === "control"} />
+      )}
+
       {(state.stNotices?.length ?? 0) > 0 && (
         <div className="panel mech-notice" style={{ borderColor: "var(--blood-bright, #c44)" }}>
           <h2>Mechanical notice</h2>
@@ -259,6 +454,17 @@ function ControlTab({
 
   return (
     <div className="stack">
+      {state.phase === "ended" && (
+        <div
+          className="panel"
+          style={{ borderColor: state.winner === "evil" ? "var(--blood-bright, #c44)" : undefined }}
+        >
+          <h2>
+            {state.winner === "good" ? "Good wins" : state.winner === "evil" ? "Evil wins" : "Game over"}
+          </h2>
+          <p>{state.winReason ?? "Ended by the Storyteller."}</p>
+        </div>
+      )}
       <div className="panel">
         <h2>Story flow</h2>
         <p className="muted">
@@ -266,13 +472,16 @@ function ControlTab({
           ready. Dawn announces overnight deaths; finishing dawn starts the numbered day.
         </p>
         <p className="muted">
-          Loop: First night → Dawn → Day 1 → Night → Dawn → Day 2 → Night → …
+          Loop: First night → Dawn → Day 1 (discussion) → Dusk → Open nominations → Close nominations →
+          Night → Dawn → Day 2 → …
         </p>
-        <div className="row">
-          <button className="primary" type="button" onClick={() => emit("game:advancePhase")}>
-            {advanceLabel(state)}
-          </button>
-        </div>
+        {!flowStep(state) && (
+          <div className="row">
+            <button className="primary" type="button" onClick={() => emit("game:advancePhase")}>
+              {advanceLabel(state)}
+            </button>
+          </div>
+        )}
         <div className="row">
           <button type="button" onClick={() => emit("game:startFirstNight")}>
             First night
@@ -283,8 +492,24 @@ function ControlTab({
           <button type="button" onClick={() => emit("game:finishDawn")}>
             Finish dawn → Day {nextDayNumber(state.dayNumber)}
           </button>
-          <button type="button" onClick={() => emit("game:startNight")}>
-            Night
+          <button type="button" onClick={() => emit("game:goDusk")}>
+            Dusk
+          </button>
+          <button
+            type="button"
+            disabled={state.phase !== "dusk" || state.nominationsOpen || state.nightPending}
+            onClick={() => emit("game:openNominations")}
+          >
+            Open nominations
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const skipsDay = DAY_PHASES.includes(state.phase) && !state.nightPending;
+              if (!skipsDay || confirm(SKIP_TO_NIGHT_CONFIRM)) emit("game:startNight");
+            }}
+          >
+            {state.phase === "day" ? "Skip to night" : "Night"}
           </button>
         </div>
         <div className="row">
@@ -414,24 +639,43 @@ function SetupTab({
   state: StorytellerState;
   emit: (e: string, d?: unknown) => void;
 }) {
+  const residents = state.players.filter((p) => !p.isTraveller && !p.leftGame).length;
+  const travellers = state.players.filter((p) => p.isTraveller && !p.leftGame).length;
   return (
     <div className="stack">
       <div className="panel">
-        <h2>Players ({state.players.length})</h2>
-        <label className="muted">Seat count (5–20)</label>
+        <h2>
+          Players ({residents}
+          {travellers ? ` + ${travellers} Traveller${travellers === 1 ? "" : "s"}` : ""})
+        </h2>
+        <label className="muted">Player count, not counting Travellers (5–{state.allowOver15 ? 20 : 15})</label>
         <input
           type="number"
           min={5}
-          max={20}
-          value={state.players.length}
+          max={state.allowOver15 ? 20 : 15}
+          value={residents}
           onChange={(e) => emit("game:setPlayerCount", { count: Number(e.target.value) })}
         />
+        <label className="row" style={{ marginTop: "0.5rem", gap: "0.5rem" }}>
+          <input
+            type="checkbox"
+            checked={state.allowOver15}
+            onChange={(e) =>
+              emit("game:setPlayerCount", {
+                count: e.target.checked ? residents : Math.min(15, residents),
+                allowOver15: e.target.checked,
+              })
+            }
+          />
+          <span className="muted">Allow more than 15 (house rule — the official game caps at 15 plus Travellers)</span>
+        </label>
         {state.setup ? (
           <p className="muted" style={{ marginTop: "0.75rem" }}>
             Bag: T{state.setup.townsfolk} / O{state.setup.outsider} / M{state.setup.minion} / D
             {state.setup.demon}
-            {state.players.some((p) => p.characterId === "baron" && !p.leftGame)
-              ? " · Baron in play (+2O/−2T applied)"
+            {state.players.some((p) => p.characterId === "baron" && !p.leftGame) ||
+            state.setupWarning?.includes("Baron")
+              ? " · Baron in setup (+2O/−2T applied, stays even if the Baron dies)"
               : ""}
             <br />
             Assigned: T{state.assignedCounts.townsfolk} / O{state.assignedCounts.outsider} / M
@@ -441,6 +685,21 @@ function SetupTab({
           <p className="warn">Outside official 5–15 bag — use Travellers or adjust manually.</p>
         )}
         {state.setupWarning && <p className="warn">{state.setupWarning}</p>}
+      </div>
+
+      <div className="panel">
+        <h2>TV character sheet</h2>
+        <p className="muted">
+          Shows the script&apos;s characters and the official setup counts on the TV (lobby, day and dusk only).
+          The Baron&apos;s adjustment is never shown.
+        </p>
+        <button
+          type="button"
+          className={state.tvSheet ? "primary" : ""}
+          onClick={() => emit("game:setTvSheet", { on: !state.tvSheet })}
+        >
+          {state.tvSheet ? "Hide character sheet on TV" : "Show character sheet on TV"}
+        </button>
       </div>
 
       <div className="panel">
@@ -535,6 +794,7 @@ function GrimoireTab({
 
       <PlayerEditor
         player={player}
+        players={state.players}
         charName={char?.name}
         charTeam={char?.team}
         characters={state.characters}
@@ -548,6 +808,7 @@ function GrimoireTab({
 
 function PlayerEditor({
   player,
+  players,
   charName,
   charTeam,
   characters,
@@ -556,6 +817,7 @@ function PlayerEditor({
   emit,
 }: {
   player: Player;
+  players: Player[];
   charName?: string;
   charTeam?: Team;
   characters: StorytellerState["characters"];
@@ -563,6 +825,14 @@ function PlayerEditor({
   reminderPool: string[];
   emit: (e: string, d?: unknown) => void;
 }) {
+  const seated = players.filter((p) => !p.leftGame);
+  const inPlay = new Set(
+    players
+      .filter((p) => !p.leftGame && p.id !== player.id)
+      .map((p) => trueCharacterId(p, characters))
+      .filter(Boolean) as string[],
+  );
+  const thinksName = characters.find((c) => c.id === player.thinksCharacterId)?.name;
   return (
     <div className={`player-card ${player.alive ? "" : "dead"}`}>
       <header>
@@ -571,6 +841,9 @@ function PlayerEditor({
             Seat {player.seat} · {player.name}
           </strong>
           {charName && <span className={`badge ${charTeam}`}>{charName}</span>}
+          {player.characterId === "drunk" && (
+            <span className="badge townsfolk">thinks: {thinksName ?? "?"}</span>
+          )}
         </div>
         <button
           type="button"
@@ -618,6 +891,74 @@ function PlayerEditor({
         ))}
       </select>
 
+      {player.characterId === "drunk" && (
+        <>
+          <label className="muted" style={{ marginTop: "0.5rem", display: "block" }}>
+            Thinks they are (a Townsfolk not in play — they wake and get info as this)
+          </label>
+          <select
+            value={player.thinksCharacterId ?? ""}
+            onChange={(e) =>
+              emit("game:updatePlayer", {
+                playerId: player.id,
+                patch: { thinksCharacterId: e.target.value || null },
+              })
+            }
+          >
+            <option value="">— pick a Townsfolk —</option>
+            {characters
+              .filter((c) => c.team === "townsfolk")
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {inPlay.has(c.id) ? " (in play!)" : ""}
+                </option>
+              ))}
+          </select>
+          {player.thinksCharacterId && inPlay.has(player.thinksCharacterId) && (
+            <p className="warn">That Townsfolk is in play — pick one that is not.</p>
+          )}
+        </>
+      )}
+
+      {player.isTraveller && (
+        <>
+          <label className="muted" style={{ marginTop: "0.5rem", display: "block" }}>
+            Alignment (secret)
+          </label>
+          <div className="chip-row">
+            {(["good", "evil"] as const).map((a) => (
+              <button
+                key={a}
+                type="button"
+                className={`chip ${(player.alignment ?? "good") === a ? "on" : ""}`}
+                onClick={() => emit("game:updatePlayer", { playerId: player.id, patch: { alignment: a } })}
+              >
+                {a === "good" ? "Good" : "Evil"}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <label className="muted" style={{ marginTop: "0.5rem", display: "block" }}>
+        Seat
+      </label>
+      <div className="row" style={{ gap: "0.5rem", alignItems: "center" }}>
+        <select
+          data-testid="seat-select"
+          value={player.seat}
+          onChange={(e) => emit("game:moveSeat", { playerId: player.id, seat: Number(e.target.value) })}
+        >
+          {seated.map((_, i) => (
+            <option key={i} value={i + 1}>
+              Seat {i + 1}
+            </option>
+          ))}
+        </select>
+        <span className="muted">Move seat — Empath / Chef neighbours and vote order follow the seating.</span>
+      </div>
+
       <label className="muted" style={{ marginTop: "0.5rem", display: "block" }}>
         Reminders
       </label>
@@ -627,7 +968,7 @@ function PlayerEditor({
             ...reminderPool,
             ...player.reminders,
             // Always offer common auto-placed tokens so they show/edit on any seat
-            "Drunk",
+            "Is the Drunk",
             "Poisoned",
             "Safe",
             "Master",
@@ -680,11 +1021,12 @@ function PlayerEditor({
       {charTeam === "demon" && (
         <>
           <label className="muted" style={{ marginTop: "0.5rem", display: "block" }}>
-            Bluffs
+            Bluffs ({player.bluffs.length}/3 good characters not in play)
           </label>
           <div className="chip-row">
             {characters
               .filter((c) => c.team === "townsfolk" || c.team === "outsider")
+              .filter((c) => !inPlay.has(c.id) || player.bluffs.includes(c.id))
               .map((c) => {
                 const on = player.bluffs.includes(c.id);
                 return (
@@ -743,6 +1085,10 @@ function NightTab({
   const [revealResult, setRevealResult] = useState(false);
   const [targetConfirmed, setTargetConfirmed] = useState(false);
   const [redHerringId, setRedHerringId] = useState<string>("");
+  /** Imp self-kill with several Minions: the server asks who receives the star-pass. */
+  const [starPass, setStarPass] = useState<{ impId: string; candidates: { id: string; name: string }[] } | null>(null);
+  /** Imp attacked a healthy Mayor: Storyteller decides whether the kill bounces. */
+  const [mayorPrompt, setMayorPrompt] = useState<{ mayorId: string; replacementId: string } | null>(null);
 
   const step = night?.steps[night.stepIndex];
   const show: NightShowSpec = step?.show ?? {
@@ -784,6 +1130,8 @@ function NightTab({
     setRevealResult(false);
     setTargetConfirmed(false);
     setRedHerringId("");
+    setStarPass(null);
+    setMayorPrompt(null);
   }, [night?.stepIndex, night?.isFirstNight, step?.id]);
 
   if (!night) {
@@ -914,16 +1262,17 @@ function NightTab({
         if (next.length === 0) {
           setInfoCharacterId("");
         } else if (infoImpaired) {
-          const truthId = p?.characterId ?? null;
+          const truthId = trueCharacterId(p, state.characters);
           setInfoCharacterId(
             pickWrongCharacterId(
               [...state.characters, ...state.travellers],
               truthId,
               show.characterTeams,
+              step?.characterId,
             ),
           );
         } else if (p?.characterId) {
-          setInfoCharacterId(p.characterId);
+          setInfoCharacterId(trueCharacterId(p, state.characters) ?? "");
         } else {
           setInfoCharacterId("");
         }
@@ -950,6 +1299,22 @@ function NightTab({
     });
   }
 
+  /** Send the Imp's kill; the server may ask for the star-pass recipient first. */
+  function sendKill(targetId: string, reason: string, starPassTo?: string) {
+    emit("game:otherDeath", { playerId: targetId, reason, starPassTo }, (res) => {
+      const r = res as { needsStarPassChoice?: boolean; candidates?: { id: string; name: string }[] } | undefined;
+      if (r?.needsStarPassChoice && r.candidates?.length) {
+        setShowing(false);
+        setStarPass({ impId: targetId, candidates: r.candidates });
+        return;
+      }
+      setStarPass(null);
+      setMayorPrompt(null);
+      setTargetConfirmed(true);
+      window.setTimeout(() => emit("game:markNightStepDone"), 350);
+    });
+  }
+
   function confirmTarget() {
     const targetId = infoPlayers[0];
     if (!targetId || !show.reminder) return;
@@ -957,23 +1322,25 @@ function NightTab({
     if (!target) return;
 
     if (show.reminder === "Dead") {
-      emit("game:otherDeath", { playerId: targetId, reason: "Demon" }, (result) => {
-        const r = result as { ok?: boolean; blocked?: boolean } | undefined;
-        if (r?.blocked) {
-          setTargetConfirmed(false);
-          return;
-        }
-        setTargetConfirmed(true);
-        window.setTimeout(() => emit("game:markNightStepDone"), 350);
-      });
+      const impHealthy = !wakeTargets.some((p) => isPoisonedOrDrunkPlayer(p));
+      if (impHealthy && mayorBounceAvailable(state.players, target) && !mayorPrompt) {
+        setShowing(false);
+        setMayorPrompt({ mayorId: target.id, replacementId: "" });
+        return;
+      }
+      // A protected target (Soldier / Safe) still confirms — the server records a failed kill.
+      sendKill(targetId, "Demon");
       return;
     }
 
     // Dead is handled above; exclusive night marks go through one server mutate
-    emit("game:applyNightReminder", { playerId: targetId, reminder: show.reminder });
-    setTargetConfirmed(true);
-    // Choice recorded on the grimoire — advance to the next wake
-    window.setTimeout(() => emit("game:markNightStepDone"), 350);
+    emit("game:applyNightReminder", { playerId: targetId, reminder: show.reminder }, (res) => {
+      const r = res as { ok?: boolean } | undefined;
+      if (r && r.ok === false) return;
+      setTargetConfirmed(true);
+      // Choice recorded on the grimoire — advance to the next wake
+      window.setTimeout(() => emit("game:markNightStepDone"), 350);
+    });
   }
 
   /** Auto-place WW/Lib/Inv/FT tokens from the current night composer. */
@@ -1038,16 +1405,30 @@ function NightTab({
       ?.map((id) => state.characters.find((c) => c.id === id)?.name)
       .filter(Boolean) ?? [];
 
+  // "Choose a player (not yourself)" — dead players may be chosen (Monk included).
+  const notSelfChoosers = ["monk", "butler", "bureaucrat", "thief"];
   const pickablePlayers = state.players.filter((p) => !p.leftGame).filter((p) => {
-    if (show.kind === "choose-target" && step?.characterId === "monk") {
-      return p.id !== showForId && p.alive;
+    if (show.kind === "choose-target" && notSelfChoosers.includes(step?.characterId ?? "")) {
+      return p.id !== showForId && !wakeTargets.some((w) => w.id === p.id);
     }
     return true;
   });
 
+  const pickedSelf = !!showForId && infoPlayers.includes(showForId);
+  const pickedOwnRole =
+    !zeroOutsiders && !!infoCharacterId && infoCharacterId === step?.characterId;
+
   const selectedPlayerNames = infoPlayers
     .map((id) => state.players.find((p) => p.id === id)?.name)
     .filter(Boolean) as string[];
+
+  const killProtection =
+    show.reminder === "Dead"
+      ? nightKillProtection(
+          state.players,
+          state.players.find((p) => p.id === infoPlayers[0]),
+        )
+      : null;
 
   const needsWakePick =
     show.kind !== "none" ||
@@ -1138,7 +1519,10 @@ function NightTab({
           <h2>Info for {showPlayer.name}</h2>
           {(infoImpaired || show.stWarning) && (
             <p className="warn" style={{ marginTop: "0.35rem" }}>
-              {show.stWarning || "Poisoned/Drunk — give false information"}
+              {show.stWarning ||
+                (step?.characterId === "imp"
+                  ? "Imp is Poisoned/Drunk — the kill fails: nobody dies (no star-pass on a self-kill). Let them pick and Confirm as normal."
+                  : "Poisoned/Drunk — give false information")}
               {(step?.characterId === "washerwoman" ||
                 step?.characterId === "librarian" ||
                 step?.characterId === "investigator") &&
@@ -1197,10 +1581,11 @@ function NightTab({
                   if (!picked?.characterId) {
                     return <>truth loads from their real character; lie default fills after they pick</>;
                   }
+                  const truthId = trueCharacterId(picked, state.characters);
                   const truthName =
-                    state.characters.find((c) => c.id === picked.characterId)?.name ||
-                    state.travellers.find((c) => c.id === picked.characterId)?.name ||
-                    picked.characterId;
+                    state.characters.find((c) => c.id === truthId)?.name ||
+                    state.travellers.find((c) => c.id === truthId)?.name ||
+                    truthId;
                   return <>truth: {truthName}</>;
                 })()}
             </p>
@@ -1210,6 +1595,62 @@ function NightTab({
             <p className="st-instruction" style={{ marginTop: "0.35rem" }}>
               Player will see: “{show.playerPrompt}”
             </p>
+          )}
+
+          {show.registration && (
+            <div className="registration-panel" data-testid="registration-panel">
+              <div className="muted">Storyteller only · Recluse / Spy registration</div>
+              <p style={{ margin: "0.25rem 0" }}>{show.registration.note}</p>
+              {show.registration.numbers && (
+                <div className="chip-row">
+                  {show.registration.numbers.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`chip ${infoNumber === n ? "on" : ""}`}
+                      onClick={() => setInfoNumber(n)}
+                    >
+                      Show {n}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {show.registration.pairs && (
+                <div className="chip-row">
+                  {show.registration.pairs.map((pair) => (
+                    <button
+                      key={pair.label}
+                      type="button"
+                      className="chip"
+                      onClick={() => {
+                        setZeroOutsiders(false);
+                        setInfoPlayers(pair.playerIds);
+                        if (pair.characterId) setInfoCharacterId(pair.characterId);
+                      }}
+                    >
+                      {pair.label}:{" "}
+                      {pair.playerIds.map((id) => state.players.find((p) => p.id === id)?.name).join(" · ")}
+                      {pair.characterId
+                        ? ` as ${state.characters.find((c) => c.id === pair.characterId)?.name ?? pair.characterId}`
+                        : ""}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {show.registration.characterIds && (
+                <select
+                  value=""
+                  onChange={(e) => e.target.value && setInfoCharacterId(e.target.value)}
+                >
+                  <option value="">— register as… —</option>
+                  {show.registration.characterIds.map((id) => (
+                    <option key={id} value={id}>
+                      {state.characters.find((c) => c.id === id)?.name ?? id}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           )}
 
           {(show.kind === "demon-info" ||
@@ -1286,6 +1727,18 @@ function NightTab({
                     {show.zeroOutsidersLabel || "Zero Outsiders"}
                   </button>
                 </div>
+              )}
+              {show.kind === "players-and-character" && (pickedSelf || pickedOwnRole) && (
+                <p className="warn" style={{ marginTop: "0.5rem" }}>
+                  Heads up: this shows {showPlayer?.name ?? "the woken player"}{" "}
+                  {[
+                    pickedSelf ? "themselves as one of the two players" : "",
+                    pickedOwnRole ? `their own role (${infoChar?.name ?? infoCharacterId})` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" and ")}
+                  . Allowed, but it usually gives the game away.
+                </p>
               )}
             </>
           )}
@@ -1397,6 +1850,81 @@ function NightTab({
                 Confirm{show.reminder ? ` → ${show.reminder}` : ""}
               </button>
               {targetConfirmed && <span className="muted">Marked.</span>}
+            </div>
+          )}
+          {show.kind === "choose-target" && show.reminder === "Dead" && killProtection && (
+            <p className="muted" style={{ marginTop: "0.35rem" }}>
+              {killProtection} — confirm anyway; nobody dies from this kill.
+            </p>
+          )}
+
+          {mayorPrompt && (
+            <div className="registration-panel" data-testid="mayor-prompt">
+              <div className="muted">Storyteller only · Mayor</div>
+              <p style={{ margin: "0.25rem 0" }}>
+                The Imp attacked the Mayor ({state.players.find((p) => p.id === mayorPrompt.mayorId)?.name}).
+                You may let the Mayor die, or have another player die instead (a Soldier / Monk-protected /
+                dead choice means nobody dies tonight).
+              </p>
+              <div className="row">
+                <button type="button" className="danger" onClick={() => sendKill(mayorPrompt.mayorId, "Demon")}>
+                  Mayor dies
+                </button>
+                <select
+                  value={mayorPrompt.replacementId}
+                  onChange={(e) => setMayorPrompt({ ...mayorPrompt, replacementId: e.target.value })}
+                >
+                  <option value="">— someone else dies —</option>
+                  {state.players
+                    .filter((p) => !p.leftGame && p.id !== mayorPrompt.mayorId)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {!p.alive ? " † (nobody dies)" : ""}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={!mayorPrompt.replacementId}
+                  onClick={() => {
+                    const r = state.players.find((p) => p.id === mayorPrompt.replacementId);
+                    if (r && !r.alive) {
+                      setMayorPrompt(null);
+                      setTargetConfirmed(true);
+                      window.setTimeout(() => emit("game:markNightStepDone"), 350);
+                      return;
+                    }
+                    sendKill(mayorPrompt.replacementId, "Demon (Mayor bounce)");
+                  }}
+                >
+                  Bounce the kill
+                </button>
+                <button type="button" onClick={() => setMayorPrompt(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {starPass && (
+            <div className="registration-panel" data-testid="star-pass">
+              <div className="muted">Storyteller only · Star-pass</div>
+              <p style={{ margin: "0.25rem 0" }}>
+                The Imp killed themselves. Choose which Minion becomes the Imp — they are woken right after
+                and shown YOU ARE the Imp (no kill tonight).
+              </p>
+              <div className="chip-row">
+                {starPass.candidates.map((c) => (
+                  <button key={c.id} type="button" className="chip" onClick={() => sendKill(starPass.impId, "Demon", c.id)}>
+                    {c.name}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setStarPass(null)}>
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
 
@@ -1564,6 +2092,18 @@ function NightTab({
                   </div>
                 )}
 
+                {show.kind === "minion-info" && (show.fellowPlayerIds?.length ?? 0) > 1 && (
+                  <div className="show-block">
+                    <div className="show-section-label">{show.fellowLabel || "The Minions"}</div>
+                    <div className="show-big">
+                      {(show.fellowPlayerIds ?? [])
+                        .map((id) => state.players.find((p) => p.id === id)?.name)
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  </div>
+                )}
+
                 {show.kind === "demon-info" && (
                   <div className="show-block">
                     <div className="show-section-label">
@@ -1679,14 +2219,29 @@ function TravelTab({
 }) {
   const [name, setName] = useState("");
   const [characterId, setCharacterId] = useState(state.travellers[0]?.id ?? "");
+  const [seat, setSeat] = useState<string>("");
+  const [alignment, setAlignment] = useState<"good" | "evil">("good");
+  const [caller, setCaller] = useState<string>("");
+  const [donor, setDonor] = useState<string>("");
   const active = state.players.filter((p) => p.isTraveller && !p.leftGame);
+  const seated = state.players.filter((p) => !p.leftGame).sort((a, b) => a.seat - b.seat);
+  const exile = state.exile;
+  const exileTarget = exile ? state.players.find((p) => p.id === exile.travellerId) : null;
+  const canCallExile = state.phase === "day" || state.phase === "dusk";
+  const today = Math.max(1, state.dayNumber || 1);
+  const calledToday = (id: string) =>
+    state.publicLog.some((x) => x.type === "exile" && x.playerId === id && x.dayNumber === today);
+  const demon = state.players.find(
+    (p) => !p.leftGame && p.alive && state.characters.find((c) => c.id === p.characterId)?.team === "demon",
+  );
 
   return (
     <div className="stack">
       <div className="panel">
         <h2>Add Traveller</h2>
         <p className="muted">
-          Joins mid-game. Exile via Leave. Travellers don&apos;t count for Scarlet Woman&apos;s 5.
+          Travellers are exiled, never executed. Their character is public; their alignment is your secret
+          choice. They don&apos;t count toward the Scarlet Woman&apos;s 5.
         </p>
         <label className="muted">Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Traveller name" />
@@ -1700,47 +2255,185 @@ function TravelTab({
             </option>
           ))}
         </select>
+        <label className="muted" style={{ display: "block", marginTop: "0.5rem" }}>
+          Sits at
+        </label>
+        <select value={seat} onChange={(e) => setSeat(e.target.value)}>
+          <option value="">— last seat —</option>
+          {seated.map((p, i) => (
+            <option key={p.id} value={i + 1}>
+              Seat {i + 1} (before {p.name})
+            </option>
+          ))}
+        </select>
+        <label className="muted" style={{ display: "block", marginTop: "0.5rem" }}>
+          Alignment (secret)
+        </label>
+        <div className="chip-row">
+          {(["good", "evil"] as const).map((a) => (
+            <button key={a} type="button" className={`chip ${alignment === a ? "on" : ""}`} onClick={() => setAlignment(a)}>
+              {a === "good" ? "Good" : "Evil"}
+            </button>
+          ))}
+        </div>
+        {alignment === "evil" && (
+          <p className="muted">An evil Traveller learns who the Demon is at the next night — no bluffs, no other evil players.</p>
+        )}
         <div className="row" style={{ marginTop: "0.75rem" }}>
           <button
             className="primary"
             type="button"
             disabled={!characterId}
             onClick={() => {
-              emit("game:addTraveller", { name: name || undefined, characterId });
+              emit("game:addTraveller", { name: name || undefined, characterId, seat: seat || null, alignment });
               setName("");
+              setSeat("");
+              setAlignment("good");
             }}
           >
             Join table
           </button>
         </div>
       </div>
+
+      {exile && exileTarget && (
+        <div className="panel" data-testid="exile-panel">
+          <h2>Exile: {exileTarget.name}?</h2>
+          <p className="muted">
+            Everyone may raise a hand — dead players too, no vote token spent, no Butler rule, no vote weights.
+            Needs {exile.threshold} (half of all {seated.length} players, rounded up). An exile is not an execution.
+          </p>
+          <div className="chip-row">
+            {seated.map((p) => {
+              const on = exile.supporters.includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`chip ${on ? "on" : ""}`}
+                  onClick={() => emit("game:toggleExileSupport", { playerId: p.id })}
+                >
+                  {p.name}
+                  {!p.alive ? " †" : ""}
+                </button>
+              );
+            })}
+          </div>
+          <p style={{ marginTop: "0.5rem" }}>
+            <strong>
+              {exile.supporters.length} / {exile.threshold}
+            </strong>{" "}
+            {exile.supporters.length >= exile.threshold ? "— enough to exile" : "— not enough yet"}
+          </p>
+          <div className="row">
+            <button className="primary" type="button" onClick={() => emit("game:resolveExile", {})}>
+              Count hands
+            </button>
+            <button type="button" onClick={() => emit("game:resolveExile", { force: "exile" })}>
+              Exile anyway
+            </button>
+            <button type="button" onClick={() => emit("game:resolveExile", { force: "spare" })}>
+              Spare
+            </button>
+            <button type="button" onClick={() => emit("game:cancelExile")}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="panel">
         <h2>At the table</h2>
         {active.length === 0 && <p className="muted">No Travellers in play.</p>}
         {active.map((p) => {
           const t = state.travellers.find((x) => x.id === p.characterId);
+          const align = p.alignment ?? "good";
           return (
-            <div key={p.id} className="player-card" style={{ marginBottom: "0.5rem" }}>
+            <div key={p.id} className={`player-card ${p.alive ? "" : "dead"}`} style={{ marginBottom: "0.5rem" }}>
               <header>
                 <div>
                   <strong>
-                    {p.name} · {t?.name ?? "?"}
+                    Seat {p.seat} · {p.name} · {t?.name ?? "?"}
                   </strong>
+                  <span className={`badge ${align === "evil" ? "demon" : "townsfolk"}`}>{align}</span>
+                  {!p.alive && <span className="badge">exiled / dead</span>}
                   <p className="muted" style={{ margin: 0 }}>
                     {t?.ability}
                   </p>
+                  {align === "evil" && (
+                    <p className="muted" style={{ margin: 0 }}>
+                      {p.learnedDemon ? "Has seen the Demon" : `Will be shown the Demon${demon ? ` (${demon.name})` : ""} tonight`}
+                    </p>
+                  )}
+                  {p.characterId === "beggar" && (
+                    <p className="muted" style={{ margin: 0 }}>
+                      Vote tokens: {p.voteTokens} {p.alive ? "(one spent per vote)" : "(dead — uses their ghost vote)"}
+                    </p>
+                  )}
                 </div>
-                <button
-                  className="danger"
-                  type="button"
-                  onClick={() => emit("game:leaveTraveller", { playerId: p.id })}
-                >
-                  Leave
-                </button>
+                <div className="stack" style={{ gap: "0.35rem" }}>
+                  {p.alive && (
+                    <button
+                      type="button"
+                      disabled={!canCallExile || Boolean(exile) || calledToday(p.id)}
+                      title={
+                        !canCallExile
+                          ? "Exiles happen during the day"
+                          : calledToday(p.id)
+                            ? "Already called for exile today — each Traveller can only be called once per day"
+                            : ""
+                      }
+                      onClick={() => emit("game:callExile", { travellerId: p.id, calledById: caller || null })}
+                    >
+                      Call exile
+                    </button>
+                  )}
+                  <button type="button" onClick={() => emit("game:leaveTraveller", { playerId: p.id })}>
+                    Leaves the game
+                  </button>
+                </div>
               </header>
+              {p.characterId === "beggar" && p.alive && (
+                <div className="row" style={{ marginTop: "0.5rem", gap: "0.5rem" }}>
+                  <select value={donor} onChange={(e) => setDonor(e.target.value)}>
+                    <option value="">— dead player gives a token —</option>
+                    {state.players
+                      .filter((d) => !d.leftGame && !d.alive && !d.usedGhostVote && d.id !== p.id)
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!donor}
+                    onClick={() => {
+                      emit("game:giveVoteToken", { beggarId: p.id, donorId: donor });
+                      setDonor("");
+                    }}
+                  >
+                    Give vote token
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
+        {active.some((p) => p.alive) && (
+          <div className="row" style={{ marginTop: "0.5rem", gap: "0.5rem" }}>
+            <span className="muted">Exile called by:</span>
+            <select value={caller} onChange={(e) => setCaller(e.target.value)}>
+              <option value="">— anyone —</option>
+              {seated.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {!p.alive ? " †" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1822,16 +2515,22 @@ function RulesTab({
           <strong>Auto</strong>
         </p>
         <ul style={{ margin: "0.25rem 0 0.75rem", paddingLeft: "1.1rem" }}>
-          <li>Monk Safe / Soldier block night Demon kills (fail if Poisoned/Drunk as noted)</li>
-          <li>Butler vote only if Master is voting; Bureaucrat ×3 / Thief −1 on tally</li>
-          <li>Imp star-pass on self-kill; Scarlet Woman → Imp (+ Is the Demon) when Demon dies &amp; ≥5 non-travellers</li>
-          <li>Virgin auto-executes Townsfolk nominator (not if Virgin Poisoned/Drunk)</li>
-          <li>Saint executed → Evil wins (not if Poisoned/Drunk)</li>
-          <li>Mayor: Start night with 3 alive non-travellers &amp; no execution → Good wins</li>
-          <li>Baron adjusts setup bag +2 Outsiders / −2 Townsfolk</li>
+          <li>Monk Safe / Soldier block night Demon kills (Safe fails only if the Monk is Poisoned/Drunk; the Monk may pick a dead player, never themselves)</li>
+          <li>Every raised hand counts; the Butler gets a private warning if their Master&apos;s hand isn&apos;t up. Bureaucrat ×3 / Thief −1 only while that Traveller lives</li>
+          <li>Game over: Demon dead → Good wins; ≤2 alive non-travellers with the Demon → Evil wins (announced after the current line)</li>
+          <li>Imp star-pass on self-kill: a healthy Scarlet Woman must take it, otherwise you choose the Minion; the new Imp is woken (&quot;You are the Imp&quot;) and doesn&apos;t kill that night</li>
+          <li>Poison ends the moment the Poisoner dies or star-passes</li>
+          <li>Virgin: Townsfolk nominator executed (Drunk never; Spy asks you); ability spent on first nomination either way, restored if the nomination is cancelled</li>
+          <li>Slayer shot (Votes tab): kills the Demon; Recluse on your call; spent even on a miss / when Poisoned</li>
+          <li>Saint executed → Evil wins (not if Poisoned/Drunk, not if already dead)</li>
+          <li>Mayor: Start night with exactly 3 alive (travellers count) &amp; no execution today (&quot;Lives&quot; still counts as the execution) → Good wins</li>
+          <li>Baron adjusts setup bag +2 Outsiders / −2 Townsfolk, fixed at setup</li>
+          <li>Minion &amp; Demon info only with 7+ players; Travellers wake first, then Minion info, then Demon info</li>
+          <li>Drunk: set Drunk + &quot;Thinks they are&quot; — they wake as that Townsfolk; Undertaker / Ravenkeeper / Librarian / reveal see the Drunk</li>
+          <li>Travellers are exiled (Travel tab), never nominated; dead Travellers keep a ghost vote; Beggar votes need tokens from the dead</li>
           <li>
-            Night Show/Done places WW Townsfolk+Wrong · Washerwoman, Lib Outsider+Wrong · Librarian, Inv Minion+Wrong · Investigator; FT Red
-            herring if missing; execution places Died today; Imp kill rebuilds Ravenkeeper wake
+            Night Show/Done places WW Townsfolk+Wrong · Washerwoman, Lib Outsider+Wrong · Librarian, Inv Minion+Wrong · Investigator (Recluse/Spy
+            registering get the token); FT Red herring if missing; execution places Died today; deaths mid-night keep your place in the order
           </li>
         </ul>
         <p>
@@ -1839,8 +2538,9 @@ function RulesTab({
         </p>
         <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1.1rem" }}>
           <li>Washer / Lib / Inv / Chef / Empath / FT / Ravenkeeper / Spy info when Drunk/poisoned</li>
-          <li>Recluse / Spy registration edge cases</li>
-          <li>Slayer shot (manual public death)</li>
+          <li>Recluse / Spy registration — each info step lists the alternatives you may show (also prompted for Slayer / Virgin)</li>
+          <li>Mayor bounce: when the Imp attacks a healthy Mayor you&apos;re asked whether someone else dies instead</li>
+          <li>Scapegoat executed instead (execution panel)</li>
           <li>Complex Traveller day powers (Matron, Judge, Voudon, …)</li>
         </ul>
       </div>
@@ -2102,7 +2802,7 @@ function DawnTab({
         </p>
         <div className="chip-row">
           {state.players
-            .filter((p) => !p.leftGame && (p.alive || selected.has(p.id)))
+            .filter((p) => !p.leftGame && (p.alive || selected.has(p.id) || state.diedTonightIds.includes(p.id)))
             .map((p) => {
               const on = selected.has(p.id);
               return (
@@ -2152,53 +2852,402 @@ function VotesTab({
   state: StorytellerState;
   emit: (e: string, d?: unknown) => void;
 }) {
-  const [nominatorId, setNominatorId] = useState(state.players[0]?.id ?? "");
-  const [nomineeId, setNomineeId] = useState(state.players[1]?.id ?? state.players[0]?.id ?? "");
+  const [nominatorId, setNominatorId] = useState("");
+  const [nomineeId, setNomineeId] = useState("");
+  const [override, setOverride] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [shooterId, setShooterId] = useState(
+    () => state.players.find((p) => p.characterId === "slayer" && !p.leftGame)?.id ?? state.players[0]?.id ?? "",
+  );
+  const [shotTargetId, setShotTargetId] = useState(state.players[0]?.id ?? "");
+  const [recluseAsDemon, setRecluseAsDemon] = useState(false);
+  const shotTarget = state.players.find((p) => p.id === shotTargetId);
+  const isDay = DAY_PHASES.includes(state.phase);
+
+  function openNomination() {
+    const nominator = state.players.find((p) => p.id === nominatorId);
+    const nominee = state.players.find((p) => p.id === nomineeId);
+    const virginArmed =
+      nominee?.characterId === "virgin" &&
+      nominee.alive &&
+      !nominee.abilityUsed &&
+      !nominee.reminders.includes("No ability") &&
+      !isPoisonedOrDrunkPlayer(nominee);
+    const spyRegistersAsTownsfolk =
+      virginArmed && nominator?.characterId === "spy" && nominator.alive
+        ? window.confirm(
+            `${nominator.name} (Spy) is nominating the Virgin. Should the Spy register as a Townsfolk and be executed?`,
+          )
+        : false;
+    emit("game:startNomination", { nominatorId, nomineeId, spyRegistersAsTownsfolk, override });
+    setNominatorId("");
+    setNomineeId("");
+    setOverride(false);
+    setPicking(false);
+  }
 
   const nom = state.nomination;
-  const majority = state.nomination?.majority ?? Math.ceil(state.players.filter((p) => p.alive).length / 2);
+  const livingCount = state.players.filter((p) => p.alive && !p.leftGame).length;
+  const majority = state.nomination?.majority ?? Math.ceil(livingCount / 2);
+  const block = state.block ?? null;
+  const toBeat = nom ? (nom.toBeat ?? null) : (block?.votes ?? null);
+  const need = toBeat != null ? Math.max(majority, toBeat + 1) : majority;
   const master = state.players.find((p) => p.reminders.includes("Master") && !p.leftGame);
   const butler = state.players.find(
     (p) => p.characterId === "butler" && p.alive && !p.leftGame,
   );
+  const nameOf = (id: string) => state.players.find((p) => p.id === id)?.name ?? id;
+  const seats = state.players.filter((p) => !p.leftGame).sort((a, b) => a.seat - b.seat);
+  const rules = state.nominationRules ?? {
+    closedReason: null,
+    notOpenReason: null,
+    dayLimitReason: null,
+    nominator: {},
+    nominee: {},
+  };
+  const today = state.nominationsToday ?? [];
+  const holder = block?.nomineeId ? nameOf(block.nomineeId) : null;
+  const canNominate = seats.filter((p) => !rules.nominator[p.id]);
+  const canBeNominated = seats.filter((p) => !rules.nominee[p.id]);
+  const inDay = state.phase === "day";
+  const duskAnnounce = state.phase === "dusk" && !state.nominationsOpen && !state.nightPending;
+  const nominationsOpen = state.phase === "dusk" && state.nominationsOpen && !state.nightPending;
+  const lastResult = [...today].reverse().find((n) => n.outcome !== null);
+  const exhaustedReason = !nominationsOpen
+    ? null
+    : (rules.dayLimitReason ??
+      (canNominate.length === 0
+        ? "Nobody left can nominate today."
+        : canBeNominated.length === 0
+          ? "Nobody left can be nominated today."
+          : null));
+  const showPicker = nominationsOpen ? !exhaustedReason || picking : (inDay || duskAnnounce) && picking;
+
+  const openBlocked =
+    rules.closedReason ??
+    (!nominatorId
+      ? "Pick a nominator."
+      : !nomineeId
+        ? "Pick a nominee."
+        : override
+          ? null
+          : (rules.notOpenReason ??
+            rules.dayLimitReason ??
+            (rules.nominator[nominatorId] ? `${nameOf(nominatorId)}: ${rules.nominator[nominatorId]}.` : null) ??
+            (rules.nominee[nomineeId] ? `${nameOf(nomineeId)}: ${rules.nominee[nomineeId]}.` : null)));
+  const endBlocked = endDayBlocked(state);
+
+  function outcomeLabel(n: (typeof today)[number]): string {
+    switch (n.outcome) {
+      case null:
+        return "Voting…";
+      case "majority":
+        return "On the block";
+      case "tie":
+        return "Tied — block cleared";
+      case "outvoted":
+        return "Majority, but too few to replace the block";
+      case "no_majority":
+        return "Failed — no majority";
+      case "virgin":
+        return "Virgin — nominator executed";
+    }
+  }
+
+  const blockSummary = block
+    ? block.nomineeId
+      ? `On the block: ${holder} with ${block.votes} vote${block.votes === 1 ? "" : "s"}. ${block.votes + 1}+ replaces them; ${block.votes} ties and clears the block.`
+      : `Tied at ${block.votes} — nobody on the block. ${Math.max(majority, block.votes + 1)}+ votes puts someone on it.`
+    : `Nobody on the block. ${majority} votes (half of ${livingCount} living, rounded up) puts someone on it.`;
+
+  if (!isDay) {
+    return (
+      <div className="stack">
+        <div className="panel">
+          <h2>Nominations</h2>
+          <p className="muted">Nominations open at dusk, after the day's discussion. Finish the night and dawn first.</p>
+        </div>
+      </div>
+    );
+  }
+
+  function seatChip(
+    p: (typeof seats)[number],
+    selected: boolean,
+    reason: string | null | undefined,
+    onPick: () => void,
+  ) {
+    const blocked = Boolean(reason) && !override;
+    return (
+      <button
+        key={p.id}
+        type="button"
+        disabled={blocked}
+        title={reason ?? undefined}
+        className={`chip ${selected ? "on" : ""}`}
+        onClick={onPick}
+      >
+        {p.seat}. {p.name}
+        {!p.alive ? " †" : ""}
+        {reason ? <span className="muted"> · {reason}</span> : null}
+      </button>
+    );
+  }
 
   return (
     <div className="stack">
-      <div className="panel">
-        <h2>Nominate</h2>
-        <p className="muted">
-          Virgin auto-executes a Townsfolk nominator (unless Virgin is Poisoned/Drunk). Saint
-          execution → Evil wins. Vote tally applies Butler / 3 votes / Negative vote.
-        </p>
-        <label className="muted">Nominator</label>
-        <select value={nominatorId} onChange={(e) => setNominatorId(e.target.value)}>
-          {state.players.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <label className="muted" style={{ display: "block", marginTop: "0.5rem" }}>
-          Nominee
-        </label>
-        <select value={nomineeId} onChange={(e) => setNomineeId(e.target.value)}>
-          {state.players.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <div className="row" style={{ marginTop: "0.75rem" }}>
-          <button
-            className="primary"
-            type="button"
-            onClick={() => emit("game:startNomination", { nominatorId, nomineeId })}
-          >
-            Open nomination
-          </button>
+      {inDay || duskAnnounce ? (
+        <div className="panel">
+          <h2>{inDay ? `Day ${state.dayNumber} — open discussion` : `Dusk — day ${state.dayNumber} ends`}</h2>
+          <p>
+            {inDay
+              ? "Nominations are closed during the day. When the town is ready, go to dusk: the dusk narration plays and the TV shows “Dusk falls”."
+              : "The dusk announcement is on the TV. Nominations are still closed — open them when the room is ready."}
+          </p>
+          {block && (
+            <p style={{ fontFamily: "Cinzel, serif", fontSize: "1.1rem", margin: "0.25rem 0" }}>{blockSummary}</p>
+          )}
+          <div className="row" style={{ marginTop: "0.75rem" }}>
+            {inDay ? (
+              <button className="primary" type="button" onClick={() => emit("game:goDusk")}>
+                Go to dusk
+              </button>
+            ) : (
+              <button className="primary" type="button" onClick={() => emit("game:openNominations")}>
+                Open nominations
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(SKIP_TO_NIGHT_CONFIRM)) emit("game:startNight");
+              }}
+            >
+              Skip to night
+            </button>
+            {!picking && (
+              <button type="button" onClick={() => setPicking(true)}>
+                Nominate now (Storyteller override)…
+              </button>
+            )}
+          </div>
+          {rules.notOpenReason && <p className="muted">{rules.notOpenReason}</p>}
         </div>
-      </div>
+      ) : state.phase === "dusk" && state.nightPending ? (
+        <div className="panel">
+          <h2>Dusk — day {state.dayNumber} is over</h2>
+          <p>
+            {state.executedTodayId
+              ? `${nameOf(state.executedTodayId)} was executed today.`
+              : state.executionPendingId === null && holder
+                ? `${holder} survived the gallows.`
+                : "No execution today."}
+          </p>
+          <p className="muted">The night starts on its own once the execution line has finished.</p>
+          <div className="row">
+            <button className="primary" type="button" onClick={() => emit("game:endDay")}>
+              Start night now
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="panel">
+          <h2>
+            {nominationsOpen ? "Nominations open" : "Nomination in progress"} · Day {state.dayNumber}
+          </h2>
+          <p style={{ fontFamily: "Cinzel, serif", fontSize: "1.1rem", margin: "0.25rem 0" }}>{blockSummary}</p>
+          {state.executedTodayId && (
+            <p className="muted">Executed today: {nameOf(state.executedTodayId)}.</p>
+          )}
+          {exhaustedReason && (
+            <div
+              className="panel"
+              style={{ borderColor: "var(--blood-bright, #c44)", margin: "0.5rem 0", padding: "0.75rem" }}
+            >
+              <p style={{ fontFamily: "Cinzel, serif", fontSize: "1.2rem", margin: 0 }}>
+                No more nominations possible — {exhaustedReason}
+              </p>
+              <p className="muted" style={{ margin: "0.35rem 0 0" }}>
+                Close nominations to end the day ({holder && !state.executedTodayId ? `${holder} is executed` : "no execution"}
+                ). The Storyteller override can still open one more.
+              </p>
+            </div>
+          )}
+          {nominationsOpen &&
+            !exhaustedReason &&
+            lastResult &&
+            lastResult.outcome !== "majority" &&
+            lastResult.outcome !== "virgin" && (
+            <p className="warn">
+              Nomination of {nameOf(lastResult.nomineeId)} {lastResult.outcome === "tie" ? "tied" : "failed"} (
+              {lastResult.votes}/{lastResult.majority}). Nominations are still open.
+            </p>
+          )}
+          {today.length > 0 ? (
+            <ol style={{ margin: "0.5rem 0", paddingLeft: "1.3rem" }}>
+              {today.map((n, i) => (
+                <li key={`${n.at}-${i}`} style={{ marginBottom: "0.25rem" }}>
+                  <strong>{nameOf(n.nominatorId)}</strong> → <strong>{nameOf(n.nomineeId)}</strong>
+                  {n.votes !== null ? ` · ${n.votes}/${n.majority} votes` : ""} · {outcomeLabel(n)}
+                  {n.override ? " · (override)" : ""}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="muted">No nominations yet today.</p>
+          )}
+          <p className="muted">
+            Can still nominate: {canNominate.length ? canNominate.map((p) => p.name).join(", ") : "nobody"}
+            <br />
+            Can still be nominated: {canBeNominated.length ? canBeNominated.map((p) => p.name).join(", ") : "nobody"}
+          </p>
+          <div className="row" style={{ marginTop: "0.75rem" }}>
+            <button
+              className="primary"
+              type="button"
+              disabled={Boolean(endBlocked)}
+              onClick={() => emit("game:endDay")}
+            >
+              {endDayLabel(state)}
+            </button>
+            {exhaustedReason && !picking && (
+              <button type="button" onClick={() => setPicking(true)}>
+                Nominate anyway (Storyteller override)…
+              </button>
+            )}
+          </div>
+          {endBlocked && <p className="muted">{endBlocked}</p>}
+        </div>
+      )}
 
+      {showPicker && (
+        <div className="panel">
+          <h2>New nomination</h2>
+          <p className="muted">
+            Alive players nominate once per day; each player can be nominated once per day (dead players
+            can be nominated). Travellers follow the same rules — exile is separate. Virgin auto-executes a
+            Townsfolk nominator (not the Drunk; you decide for the Spy).
+          </p>
+          {rules.notOpenReason && !override && (
+            <p className="warn">{rules.notOpenReason} Tick Storyteller override to nominate anyway.</p>
+          )}
+          {rules.dayLimitReason && !override && <p className="warn">{rules.dayLimitReason}</p>}
+          <label className="muted">1. Nominator</label>
+          <div className="chip-row">
+            {seats.map((p) =>
+              seatChip(p, nominatorId === p.id, rules.nominator[p.id], () => setNominatorId(p.id)),
+            )}
+          </div>
+          <label className="muted" style={{ display: "block", marginTop: "0.75rem" }}>
+            2. Nominee
+          </label>
+          <div className="chip-row">
+            {seats.map((p) => seatChip(p, nomineeId === p.id, rules.nominee[p.id], () => setNomineeId(p.id)))}
+          </div>
+          <label style={{ display: "block", marginTop: "0.75rem" }}>
+            <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />{" "}
+            <strong>Storyteller override</strong> — ignore the wait for nominations to open and the once-per-day and
+            one-execution limits for this nomination (logged for you, not shown on the TV)
+          </label>
+          <div className="row" style={{ marginTop: "0.75rem" }}>
+            <button className="primary" type="button" disabled={Boolean(openBlocked)} onClick={openNomination}>
+              {nominatorId && nomineeId
+                ? `Open nomination: ${nameOf(nominatorId)} → ${nameOf(nomineeId)}`
+                : "Open nomination"}
+            </button>
+            {(inDay || duskAnnounce || exhaustedReason) && (
+              <button type="button" onClick={() => setPicking(false)}>
+                Back to hub
+              </button>
+            )}
+          </div>
+          {openBlocked && <p className="muted">Can't open yet: {openBlocked}</p>}
+        </div>
+      )}
+
+      <VotePanels state={state} emit={emit} need={need} holder={holder} butler={butler} master={master} />
+
+      {isDay && (
+        <div className="panel">
+          <h2>Slayer shot</h2>
+          <p className="muted">
+            Anyone may claim to shoot — only the real, healthy, unspent Slayer can kill the Demon.
+            The real Slayer's ability is spent even on a miss.
+          </p>
+          <label className="muted">Shooter</label>
+          <select value={shooterId} onChange={(e) => setShooterId(e.target.value)}>
+            {state.players
+              .filter((p) => !p.leftGame)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {!p.alive ? " †" : ""}
+                </option>
+              ))}
+          </select>
+          <label className="muted" style={{ display: "block", marginTop: "0.5rem" }}>
+            Target
+          </label>
+          <select value={shotTargetId} onChange={(e) => setShotTargetId(e.target.value)}>
+            {state.players
+              .filter((p) => !p.leftGame)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {!p.alive ? " †" : ""}
+                </option>
+              ))}
+          </select>
+          {shotTarget?.characterId === "recluse" && (
+            <label style={{ display: "block", marginTop: "0.5rem" }}>
+              <input
+                type="checkbox"
+                checked={recluseAsDemon}
+                onChange={(e) => setRecluseAsDemon(e.target.checked)}
+              />{" "}
+              Recluse registers as the Demon (they die; game continues)
+            </label>
+          )}
+          <div className="row" style={{ marginTop: "0.75rem" }}>
+            <button
+              className="danger"
+              type="button"
+              onClick={() =>
+                emit("game:slayerShot", {
+                  shooterId,
+                  targetId: shotTargetId,
+                  recluseRegistersAsDemon: shotTarget?.characterId === "recluse" && recluseAsDemon,
+                })
+              }
+            >
+              Take the shot
+            </button>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+function VotePanels({
+  state,
+  emit,
+  need,
+  holder,
+  butler,
+  master,
+}: {
+  state: StorytellerState;
+  emit: (e: string, d?: unknown) => void;
+  need: number;
+  holder: string | null;
+  butler: Player | undefined;
+  master: Player | undefined;
+}) {
+  const nom = state.nomination;
+  return (
+    <>
       {nom && (
         <div className="panel">
           <h2>Vote</h2>
@@ -2207,12 +3256,19 @@ function VotesTab({
             {state.players.find((p) => p.id === nom.nomineeId)?.name}
           </p>
           <p style={{ fontFamily: "Cinzel, serif", fontSize: "1.8rem", margin: "0.25rem 0" }}>
-            {nom.votesForCount} / {majority}
+            {nom.votesForCount} / {need}
+          </p>
+          <p className="muted">
+            {nom.toBeat != null
+              ? holder
+                ? `${need}+ puts them on the block instead of ${holder} (${nom.toBeat}); exactly ${nom.toBeat} ties and clears the block.`
+                : `Block tied at ${nom.toBeat} — ${need}+ puts them on the block.`
+              : `${need}+ (half the living, rounded up) puts them on the block.`}
           </p>
           <p className="muted">
             Hands: {nom.votesFor.length}
             {butler && master
-              ? ` · Butler (${butler.name}) needs Master (${master.name}) voting`
+              ? ` · Butler (${butler.name}) may vote only while Master (${master.name}) votes`
               : butler
                 ? ` · Butler (${butler.name}) — set Master on grimoire`
                 : ""}
@@ -2223,17 +3279,21 @@ function VotesTab({
               ? " · Negative-vote token in play"
               : ""}
           </p>
+          {state.butlerWarning && <p className="warn">{state.butlerWarning}</p>}
           <div className="chip-row">
-            {state.players.map((p) => {
+            {state.players.filter((p) => !p.leftGame).sort((a, b) => a.seat - b.seat).map((p) => {
               const on = nom.votesFor.includes(p.id);
-              // Raising a ghost hand requires an unused ghost vote; lowering always allowed while on.
-              const canRaise = p.alive || (!p.isTraveller && !p.usedGhostVote);
+              // Raising a ghost hand requires an unused ghost vote (Travellers too); a living
+              // Beggar needs a vote token. Lowering is always allowed while on.
+              const beggarBlocked = p.alive && p.characterId === "beggar" && p.voteTokens < 1;
+              const canRaise = (p.alive && !beggarBlocked) || (!p.alive && !p.usedGhostVote);
               const can = on || canRaise;
               const mods = [
                 p.reminders.includes("3 votes") ? "×3" : "",
                 p.reminders.includes("Negative vote") ? "−" : "",
                 butler && p.id === butler.id ? "Butler" : "",
                 master && p.id === master.id ? "Master" : "",
+                p.characterId === "beggar" && p.alive ? `tokens ${p.voteTokens}` : "",
               ]
                 .filter(Boolean)
                 .join(" ");
@@ -2256,14 +3316,25 @@ function VotesTab({
             <button type="button" onClick={() => emit("game:startVote", { seconds: 30 })}>
               Start 30s vote clock
             </button>
-            <button type="button" onClick={() => emit("game:resolveVote", {})}>
-              Resolve (auto)
+            <button className="primary" type="button" onClick={() => emit("game:resolveVote", {})}>
+              Resolve vote
+            </button>
+            <button type="button" onClick={() => emit("game:cancelNomination")}>
+              Cancel nomination
+            </button>
+          </div>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            <strong>Storyteller override</strong> — set the verdict by hand:
+          </p>
+          <div className="row">
+            <button type="button" onClick={() => emit("game:resolveVote", { outcome: "majority" })}>
+              Force onto block
             </button>
             <button type="button" onClick={() => emit("game:resolveVote", { outcome: "tie" })}>
-              Tie
+              Force tie
             </button>
             <button type="button" onClick={() => emit("game:resolveVote", { outcome: "no_majority" })}>
-              No majority
+              Force fail
             </button>
           </div>
         </div>
@@ -2271,9 +3342,12 @@ function VotesTab({
 
       {state.phase === "execution" && state.executionPendingId && (
         <div className="panel">
-          <h2>Execution</h2>
+          <h2>{state.nightPending ? "End of day — execution" : "Execution"}</h2>
           <p className="muted">
             About to die: {state.players.find((p) => p.id === state.executionPendingId)?.name}
+            {state.nightPending
+              ? " — on the block at the end of the day. After Confirm death / Lives the night starts once the line has played."
+              : ""}
           </p>
           <div className="row">
             <button
@@ -2287,8 +3361,24 @@ function VotesTab({
               Lives
             </button>
           </div>
+          {!state.players.find((p) => p.id === state.executionPendingId)?.alive && (
+            <p className="muted">Already dead — the execution counts, but nobody dies (no Saint / Demon effects).</p>
+          )}
+          {state.players
+            .filter((p) => p.characterId === "scapegoat" && p.alive && !p.leftGame && p.id !== state.executionPendingId)
+            .map((sg) => (
+              <div key={sg.id} className="row" style={{ marginTop: "0.5rem" }}>
+                <button
+                  type="button"
+                  onClick={() => emit("game:confirmExecution", { died: true, substituteId: sg.id })}
+                >
+                  Scapegoat ({sg.name}) is executed instead
+                </button>
+                <span className="muted">Only if they share the nominee&apos;s alignment — your call.</span>
+              </div>
+            ))}
         </div>
       )}
-    </div>
+    </>
   );
 }

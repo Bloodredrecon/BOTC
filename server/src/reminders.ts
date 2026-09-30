@@ -94,6 +94,19 @@ export function placeInfoPairReminders(
     return `Placed ${positiveLabel} on ${hit.name}, ${wrongLabel} on the other (truth from characterIds). Edit grimoire if Drunk/poisoned info should lie.`;
   }
 
+  // Recluse may register as a Minion; the Spy as a Townsfolk / Outsider.
+  const registers = pair.find((p) =>
+    positiveLabel === "Minion" ? p.characterId === "recluse" : p.characterId === "spy",
+  );
+  if (registers) {
+    addReminder(registers, positiveLabel);
+    for (const p of pair) {
+      if (p.id !== registers.id) addReminder(p, wrongLabel);
+    }
+    const role = registers.characterId === "recluse" ? "Recluse" : "Spy";
+    return `Placed ${positiveLabel} on ${registers.name} (${role} registering as ${shownCharacterId}), ${wrongLabel} on the other.`;
+  }
+
   for (const p of pair) addReminder(p, wrongLabel);
   return `Neither selected player has ${shownCharacterId} — ${wrongLabel} on both. Edit grimoire if you showed a bluff on purpose.`;
 }

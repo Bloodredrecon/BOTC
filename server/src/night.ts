@@ -1,12 +1,30 @@
 import type { ScriptData } from "./persistence.js";
-import { isPoisonedOrDrunk } from "./rules.js";
+import { isEvil, isPoisonedOrDrunk, trueCharacterId, wakeCharacterId } from "./rules.js";
 import type {
   CharacterDef,
   GameSession,
   NightShowSpec,
   NightStep,
   Player,
+  RegistrationOptions,
 } from "./types.js";
+
+function shuffled<T>(list: T[]): T[] {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+function pickRandom<T>(list: T[]): T | undefined {
+  return list.length ? list[Math.floor(Math.random() * list.length)] : undefined;
+}
+
+function bySeat(a: Player, b: Player) {
+  return a.seat - b.seat;
+}
 
 const FALSE_INFO_ST_WARNING = "Poisoned/Drunk — give false information";
 
@@ -36,11 +54,11 @@ function lieNumber(truth: number, min: number, max: number): number {
 
 function pickDifferentCharacterId(
   script: ScriptData,
-  truthId: string | null | undefined,
+  excludeIds: (string | null | undefined)[],
   teams?: CharacterDef["team"][],
 ): string | null {
   const pool = [...script.characters, ...script.travellers].filter((c) => {
-    if (truthId && c.id === truthId) return false;
+    if (excludeIds.includes(c.id)) return false;
     if (teams?.length && !teams.includes(c.team)) return false;
     return true;
   });
@@ -60,27 +78,47 @@ type InfoPairSuggestion = {
 };
 
 /**
+ * Who is being woken for the info. `ownRoleId` is the step's character — for a Drunk
+ * that is the role they think they are (thinksCharacterId), never "drunk".
+ */
+type InfoReceiver = { playerIds: string[]; ownRoleId: string };
+
+/** Living players other than the woken receiver(s), in seat order. */
+function livingOthers(session: GameSession, receiver: InfoReceiver): Player[] {
+  return session.players
+    .filter((p) => !p.leftGame && p.alive && !receiver.playerIds.includes(p.id))
+    .sort((a, b) => a.seat - b.seat);
+}
+
+/**
  * Standard BOTC WW/Lib/Inv construction: one real team member in play + one other
- * living player, and the true character id for the hit. Empty when none of that team.
+ * living player (both picked at random), and the true character id for the hit. Empty when
+ * none of that team. Never suggests the receiver or their own role (e.g. Washerwoman never
+ * shows Washerwoman). Uses true characters — the Drunk is an Outsider, never a Townsfolk.
  */
 function buildTrueInfoPair(
   session: GameSession,
   script: ScriptData,
   team: CharacterDef["team"],
+  receiver: InfoReceiver,
 ): InfoPairSuggestion {
-  const living = session.players
-    .filter((p) => !p.leftGame && p.alive)
-    .sort((a, b) => a.seat - b.seat);
-  const trueHit = living.find((p) => findDef(script, p.characterId)?.team === team);
+  const living = livingOthers(session, receiver);
+  const trueHit = pickRandom(
+    living.filter((p) => {
+      const id = trueCharacterId(script, p);
+      return id !== receiver.ownRoleId && !p.isTraveller && findDef(script, id)?.team === team;
+    }),
+  );
+  const hitCharacterId = trueHit ? trueCharacterId(script, trueHit) : null;
 
-  if (trueHit?.characterId) {
-    const other = living.find((p) => p.id !== trueHit.id) ?? trueHit;
-    const truthPlayerIds = [trueHit.id, other.id];
+  if (trueHit && hitCharacterId) {
+    const other = pickRandom(living.filter((p) => p.id !== trueHit.id));
+    const truthPlayerIds = (other ? [trueHit, other] : [trueHit]).sort(bySeat).map((p) => p.id);
     return {
       playerIds: truthPlayerIds,
-      characterId: trueHit.characterId,
+      characterId: hitCharacterId,
       truthPlayerIds,
-      truthCharacterId: trueHit.characterId,
+      truthCharacterId: hitCharacterId,
       zeroOutsiders: false,
     };
   }
@@ -102,17 +140,18 @@ function buildFalseInfoPair(
   session: GameSession,
   script: ScriptData,
   team: CharacterDef["team"],
+  receiver: InfoReceiver,
 ): InfoPairSuggestion {
-  const living = session.players
-    .filter((p) => !p.leftGame && p.alive)
-    .sort((a, b) => a.seat - b.seat);
-  const teamChars = script.characters.filter((c) => c.team === team);
-  const truth = buildTrueInfoPair(session, script, team);
+  const living = livingOthers(session, receiver);
+  const teamChars = script.characters.filter(
+    (c) => c.team === team && c.id !== receiver.ownRoleId,
+  );
+  const truth = buildTrueInfoPair(session, script, team, receiver);
 
   if (truth.truthCharacterId && truth.truthPlayerIds.length >= 2) {
     const falseChar =
       teamChars.find((c) => c.id !== truth.truthCharacterId)?.id ??
-      pickDifferentCharacterId(script, truth.truthCharacterId, [team]);
+      pickDifferentCharacterId(script, [truth.truthCharacterId, receiver.ownRoleId], [team]);
     return {
       playerIds: truth.truthPlayerIds,
       characterId: falseChar,
@@ -123,8 +162,8 @@ function buildFalseInfoPair(
   }
 
   // No true hit (e.g. zero Outsiders): invent a bluff pair + token
-  const pair = living.slice(0, 2);
-  const characterId = teamChars[0]?.id ?? null;
+  const pair = shuffled(living).slice(0, 2).sort(bySeat);
+  const characterId = pickRandom(teamChars)?.id ?? null;
   return {
     playerIds: pair.map((p) => p.id),
     characterId,
@@ -142,8 +181,9 @@ function applyImpairedInfoShow(
   spec: NightShowSpec,
   session: GameSession,
   script: ScriptData,
-  characterId: string | null,
+  receiver: InfoReceiver,
 ): NightShowSpec {
+  const characterId = receiver.ownRoleId;
   const truthNumber = spec.suggestedNumber ?? null;
   const truthYesNo = spec.suggestedYesNo ?? null;
   const truthPlayerIds = [...(spec.suggestedPlayerIds ?? [])];
@@ -165,7 +205,7 @@ function applyImpairedInfoShow(
 
   if (spec.kind === "character" && truthCharacterId) {
     suggestedCharacterId =
-      pickDifferentCharacterId(script, truthCharacterId, spec.characterTeams) ??
+      pickDifferentCharacterId(script, [truthCharacterId, characterId], spec.characterTeams) ??
       truthCharacterId;
     // Keep executed player seat; lie about the character token
     suggestedPlayerIds = truthPlayerIds;
@@ -181,7 +221,7 @@ function applyImpairedInfoShow(
             ? ("minion" as const)
             : spec.characterTeams?.[0];
     if (team) {
-      const falsePair = buildFalseInfoPair(session, script, team);
+      const falsePair = buildFalseInfoPair(session, script, team, receiver);
       suggestedPlayerIds = falsePair.playerIds;
       suggestedCharacterId = falsePair.characterId;
       return {
@@ -232,11 +272,50 @@ function findDef(script: ScriptData, id: string | null): CharacterDef | undefine
   );
 }
 
-function registersAsEvil(p: Player, script: ScriptData): boolean {
-  const c = findDef(script, p.characterId);
-  if (!c) return false;
-  if (c.id === "recluse") return true;
-  return c.team === "minion" || c.team === "demon";
+/**
+ * How a player may register for alignment checks. Truth is their real alignment; the Recluse
+ * might register as evil and the Spy might register as good (Storyteller's choice).
+ */
+type Registration = (p: Player) => boolean;
+
+function trulyEvil(script: ScriptData): Registration {
+  return (p) => isEvil(script, p);
+}
+
+/** Fewest evil the Storyteller can show: Spy registers good, Recluse good. */
+function leastEvil(script: ScriptData): Registration {
+  return (p) => p.characterId !== "spy" && isEvil(script, p);
+}
+
+/** Most evil the Storyteller can show: Recluse registers evil, Spy evil. */
+function mostEvil(script: ScriptData): Registration {
+  return (p) => p.characterId === "recluse" || isEvil(script, p);
+}
+
+function registrationPlayers(session: GameSession, receiverIds: string[] = []) {
+  const others = session.players.filter((p) => !p.leftGame && !receiverIds.includes(p.id));
+  return {
+    recluses: others.filter((p) => p.characterId === "recluse"),
+    spies: others.filter((p) => p.characterId === "spy"),
+  };
+}
+
+function numberRegistration(
+  truth: number,
+  least: number,
+  most: number,
+  session: GameSession,
+  receiverIds: string[],
+): RegistrationOptions | undefined {
+  if (least === most) return undefined;
+  const { recluses, spies } = registrationPlayers(session, receiverIds);
+  const who = [
+    ...recluses.map((p) => `Recluse (${p.name}) may register evil`),
+    ...spies.map((p) => `Spy (${p.name}) may register good`),
+  ].join("; ");
+  const numbers: number[] = [];
+  for (let n = least; n <= most; n++) numbers.push(n);
+  return { note: `${who}. True count ${truth}; you may show any of these.`, numbers };
 }
 
 /** Living circle in seat order (for Empath / Chef). */
@@ -257,25 +336,22 @@ function neighborsOf(session: GameSession, playerId: string): Player[] {
   return [left, right];
 }
 
-function countEvilPairs(session: GameSession, script: ScriptData): number {
+function countEvilPairs(session: GameSession, evil: Registration): number {
   const circle = livingCircle(session);
   if (circle.length < 2) return 0;
+  if (circle.length === 2) return evil(circle[0]!) && evil(circle[1]!) ? 1 : 0;
   let pairs = 0;
   for (let i = 0; i < circle.length; i++) {
-    const a = circle[i];
-    const b = circle[(i + 1) % circle.length];
-    if (registersAsEvil(a, script) && registersAsEvil(b, script)) pairs += 1;
+    const a = circle[i]!;
+    const b = circle[(i + 1) % circle.length]!;
+    if (evil(a) && evil(b)) pairs += 1;
   }
   // each pair counted once around the ring
   return pairs;
 }
 
-function countEvilNeighbors(
-  session: GameSession,
-  script: ScriptData,
-  empathId: string,
-): number {
-  return neighborsOf(session, empathId).filter((p) => registersAsEvil(p, script)).length;
+function countEvilNeighbors(session: GameSession, empathId: string, evil: Registration): number {
+  return neighborsOf(session, empathId).filter(evil).length;
 }
 
 function isDemonOrRedHerring(p: Player, script: ScriptData): boolean {
@@ -291,7 +367,17 @@ function shouldIncludePlayer(
   isFirstNight: boolean,
 ): { include: boolean; skip?: boolean; skipReason?: string } {
   if (p.leftGame) return { include: false };
-  if (p.characterId !== c.id) return { include: false };
+  if (wakeCharacterId(p) !== c.id) return { include: false };
+
+  // "This new Imp does not act that same night."
+  if (c.id === "imp" && (session.newDemons ?? []).some((d) => d.playerId === p.id && d.duringNight)) {
+    return { include: false };
+  }
+
+  const diedTonight = session.diedTonightIds.includes(p.id);
+  if (!p.alive && diedTonight && c.id !== "ravenkeeper") {
+    return { include: true, skip: true, skipReason: "Died tonight — does not wake." };
+  }
 
   if (c.oncePerGame && (p.abilityUsed || p.reminders.includes("No ability"))) {
     if (charOrder(c, isFirstNight) > 0) {
@@ -300,6 +386,7 @@ function shouldIncludePlayer(
   }
 
   if (isFirstNight) {
+    if (!p.alive && !diedTonight) return { include: false };
     return { include: true };
   }
 
@@ -350,15 +437,15 @@ function wakeTextFor(
     empath: `Quietly wake ${who}. Tap → confirm 0/1/2 evil neighbors (suggested) → Show. Then sleep.`,
     fortuneteller: `Quietly wake ${who}. They pick 2 players. Tap → Yes/No → Show. Then sleep.`,
     undertaker: `Quietly wake ${who}. Tap → show today’s executed character → Show. Then sleep.`,
-    monk: `Quietly wake ${who}. They pick someone to protect (not self). Confirm → marks Safe. Safe fails if Monk or target is Poisoned. Then sleep.`,
+    monk: `Quietly wake ${who}. They pick someone to protect (any other player, alive or dead). Confirm → marks Safe. Safe fails only if the Monk is Poisoned/Drunk. Then sleep.`,
     ravenkeeper: `Quietly wake ${who} (died tonight). They pick a player → show that character → Show. Then sleep.`,
-    butler: `Quietly wake ${who}. They pick Master. Confirm → marks Master. Then sleep.`,
+    butler: `Quietly wake ${who}. They pick a Master (not themselves). Confirm → marks Master. Then sleep.`,
     poisoner: `Quietly wake ${who}. They pick a poison target. Confirm → marks Poisoned. Poison disables Monk Safe / Soldier / etc. Then sleep.`,
     spy: `Quietly wake ${who}. Tap → Show grimoire (private). Then sleep.`,
     scarletwoman: `Quietly wake ${who}. If Demon died & ≥5 non-travellers alive, they become Demon (auto when enforced). Then sleep.`,
-    imp: `Quietly wake ${who}. They choose a kill. Confirm → Dead unless Safe/Soldier blocks. Self-kill → star-pass to a Minion. Then sleep.`,
-    bureaucrat: `Quietly wake ${who}. They pick a player for 3 votes tomorrow. Confirm reminder. Then sleep.`,
-    thief: `Quietly wake ${who}. They pick a player for negative vote tomorrow. Confirm reminder. Then sleep.`,
+    imp: `Quietly wake ${who}. They choose a kill (any player). Confirm → Dead, or no death if Safe/Soldier protects or the Imp is Poisoned/Drunk. A healthy Mayor may bounce the kill (your choice). Self-kill → star-pass to a Minion you choose. Then sleep.`,
+    bureaucrat: `Quietly wake ${who}. They pick a player (not themselves) for 3 votes tomorrow. Confirm reminder. Then sleep.`,
+    thief: `Quietly wake ${who}. They pick a player (not themselves) for a negative vote tomorrow. Confirm reminder. Then sleep.`,
     apprentice: `Quietly wake ${who}. Show them the ability they gain. Then sleep.`,
   };
 
@@ -389,12 +476,32 @@ function showForMeta(id: string, session: GameSession, script: ScriptData): Nigh
       const c = findDef(script, p.characterId);
       return c?.team === "demon" && !p.leftGame;
     });
+    const minions = session.players
+      .filter((p) => !p.leftGame && findDef(script, p.characterId)?.team === "minion")
+      .sort(bySeat)
+      .map((p) => p.id);
     return {
       kind: "minion-info",
-      hint: "Show who the Demon is.",
+      hint: "Wake all Minions together. Show who the Demon is — they also see each other.",
       suggestedPlayerIds: demon ? [demon.id] : [],
       maxPlayers: 1,
       playerTitle: "You are a Minion",
+      playerPrompt: "Learn who your Demon is, and your fellow Minions.",
+      playersLabel: "This is the Demon",
+      fellowPlayerIds: minions,
+      fellowLabel: "The Minions",
+    };
+  }
+  if (id === "evil-traveller-info") {
+    const demon = session.players.find(
+      (p) => !p.leftGame && p.alive && findDef(script, p.characterId)?.team === "demon",
+    );
+    return {
+      kind: "minion-info",
+      hint: "Evil Traveller: show who the Demon is. They learn no other evil players and get no bluffs.",
+      suggestedPlayerIds: demon ? [demon.id] : [],
+      maxPlayers: 1,
+      playerTitle: "You are evil",
       playerPrompt: "Learn who your Demon is.",
       playersLabel: "This is the Demon",
     };
@@ -414,12 +521,40 @@ function showForCharacter(
 ): NightShowSpec {
   const wakeId = acting[0]?.id;
   const wokenImpaired = acting.some(isPoisonedOrDrunk);
+  const receiver: InfoReceiver = { playerIds: acting.map((p) => p.id), ownRoleId: c.id };
+
+  const { recluses, spies } = registrationPlayers(session, receiver.playerIds);
+  const living = livingOthers(session, receiver);
+  /** A Spy / Recluse registering as `team`: pair them with another random living player. */
+  const altPairs = (who: Player[], role: string, team: CharacterDef["team"]) =>
+    who
+      .filter((p) => p.alive)
+      .map((p) => {
+        const other = pickRandom(living.filter((x) => x.id !== p.id));
+        const inPlay = new Set(session.players.map((x) => trueCharacterId(script, x)));
+        const token =
+          pickRandom(script.characters.filter((x) => x.team === team && !inPlay.has(x.id) && x.id !== receiver.ownRoleId)) ??
+          pickRandom(script.characters.filter((x) => x.team === team && x.id !== receiver.ownRoleId));
+        return {
+          label: `${role} (${p.name}) registers as ${team === "townsfolk" ? "a Townsfolk" : team === "outsider" ? "an Outsider" : "a Minion"}`,
+          playerIds: (other ? [p, other] : [p]).sort(bySeat).map((x) => x.id),
+          characterId: token?.id ?? null,
+        };
+      });
+  const pairRegistration = (
+    pairs: RegistrationOptions["pairs"],
+    note: string,
+  ): RegistrationOptions | undefined => (pairs && pairs.length ? { note, pairs } : undefined);
 
   let spec: NightShowSpec;
   switch (c.id) {
     case "washerwoman": {
-      const pair = buildTrueInfoPair(session, script, "townsfolk");
+      const pair = buildTrueInfoPair(session, script, "townsfolk", receiver);
       spec = {
+        registration: pairRegistration(
+          altPairs(spies, "Spy", "townsfolk"),
+          "The Spy may register as a Townsfolk (your choice). Pick one of these instead of the truth if you like.",
+        ),
         kind: "players-and-character",
         hint: "Truthful pair + Townsfolk token are pre-filled when healthy. Adjust if needed; Done places Townsfolk / Wrong · Washerwoman from real characterIds.",
         minPlayers: 2,
@@ -435,8 +570,12 @@ function showForCharacter(
       break;
     }
     case "librarian": {
-      const pair = buildTrueInfoPair(session, script, "outsider");
+      const pair = buildTrueInfoPair(session, script, "outsider", receiver);
       spec = {
+        registration: pairRegistration(
+          altPairs(spies, "Spy", "outsider"),
+          "The Spy may register as an Outsider (your choice). Pick one of these instead of the truth if you like.",
+        ),
         kind: "players-and-character",
         hint: pair.zeroOutsiders
           ? "No Outsiders in play — Zero Outsiders is pre-selected when healthy."
@@ -457,8 +596,12 @@ function showForCharacter(
       break;
     }
     case "investigator": {
-      const pair = buildTrueInfoPair(session, script, "minion");
+      const pair = buildTrueInfoPair(session, script, "minion", receiver);
       spec = {
+        registration: pairRegistration(
+          altPairs(recluses, "Recluse", "minion"),
+          "The Recluse may register as a Minion (your choice). Pick one of these instead of the truth if you like.",
+        ),
         kind: "players-and-character",
         hint: "Truthful pair + Minion token are pre-filled when healthy. Adjust if needed; Done places Minion / Wrong · Investigator from real characterIds.",
         minPlayers: 2,
@@ -473,28 +616,54 @@ function showForCharacter(
       };
       break;
     }
-    case "chef":
+    case "chef": {
+      const truth = countEvilPairs(session, trulyEvil(script));
       spec = {
+        registration: numberRegistration(
+          truth,
+          countEvilPairs(session, leastEvil(script)),
+          countEvilPairs(session, mostEvil(script)),
+          session,
+          receiver.playerIds,
+        ),
         kind: "number",
         hint: "Show how many pairs of evil players. Suggested number is truthful unless Poisoned/Drunk (then a lie default).",
-        suggestedNumber: countEvilPairs(session, script),
+        suggestedNumber: truth,
         playerTitle: "Chef",
         playerPrompt: "Tonight you learn how many pairs of neighbouring evil players there are.",
         resultLabel: "Evil pairs",
       };
       break;
-    case "empath":
+    }
+    case "empath": {
+      const truth = wakeId ? countEvilNeighbors(session, wakeId, trulyEvil(script)) : 0;
+      const neighbourIds = wakeId ? neighborsOf(session, wakeId).map((p) => p.id) : [];
       spec = {
+        registration: wakeId
+          ? numberRegistration(
+              truth,
+              countEvilNeighbors(session, wakeId, leastEvil(script)),
+              countEvilNeighbors(session, wakeId, mostEvil(script)),
+              { ...session, players: session.players.filter((p) => neighbourIds.includes(p.id)) },
+              receiver.playerIds,
+            )
+          : undefined,
         kind: "number",
         hint: "Show how many living neighbors are evil (0–2). Suggested number is truthful unless Poisoned/Drunk (then a lie default).",
-        suggestedNumber: wakeId ? countEvilNeighbors(session, script, wakeId) : 0,
+        suggestedNumber: truth,
         playerTitle: "Empath",
         playerPrompt: "Tonight you learn how many of your living neighbours are evil.",
         resultLabel: "Evil neighbours",
       };
       break;
+    }
     case "fortuneteller":
       spec = {
+        registration: recluses.length
+          ? {
+              note: `Recluse (${recluses.map((p) => p.name).join(", ")}) may register as the Demon — you may answer Yes if they are chosen.`,
+            }
+          : undefined,
         kind: "yes-no",
         hint: "They choose 2 players. Mark them, then Yes if either is the Demon or Red Herring. If Red herring is missing, place it on a good living player first.",
         minPlayers: 2,
@@ -507,11 +676,27 @@ function showForCharacter(
       break;
     case "undertaker": {
       const ex = session.players.find((p) => p.id === session.executedTodayId);
+      const exTrue = ex ? trueCharacterId(script, ex) : null;
+      const exAlternatives =
+        ex?.characterId === "recluse"
+          ? script.characters.filter((x) => x.team === "minion" || x.team === "demon").map((x) => x.id)
+          : ex?.characterId === "spy"
+            ? script.characters.filter((x) => x.team === "townsfolk" || x.team === "outsider").map((x) => x.id)
+            : [];
       spec = {
+        registration: exAlternatives.length
+          ? {
+              note:
+                ex?.characterId === "recluse"
+                  ? `The executed Recluse (${ex.name}) may register as a Minion or Demon (your choice).`
+                  : `The executed Spy (${ex?.name}) may register as a Townsfolk or Outsider (your choice).`,
+              characterIds: exAlternatives,
+            }
+          : undefined,
         kind: "character",
         hint: "Show who was executed today (their character).",
         suggestedPlayerIds: ex ? [ex.id] : [],
-        suggestedCharacterId: ex?.characterId ?? null,
+        suggestedCharacterId: exTrue,
         playerTitle: "Undertaker",
         playerPrompt: "Tonight you learn who was executed today.",
         playersLabel: "Executed today",
@@ -521,6 +706,15 @@ function showForCharacter(
     }
     case "ravenkeeper":
       spec = {
+        registration:
+          recluses.length || spies.length
+            ? {
+                note: [
+                  ...recluses.map((p) => `Recluse (${p.name}) may show as a Minion or Demon`),
+                  ...spies.map((p) => `Spy (${p.name}) may show as a Townsfolk or Outsider`),
+                ].join("; ") + " (your choice).",
+              }
+            : undefined,
         kind: "player-character",
         hint: "They pick a player. Character loads from truth unless Poisoned/Drunk (then a wrong character is suggested for ST).",
         minPlayers: 1,
@@ -542,7 +736,7 @@ function showForCharacter(
     case "monk":
       spec = {
         kind: "choose-target",
-        hint: "They pick someone to protect (not themselves). Confirm marks Safe. Safe fails if Monk or target is Poisoned.",
+        hint: "They pick someone to protect (not themselves; dead players allowed). Confirm marks Safe. Safe fails only if the Monk is Poisoned/Drunk.",
         maxPlayers: 1,
         reminder: "Safe",
         playerTitle: "Monk",
@@ -564,7 +758,7 @@ function showForCharacter(
     case "butler":
       spec = {
         kind: "choose-target",
-        hint: "They pick their Master. Confirm marks Master. Butler may only vote if Master votes (auto-enforced).",
+        hint: "They pick their Master (not themselves). Confirm marks Master. The Butler may only vote while the Master's hand is up — you get a private warning if not.",
         maxPlayers: 1,
         reminder: "Master",
         playerTitle: "Butler",
@@ -579,7 +773,7 @@ function showForCharacter(
       }
       spec = {
         kind: "choose-target",
-        hint: "They choose who dies. Confirm marks Dead unless Safe/Soldier blocks. Self-kill → star-pass to a Minion.",
+        hint: "They choose who dies (any player). Confirm marks Dead; a Safe/Soldier target survives and nobody dies. Self-kill → star-pass to a Minion you choose (a healthy Scarlet Woman must take it).",
         maxPlayers: 1,
         reminder: "Dead",
         playerTitle: "Imp",
@@ -587,28 +781,6 @@ function showForCharacter(
         playersLabel: "Your kill",
       };
       break;
-    case "scarletwoman": {
-      const demonDead = session.players.some((p) => {
-        const d = findDef(script, p.characterId);
-        return d?.team === "demon" && (!p.alive || session.diedTonightIds.includes(p.id));
-      });
-      const aliveNonTraveller = session.players.filter(
-        (p) => p.alive && !p.leftGame && !p.isTraveller,
-      ).length;
-      const becomes =
-        demonDead && aliveNonTraveller >= 5
-          ? "You are now the Demon."
-          : "You are not the Demon (yet).";
-      spec = {
-        kind: "message",
-        hint: "Tell them privately whether they become the Demon.",
-        message: becomes,
-        playerTitle: "Scarlet Woman",
-        playerPrompt: "Learn whether you become the Demon.",
-        resultLabel: "Tonight",
-      };
-      break;
-    }
     case "bureaucrat":
       spec = {
         kind: "choose-target",
@@ -650,9 +822,9 @@ function showForCharacter(
   }
 
   // Townsfolk info (and Spy): lie defaults + truth* when woken player is Poisoned/Drunk.
-  // Monk/Poisoner/Butler/Imp picks left alone — protection already fails via abilityDisabled.
+  // Monk/Poisoner/Butler/Imp picks left alone — protection / the Imp kill fail via abilityDisabled.
   if (wokenImpaired && isLieableInfoKind(spec.kind)) {
-    return applyImpairedInfoShow(spec, session, script, c.id);
+    return applyImpairedInfoShow(spec, session, script, receiver);
   }
   if (wokenImpaired && spec.kind === "grimoire") {
     return {
@@ -665,6 +837,72 @@ function showForCharacter(
   return spec;
 }
 
+const META_WAKE_TEXT: Record<string, string> = {
+  dusk: "Everyone closes their eyes. Do not announce who will wake. Tap Next when the room is dark and quiet.",
+  "minion-info":
+    "Quietly wake all the Minions together. Tap them → show who the Demon is (they also see each other). Then sleep.",
+  "demon-info":
+    "Quietly wake the Demon only. Tap them → show Minions + 3 bluffs on your phone (hold screen toward them). Then sleep.",
+  "evil-traveller-info":
+    "Quietly wake the evil Traveller(s). Show who the Demon is — no other evil players, no bluffs. Then sleep.",
+};
+
+/** Minion info and Demon info only happen with 7+ (non-Traveller) players. */
+export const EVIL_INFO_MIN_PLAYERS = 7;
+
+function metaStep(
+  id: string,
+  name: string,
+  fallbackText: string,
+  playerIds: string[],
+  session: GameSession,
+  script: ScriptData,
+  skipReason?: string,
+): NightStep {
+  if (skipReason) {
+    return {
+      id,
+      characterId: null,
+      name,
+      wakeText: skipReason,
+      playerIds,
+      skipped: true,
+      skipReason,
+      show: { kind: "none", hint: skipReason },
+    };
+  }
+  return {
+    id,
+    characterId: null,
+    name,
+    wakeText: META_WAKE_TEXT[id] ?? fallbackText,
+    playerIds,
+    show: showForMeta(id, session, script),
+  };
+}
+
+function newDemonStep(session: GameSession, playerId: string, via: "scarletwoman" | "starpass"): NightStep | null {
+  const p = session.players.find((x) => x.id === playerId && !x.leftGame);
+  if (!p) return null;
+  const how = via === "scarletwoman" ? "The Scarlet Woman became the Imp" : "The Imp passed the Demon to them";
+  return {
+    id: `new-demon-${p.id}`,
+    characterId: "imp",
+    name: "New Demon",
+    wakeText: `Quietly wake ${p.name}. Show the YOU ARE token, then the Imp. ${how}. Then sleep.`,
+    playerIds: [p.id],
+    skipped: false,
+    show: {
+      kind: "message",
+      hint: `${how}. Show them they are now the Imp.`,
+      message: "You are the Imp.",
+      playerTitle: "You are the Imp",
+      playerPrompt: "You are now the Demon.",
+      resultLabel: "Your character",
+    },
+  };
+}
+
 export function buildNightSteps(
   session: GameSession,
   script: ScriptData,
@@ -672,65 +910,30 @@ export function buildNightSteps(
 ): NightStep[] {
   const steps: NightStep[] = [];
   const meta = isFirstNight ? script.firstNightMeta : script.otherNightMeta;
-  for (const m of meta) {
-    const stFacing =
-      m.id === "dusk"
-        ? "Everyone closes their eyes. Do not announce who will wake. Tap Next when the room is dark and quiet."
-        : m.id === "demon-info"
-          ? "Quietly wake the Demon only. Tap them → show Minions + 3 bluffs on your phone (hold screen toward them). Then sleep."
-          : m.id === "minion-info"
-            ? "Quietly wake each Minion. Tap them → show who the Demon is. Then sleep."
-            : m.wakeText;
-    steps.push({
-      id: m.id,
-      characterId: null,
-      name: m.name,
-      wakeText: stFacing,
-      playerIds:
-        m.id === "demon-info"
-          ? session.players
-              .filter((p) => {
-                const c = findDef(script, p.characterId);
-                return c?.team === "demon" && !p.leftGame;
-              })
-              .map((p) => p.id)
-          : m.id === "minion-info"
-            ? session.players
-                .filter((p) => {
-                  const c = findDef(script, p.characterId);
-                  return c?.team === "minion" && !p.leftGame;
-                })
-                .map((p) => p.id)
-            : [],
-      show: showForMeta(m.id, session, script),
-    });
-  }
+  const metaById = new Map(meta.map((m) => [m.id, m]));
+  const residents = session.players.filter((p) => !p.leftGame && !p.isTraveller);
+  const teamIds = (team: CharacterDef["team"]) =>
+    session.players
+      .filter((p) => !p.leftGame && !p.isTraveller && findDef(script, p.characterId)?.team === team)
+      .sort(bySeat)
+      .map((p) => p.id);
 
   const pool: CharacterDef[] = [...script.characters, ...script.travellers];
-
   const chars = pool
+    .filter((c) => c.id !== "scarletwoman")
     .filter((c) => charOrder(c, isFirstNight) > 0)
-    .filter((c) =>
-      session.players.some((p) => {
-        const r = shouldIncludePlayer(session, p, c, isFirstNight);
-        return r.include;
-      }),
-    )
+    .filter((c) => session.players.some((p) => shouldIncludePlayer(session, p, c, isFirstNight).include))
     .sort((a, b) => charOrder(a, isFirstNight) - charOrder(b, isFirstNight));
 
-  for (const c of chars) {
-    const matched = session.players.filter((p) => {
-      const r = shouldIncludePlayer(session, p, c, isFirstNight);
-      return r.include && p.characterId === c.id;
-    });
-    if (matched.length === 0) continue;
-
+  const charStep = (c: CharacterDef): NightStep | null => {
+    const matched = session.players
+      .filter((p) => shouldIncludePlayer(session, p, c, isFirstNight).include)
+      .sort(bySeat);
+    if (matched.length === 0) return null;
     const active = matched.filter((p) => !shouldIncludePlayer(session, p, c, isFirstNight).skip);
-    const sample = matched[0];
-    const check = shouldIncludePlayer(session, sample, c, isFirstNight);
-
-    if (active.length === 0 && check.skip) {
-      steps.push({
+    if (active.length === 0) {
+      const check = shouldIncludePlayer(session, matched[0]!, c, isFirstNight);
+      return {
         id: `char-${c.id}`,
         characterId: c.id,
         name: c.name,
@@ -739,20 +942,94 @@ export function buildNightSteps(
         skipped: true,
         skipReason: check.skipReason,
         show: { kind: "none", hint: check.skipReason || "Skipped." },
-      });
-      continue;
+      };
     }
-
-    const acting = active.length ? active : matched;
-    steps.push({
+    return {
       id: `char-${c.id}`,
       characterId: c.id,
       name: c.name,
-      wakeText: wakeTextFor(c, isFirstNight, acting),
-      playerIds: acting.map((p) => p.id),
+      wakeText: wakeTextFor(c, isFirstNight, active),
+      playerIds: active.map((p) => p.id),
       skipped: false,
-      show: showForCharacter(c, session, script, acting, isFirstNight),
-    });
+      show: showForCharacter(c, session, script, active, isFirstNight),
+    };
+  };
+
+  const dusk = metaById.get("dusk");
+  if (dusk) steps.push(metaStep("dusk", dusk.name, dusk.wakeText, [], session, script));
+
+  // Official order: Dusk → Travellers (Bureaucrat, Thief…) → Minion info → Demon info → the rest.
+  const travellerChars = chars.filter((c) => c.team === "traveller");
+  const otherChars = chars.filter((c) => c.team !== "traveller");
+  for (const c of travellerChars) {
+    const s = charStep(c);
+    if (s) steps.push(s);
+  }
+
+  if (isFirstNight) {
+    const tooFew =
+      residents.length < EVIL_INFO_MIN_PLAYERS
+        ? `Skip — fewer than ${EVIL_INFO_MIN_PLAYERS} players: the Minions and Demon don't learn each other (and no bluffs).`
+        : undefined;
+    for (const id of ["minion-info", "demon-info"] as const) {
+      const m = metaById.get(id);
+      if (!m) continue;
+      steps.push(
+        metaStep(id, m.name, m.wakeText, teamIds(id === "minion-info" ? "minion" : "demon"), session, script, tooFew),
+      );
+    }
+  }
+
+  const evilTravellers = session.players
+    .filter((p) => p.isTraveller && !p.leftGame && p.alive && p.alignment === "evil" && !p.learnedDemon)
+    .sort(bySeat);
+  if (evilTravellers.length) {
+    steps.push(
+      metaStep(
+        "evil-traveller-info",
+        "Evil Traveller",
+        META_WAKE_TEXT["evil-traveller-info"]!,
+        evilTravellers.map((p) => p.id),
+        session,
+        script,
+      ),
+    );
+  }
+
+  // A Demon made during the day (Scarlet Woman) is told at the Scarlet Woman's place in the order;
+  // one made tonight (star-pass / Scarlet Woman after the Imp's self-kill) right after the Imp.
+  const swDef = findDef(script, "scarletwoman");
+  const swOrder = swDef ? charOrder(swDef, isFirstNight) || 7 : 7;
+  const newDemons = session.newDemons ?? [];
+  const dayDemons = newDemons.filter((d) => !d.duringNight);
+  const nightDemons = newDemons.filter((d) => d.duringNight);
+  let dayDemonsPlaced = false;
+  const placeDayDemons = () => {
+    if (dayDemonsPlaced) return;
+    dayDemonsPlaced = true;
+    for (const d of dayDemons) {
+      const s = newDemonStep(session, d.playerId, d.via);
+      if (s) steps.push(s);
+    }
+  };
+
+  for (const c of otherChars) {
+    if (charOrder(c, isFirstNight) > swOrder) placeDayDemons();
+    const s = charStep(c);
+    if (s) steps.push(s);
+    if (c.id === "imp") {
+      for (const d of nightDemons) {
+        const nd = newDemonStep(session, d.playerId, d.via);
+        if (nd) steps.push(nd);
+      }
+    }
+  }
+  placeDayDemons();
+  if (!steps.some((s) => s.id === "char-imp")) {
+    for (const d of nightDemons) {
+      const nd = newDemonStep(session, d.playerId, d.via);
+      if (nd && !steps.some((s) => s.id === nd.id)) steps.push(nd);
+    }
   }
 
   steps.push({
@@ -827,12 +1104,14 @@ export function dayAbilityTips(session: GameSession, script: ScriptData) {
           c.id === "soldier"
             ? "AUTO: night Demon kills blocked unless Soldier is Poisoned/Drunk. Still dies to execution/day deaths."
             : c.id === "mayor"
-              ? "AUTO at Start night: if exactly 3 living non-travellers & no execution today → Good wins."
+              ? "AUTO at Start night: exactly 3 alive (travellers count) & no execution today → Good wins."
               : c.id === "saint"
                 ? "AUTO: if executed (Confirm death) while not Poisoned/Drunk → Evil wins."
                 : c.id === "virgin"
-                  ? "AUTO: Townsfolk nominator is executed; skipped if Virgin is Poisoned/Drunk."
-                  : c.id === "baron"
+                  ? "AUTO on first nomination: Townsfolk nominator executed (Drunk never; Spy is your call). Ability spent either way, even if Poisoned."
+                  : c.id === "slayer"
+                    ? "Votes tab → Slayer shot. Kills the Demon (or a Recluse you let register as Demon); ability spent even on a miss or when Poisoned."
+                    : c.id === "baron"
                     ? "Setup bag adjusts +2 Outsiders / −2 Townsfolk while Baron is assigned."
                     : c.storytellerNotes || c.ability,
         oncePerGame: !!c.oncePerGame,
