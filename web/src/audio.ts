@@ -7,6 +7,11 @@ let bedBase: string | null = null;
 const BED_VOLUME = 0.35;
 /** One-shot / narration sting — only one at a time so misclicks don't stack. */
 let sting: HTMLAudioElement | null = null;
+let stingCue: string | null = null;
+/** Vote cues (build-up / majority) may cut each other, but wait for any other sting to end. */
+const VOTE_CUE_BASES = new Set(["atm_count_rising", "majority"]);
+/** At most one vote cue waits for the current sting; any newer cue replaces or cancels it. */
+let deferredVote: { cue: string; timer: ReturnType<typeof setTimeout> } | null = null;
 
 /** Dual-buffer crossfade for continuous ambiance beds (avoids HTMLAudio loop seams). */
 type AmbianceLoopPlayer = {
@@ -36,6 +41,20 @@ function stopSting() {
   sting.pause();
   sting.src = "";
   sting = null;
+  stingCue = null;
+}
+
+function clearDeferredVote() {
+  if (!deferredVote) return;
+  clearTimeout(deferredVote.timer);
+  deferredVote = null;
+}
+
+function flushDeferredVote() {
+  const d = deferredVote;
+  if (!d) return;
+  clearDeferredVote();
+  playCue(d.cue);
 }
 
 function cueBase(cueId: string): string {
@@ -396,6 +415,7 @@ export function playCue(cue: string | null) {
   const src = cueToUrl(cue);
 
   // Always cut whatever sting is already playing before a new cue.
+  clearDeferredVote();
   stopSting();
 
   // Beds alone: loop under silence / manual scene buttons. Narration files already
@@ -419,18 +439,56 @@ export function playCue(cue: string | null) {
   const el = new Audio(src);
   el.volume = 0.7;
   sting = el;
+  stingCue = cue;
   setDucking(true);
   el.addEventListener(
     "ended",
     () => {
       if (sting === el) {
         sting = null;
+        stingCue = null;
         setDucking(false);
+        flushDeferredVote();
       }
     },
     { once: true },
   );
-  void el.play().catch(() => undefined);
+  const failed = () => {
+    if (sting === el) flushDeferredVote();
+  };
+  el.addEventListener("error", failed, { once: true });
+  void el.play().catch(failed);
+}
+
+/**
+ * Vote-stage cue (build-up / majority). It may cut another vote cue, but never a voice line:
+ * while any other sting plays (e.g. the vote-open narration) it waits for that to end.
+ * Only one waits — a newer vote cue replaces it, any other cue cancels it. If the sting
+ * outlasts `maxWaitMs`, the cue plays anyway (`"play"`) or is dropped (`"drop"`).
+ */
+export function playVoteCue(cue: string, maxWaitMs: number, onTimeout: "play" | "drop") {
+  if (!unlocked) return;
+  clearDeferredVote();
+  const voicePlaying =
+    sting !== null &&
+    !sting.paused &&
+    !sting.ended &&
+    !sting.error &&
+    !VOTE_CUE_BASES.has(cueBase(stingCue ?? ""));
+  if (!voicePlaying) {
+    playCue(cue);
+    return;
+  }
+  const timer = setTimeout(() => {
+    if (deferredVote?.timer !== timer) return;
+    deferredVote = null;
+    if (onTimeout === "play") playCue(cue);
+  }, maxWaitMs);
+  deferredVote = { cue, timer };
+}
+
+export function cancelVoteCue() {
+  clearDeferredVote();
 }
 
 export function stopBeds() {

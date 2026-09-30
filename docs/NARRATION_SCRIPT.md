@@ -16,7 +16,7 @@ You are not announcing a board game. You are the voice of **Ravenswood Bluff** �
 - No confirming which roles were dealt this game (see Safety)
 - Night ability wakes are handled on the Storyteller phone — not in this script
 
-**Canonical opening image** (matches `intro.mp3`): storm, scream, midnight strike, the Storyteller dead on the clock hands, blood on the cobbles — then the truth that evil walks among you by day.
+**Canonical opening image** (matches `intro.mp3`): storm, midnight strike, the Storyteller dead on the clock hands, blood on the cobbles — then the truth that evil walks among you by day. (Rain bed mixed low under voice — `INTRO_AMB_VOL` ~0.08. A distant, atmospheric scream SFX lands just after the spoken “scream echoes” line — quiet and far, not a loud sting.)
 
 ---
 
@@ -41,6 +41,7 @@ ElevenLabs can do **both**, but they are **two separate tools** — TTS does not
 - `[Pause …s]` — silence in the voice take
 - `[Ambience | loop? | ~Ns]: "…"` — ElevenLabs Sound Effects bed (often looping)
 - `[SFX | ~Ns]: "…"` — one-shot hit / sting
+- `[SFX | ~Ns | after-pause:N | +Xs | vol:V]: "…"` — optional: place at Nth mid-voice pause (≥0.9s silence after speech starts), plus optional delay/volume
 - `[Mix: no-sfx]` — voice + ambience only (drop any SFX stings)
 - `[Mix: voice-only]` — narration only (no ambience, no SFX)
 - `[Mix: quiet-sfx]` — keep SFX but mix much quieter under voice
@@ -71,13 +72,13 @@ ElevenLabs can do **both**, but they are **two separate tools** — TTS does not
 [Tone: Grim, deliberate, theatrical, heavy with suspense. Natural pace. Low pitch.]  
 [Ambience | loop | ~20s]: "Heavy rain on cobblestones, howling wind through a gothic town, distant thunder, wet eaves dripping"  
 [Pause 1.5s]  
-[SFX | ~2s]: "Distant human scream echoing through rain and empty streets"  
 During a hellish thunderstorm... a scream echoes through the rain-soaked streets of Ravenswood Bluff.  
 [Pause 1.0s]  
-[SFX | ~4s]: "Large old clocktower bell striking midnight, deep resonant bronze, long decay"  
+[SFX | ~3.5s | after-pause:1 | vol:0.28]: "Distant horror-movie scream far across a rain-soaked gothic town, muffled by storm and empty streets, atmospheric and chilling, soft echo, not close, not loud, not cartoonish"  
+[SFX | ~4s | after-pause:1 | +1.3s]: "Large old clocktower bell striking midnight, deep resonant bronze, long decay"  
 The town clock tower strikes midnight...  
 [Pause 1.5s]  
-[SFX | ~3s]: "Low ominous drone under rain, faint wet drip of blood-like liquid on stone"  
+[SFX | ~3s | after-pause:2 | +0.2s]: "Low ominous drone under rain, faint wet drip of blood-like liquid on stone"  
 But as the storm clears, you find the local Storyteller impaled upon the clock hands... blood dripping down onto the cold cobblestones below.  
 [Pause 1.2s]  
 [Tone: Whispered, intense, menacing]  
@@ -117,7 +118,7 @@ The town gathers close. A fate hangs in the air.
 [SFX | ~2s]: "Deep solemn drum hit, wooden scaffold creak"  
 The town has chosen.  
 [Pause 1.0s]  
-On these stones, judgment will be done… for better or worse.
+On these stones, judgment will be done.
 
 ### `death.mp3`
 [Tone: Low, mournful, heavy]  
@@ -149,7 +150,7 @@ Wake up.
 Night one settles over Ravenswood Bluff.  
 [Pause 0.8s]  
 [SFX | ~2.5s]: "Single heavy wooden shutter closing once with a soft wood thud — no metal bolt, no latch click, no repeating sounds"  
-Close your eyes. Bolt your shutters in your mind.  
+Close your eyes. Let the shutters fall.  
 [Pause 1.0s]  
 [Tone: Soft warning]  
 What moves in the dark is not for the square to see.
@@ -255,14 +256,14 @@ The town has spoken… for now.
 [Ambience | ~8s]: "Rising tense murmur then sudden hush"  
 Enough hands. Enough will.  
 [Pause 0.8s]  
-This soul stands at the edge of the square’s judgment.
+This soul stands beneath the square’s judgment.
 
 ### `no_majority.mp3`
 [Tone: Soft release — still watchful]  
 [SFX | ~2s]: "Soft release of held breath from a crowd, uneasy settle"  
 The hands are not enough.  
 [Pause 0.8s]  
-This soul remains among you… for another hour of daylight.
+This soul remains among you… while daylight still holds.
 
 ### `tie.mp3`
 [Tone: Tense, unresolved]  
@@ -276,12 +277,12 @@ The Storyteller must weigh what the town cannot.
 [SFX | ~2s]: "Thin high tension string-like drone swell"  
 The town draws close.  
 [Pause 1.0s]  
-This life hangs by a thread above the cobblestones.
+This life hangs by a thread.
 
 ### `lives.mp3`
 [Tone: Exhale of relief — still unsettled]  
 [SFX | ~2s]: "Soft relieved crowd murmur, still nervous undertone"  
-The thread holds.  
+They live.  
 [Pause 0.8s]  
 This soul walks back into the crowd… for now.
 
@@ -292,7 +293,7 @@ The shadow breaks. Morning feels clean for the first time.
 [Pause 1.0s]  
 Evil is gone from Ravenswood Bluff.  
 [Pause 0.8s]  
-Sing in the square… while you can.  
+Breathe the clean air. The town endures.  
 [Fade out gently]
 
 ### `evil_wins.mp3`
@@ -344,7 +345,7 @@ birds lift from the clocktower in a black cloud.
 [SFX | ~2s]: "Impact thud, shocked crowd gasp"  
 The shot finds what it sought.  
 [Pause 0.8s]  
-Evil staggers… and the town gasps as one.
+Evil falls… and the town gasps as one.
 
 ### `public_shot_false.mp3`
 [Tone: Hollow echo — fear returns]  
@@ -368,7 +369,7 @@ The town has damned itself. Evil claims the night… and the win.
 [SFX | ~2s]: "Quiet hopeful swell, soft far bell"  
 Only three still stand in the square. No execution comes.  
 [Pause 1.0s]  
-Against all odds… the town endures. Good holds the day.
+Survive the night — or lose everything at dawn.
 
 ---
 
@@ -385,142 +386,156 @@ Listen well, people of Ravenswood Bluff.
 [Pause 0.8s]  
 You are about to live — and perhaps die — by these rules.  
 [Pause 1.0s]  
-Most of you are good. You want the Demon found and destroyed.  
+Most of you are good. Your task is to find the Demon… and execute it. If the Demon dies, good wins.  
 [Pause 0.6s]  
-A few of you are evil. You want the town thinned until only two souls still stand…  
-and then the night wins.  
+A few of you are evil. Your task is to destroy the town. If only two players are left alive, evil wins.  
 [Pause 1.0s]  
-I am the Storyteller. I keep the secrets. I enforce the law of this town.  
+By day, you talk… and you decide who to execute. By night, you close your eyes… and I wake some of you in secret.  
 [Pause 0.8s]  
-What I say in the open is for everyone. What I show you alone… is for your eyes only.
+I am the Storyteller. I keep the Grimoire. I will never lie to you about the rules… and when the rules are unclear, my word is final.
 
 ### `rules_teams.mp3`
 [Tone: Structured, clear — still atmospheric]  
 [Ambience | ~15s]: "Soft square ambience, distant bell, attentive quiet"  
-There are four kinds of soul in Trouble Brewing.  
+There are four kinds of character in Trouble Brewing. Each of you will secretly be one of them.  
 [Pause 0.8s]  
-Townsfolk — good. Most of the town. Many wake at night to learn something true… or almost true.  
+Townsfolk — good. Most of the town. Their abilities help good… if they can be trusted.  
 [Pause 0.8s]  
-Outsiders — also good… but their abilities hurt the town, or twist it. They are still on your side.  
+Outsiders — also good… but their abilities hinder the town. They are still on your side, and they win with it.  
 [Pause 0.8s]  
-Minions — evil. They know who the Demon is. They lie for it. They may poison, spy, or worse.  
+Minions — evil. They serve the Demon. They lie for it, and they sabotage the town.  
 [Pause 0.8s]  
-The Demon — evil. By day it wears a human face. By night it chooses who dies.  
+The Demon — evil. By day it wears a human face. By night it kills.  
 [Pause 1.0s]  
 [Tone: Emphatic]  
-If the Demon dies, good wins.  
-If only two living players remain, and the Demon still lives… evil wins.  
+Good wins when the Demon dies.  
+Evil wins when only two living players remain — Travellers not counted.  
 [Pause 0.8s]  
-There are other ways to lose — listen for them when we speak of the Saint… and of sacred blood.
+A few abilities can end the story another way. You will hear of them shortly.
 
 ### `rules_setup.mp3`
 [Tone: Practical ceremony]  
 [Ambience | ~12s]: "Quiet dealing atmosphere, soft paper/tokens feel, square hush"  
-Before the first night, each of you receives one character.  
+Before the first night, each of you draws one character token.  
 [Pause 0.8s]  
-That token is secret. Do not show it. Do not name it aloud unless you choose to bluff… or tell the truth.  
+Keep it secret. Do not show it to anyone… and never look into the Grimoire.  
 [Pause 1.0s]  
-Evil will lie. Good may lie too — but the town dies faster when good lies without cause.  
-[Pause 0.8s]  
-Look at the character sheet — every ability that *might* be in this town is printed there.  
+Once the first night is over, you may say whatever you like — the truth, half of it, or a lie.  
 [Pause 0.6s]  
-Not every character is in every game. You will not be told the full list of who was dealt.  
+Evil must lie. The best of them choose a good character… and wear it like a mask.  
+[Pause 0.6s]  
+Good players usually share what they know — though some have reason to be careful.  
+[Pause 0.8s]  
+The character sheet lists every character that might be in this town.  
+[Pause 0.6s]  
+Not every character is in play. You will not be told which ones are.  
 [Pause 0.8s]  
 That uncertainty… is the fog of Ravenswood Bluff.
 
 ### `rules_night.mp3`
 [Tone: Hushed instruction — night law]  
 [Ambience | ~15s]: "Night settling: lamps, wind, slow clock — instructional not scary-loud"  
-When night falls, close your eyes.  
+When night falls, everyone closes their eyes — the living and the dead.  
 [Pause 0.8s]  
-I will wake players in secret. If I wake you, open your eyes only when told… listen… choose if asked… then sleep again.  
-[Pause 1.0s]  
+I will wake some of you in secret, with two taps on the shoulder. Open your eyes only when you feel them.  
+[Pause 0.8s]  
+At night I stay silent. To choose a player, simply point. I will nod for yes, shake my head for no… and show you whatever you need to see.  
+[Pause 0.6s]  
+When I am done with you, close your eyes and sleep.  
+[Storyteller: demonstrate the taps, the point, the nod and the shake]  
+[Pause 2.0s]  
 Do not peek. Do not signal. The town that cheats the dark invites ruin.  
-[Pause 0.8s]  
-On the first night, evil learns who is who. Some good souls receive their first whispers.  
-[Pause 0.8s]  
-On later nights, the Demon usually kills. Other abilities may fire — protection, poison, prophecy, and more.  
 [Pause 1.0s]  
-You will not hear those names spoken to the whole square.  
-Private truth stays private… until dawn makes death public.
+On the first night, some of you learn your first secrets. With seven or more players, the evil team learns who its allies are.  
+[Pause 0.6s]  
+On later nights, the Demon kills… and other abilities stir in the dark.  
+[Pause 1.0s]  
+Not every whisper can be trusted. A player who is drunk or poisoned has no ability — but they do not know it, and I will act as though they do. What they learn may be false.  
+[Pause 0.8s]  
+At dawn, eyes open. I will announce who died in the night — if anyone.
 
 ### `rules_day.mp3`
 [Tone: Open square — discussion law]  
 [Ambience | ~15s]: "Daytime square murmur under narration, soft footsteps"  
-At dawn, open your eyes. I will say who died in the night — if anyone.  
+By day, the square is yours. Talk. Accuse. Defend. Share what you learned… or what you pretend you learned.  
 [Pause 0.8s]  
-Then the day is yours. Talk. Accuse. Defend. Share what you learned… or what you pretend you learned.  
+Speak openly to everyone, or step aside for private conversations. You may say anything at all.  
+[Pause 0.8s]  
+If you have a question — about the rules, or about your own character — ask me. In the open… or in private, so no one learns what you asked.  
 [Pause 1.0s]  
-You may nominate a player for execution.  
+As the light fades, I will call for nominations.  
 [Pause 0.6s]  
-A nomination needs a second, by the customs of this table — follow the Storyteller’s call.  
+To nominate, simply say so — "I nominate…" and a name.  
 [Pause 0.8s]  
-Then we vote. Living players raise a hand for yes.  
-[Pause 0.6s]  
-Dead players may vote… but only once per game. Spend that ghost vote wisely.  
-[Pause 1.0s]  
-If the yes votes reach a majority of living players, that soul is about to die.  
-[Pause 0.6s]  
-If not, they live — for now.  
+Only the living may nominate. Each player may nominate once per day… and may be nominated once per day. One nomination at a time.  
 [Pause 0.8s]  
-Ties and special cases fall to the Storyteller’s judgment, by the printed rules.
+The nominee may speak in their defence. Then we vote.  
+[Pause 0.6s]  
+I will count around the circle, ending with the nominee. If your hand is up when I reach you… that is a vote.  
+[Pause 0.8s]  
+The living may vote as many times as they like each day.  
+[Pause 0.6s]  
+The dead have one vote left for the rest of the game. Spend it wisely.
 
 ### `rules_execution.mp3`
 [Tone: Solemn, precise]  
 [Ambience | ~12s]: "Solemn square hush, low wind"  
 [SFX | ~2s]: "Soft scaffold wood creak under narration"  
-An execution is a public death. The town chose it.  
+To be about to die, a nominee needs votes from at least half the living… and more votes than anyone else nominated today.  
 [Pause 0.8s]  
-Usually at most one execution per day. If nobody reaches majority, nobody dies to the square.  
+Reach that mark, and they stand upon the block. Nominations go on — and anyone who later draws even more votes takes their place.  
+[Pause 0.8s]  
+If a nominee only matches the count, it is a tie. No one stands upon the block… and the next nominee must beat that number.  
 [Pause 1.0s]  
-When only three living players remain… there is no execution. The town must survive the night instead.  
+When nominations close, whoever stands upon the block is executed. Then night falls.  
 [Pause 0.8s]  
-Remember: executing good souls thins your numbers… and may hand the game to evil.
+There is only one execution each day — and there need not be any. If the block is empty, no one dies to the square.  
+[Pause 0.8s]  
+Choose carefully. Every good soul you execute brings evil closer to victory… but a day without an execution is a choice too.
 
 ### `rules_death.mp3`
 [Tone: Clear on dead-player rights]  
 [Ambience | ~12s]: "Cold quiet among living and dead in a square"  
-The dead still stand among you.  
+Most of you will die. In Ravenswood Bluff… death is not the end.  
 [Pause 0.8s]  
-They may speak freely. They may argue. They may guide the living.  
+The dead still talk. They still argue. They still guide the living. They still close their eyes at night.  
 [Pause 0.8s]  
-They do not nominate. They vote only with that single ghost vote — once.  
+And they still win — or lose — with their team.  
 [Pause 1.0s]  
-Death ends your ability… unless your character says otherwise.  
-[Pause 0.6s]  
-Read your token. The sheet is law.
+When you die, your ability ends. You may no longer nominate. And you keep a single vote for the rest of the game.  
+[Pause 0.8s]  
+Often… it is the dead who decide the fate of the town.
 
 ### `rules_abilities.mp3`
 [Tone: Teacher walking the script — unhurried]  
 [Ambience | loop | ~25s]: "Attentive square, soft wind, distant tower — long teach bed"  
-Trouble Brewing abilities live on the character sheet. Glance there as I speak.  
+Every ability in this town is printed on the character sheet. Glance there as I speak.  
 [Pause 1.0s]  
-Good information — some Townsfolk learn facts at night: neighbors, pairs of evil, who might be a Minion or Outsider, who died on the block.  
-Truth can be twisted by poison… or by the Drunk… or by evil that registers as something it is not.  
+Townsfolk who learn — the Washerwoman, Librarian and Investigator each learn that one of two players is a particular character. The Chef learns how many pairs of evil players sit together. The Empath learns how many living neighbours are evil. The Fortune Teller hunts for the Demon — but one good player will seem a Demon to them. The Undertaker learns who was truly executed. And the Ravenkeeper, if killed at night, learns one player's character.  
 [Pause 1.0s]  
-Day powers — a Virgin may doom the wrong nominator. A Slayer may take one shot at who they believe is the Demon. A Mayor may break ties of a sort, by their text. A Soldier may survive the Demon’s kill.  
+Townsfolk who protect and strike — the Monk shields a player from the Demon each night. The Soldier is safe from the Demon. The Virgin — the first time she is nominated, if a Townsfolk nominated her, they are executed at once. The Slayer, once per game, may publicly choose a player: if they are the Demon, they die. And the Mayor — if only three players live and no one is executed, good wins… and if the Demon comes for the Mayor, someone else might die instead.  
 [Pause 1.0s]  
-Outsiders — the Butler needs a Master to vote with. The Drunk thinks they are a Townsfolk and are wrong. The Recluse may register as evil. The Saint… if executed by the town… loses the game for good.  
+Outsiders — the Butler may only vote when their chosen master votes too. The Drunk thinks they are a Townsfolk… but is not, and does not know it. The Recluse might register as evil. And the Saint — if executed, good loses.  
 [Pause 1.0s]  
-Minions — the Poisoner blights a player each night. The Spy may see the grimoire. The Scarlet Woman may become the Demon if the Demon dies with enough alive. The Baron swells the Outsider count.  
+Minions — the Poisoner poisons a player each night. The Spy sees the Grimoire each night, and might register as good. The Scarlet Woman becomes the Demon if the Demon dies while five or more live. The Baron brings two extra Outsiders into town.  
 [Pause 1.0s]  
-The Imp — the Demon of this script. Each night it kills. If it kills itself… a Minion may inherit the curse, by the rules.  
+The Imp — the Demon. Each night after the first, it chooses who dies. If it kills itself… a Minion becomes the new Imp.  
 [Pause 1.0s]  
-I will not recite every line of every token here. Hold the sheet. When in doubt, ask the Storyteller — in the open for rules… in private for your fate.
+Poison, drink and false registration can twist any of this. When in doubt — ask me.
 
 ### `rules_win.mp3`
 [Tone: Final stakes — clear and memorable]  
 [Ambience | ~12s]: "Dramatic hush, soft far thunder or wind"  
-How the town ends:  
+How the story ends:  
 [Pause 0.8s]  
 Good wins when the Demon is dead.  
 [Pause 0.8s]  
-Evil wins when only two players still live… and the Demon is among them.  
+Evil wins when only two players still live — Travellers not counted.  
 [Pause 0.8s]  
-Evil also wins if the town executes the Saint.  
-[Pause 0.8s]  
-Other rare endings follow the printed text — the Storyteller will declare them when they happen.  
+And a few abilities write their own endings. If the Saint is executed, evil wins. If only three live and no one is executed, the Mayor may win it for good.  
 [Pause 1.0s]  
+Alive or dead, you win or lose with your team.  
+[Pause 0.8s]  
 Trust carefully. Vote carefully. Sleep carefully.  
 [Pause 0.8s]  
 The clocktower is watching.
@@ -530,24 +545,30 @@ The clocktower is watching.
 [Ambience | ~10s]: "Footsteps on wet road, square noticing a stranger"  
 Sometimes strangers walk the wet road into Ravenswood Bluff — Travellers.  
 [Pause 0.8s]  
-They may join or leave mid-story. They have their own tokens and abilities.  
+A Traveller may arrive late, or leave early. They choose their own character. I choose their alignment, in secret — good… or evil.  
 [Pause 0.8s]  
-They count for votes and for living numbers as the Storyteller explains when they arrive.  
+Travellers may nominate and vote like anyone else. But they are never nominated. Instead, any player — even the dead — may call for a Traveller's exile.  
+[Pause 0.8s]  
+If at least half of all players, living and dead, support it, the Traveller is exiled and dies. Supporting an exile does not spend a ghost vote. No ability can change an exile — and an exile is not an execution.  
+[Pause 0.8s]  
+Travellers are never counted among the final two.  
 [Pause 0.6s]  
-Treat them as part of the town’s weather… until you know which way the wind blows.
+Treat them as part of the town's weather… until you know which way the wind blows.
 
 ### `rules_etiquette.mp3`
 [Tone: Firm, fair, in-world]  
 [Ambience | ~10s]: "Quiet authority, square stillness"  
-Eyes closed means eyes closed.  
+Four things to remember.  
+[Pause 0.8s]  
+One — say whatever you want, whenever you want. This is a talking game.  
 [Pause 0.6s]  
-Phones down when asked. No secret texts that break the fiction.  
-[Pause 0.8s]  
-Do not touch the grimoire. Do not haunt the Storyteller’s shoulder.  
-[Pause 0.8s]  
-Argue hard. Play hard. When the game ends… leave the blood on the cobblestones — not on each other.  
+Two — no peeking. Eyes closed means eyes closed. Keep your token hidden, and never look into the Grimoire.  
+[Pause 0.6s]  
+Three — ask me anything. In the open, or quietly in private. That is what I am here for.  
+[Pause 0.6s]  
+Four — play nice. Argue hard. Lie well. Kill with grace… and die with dignity.  
 [Pause 1.0s]  
-Questions on rules may be asked aloud. Questions on your private info… wait for a quiet night.
+When the game ends… leave the blood on the cobblestones — not on each other.
 
 ### `rules_full.mp3` *(optional single file — concatenate C in order)*
 [Tone: Same voice throughout; natural pace; leave the pauses]  
@@ -574,7 +595,7 @@ Or stitch the modular files. Do not invent new rules mid-take.]
 
 Priority order:
 
-1. `intro.mp3` (voice + layered storm/scream/bell)  
+1. `intro.mp3` (voice + layered storm/distant scream/bell)  
 2. `day_bed.mp3` / `night_bed.mp3` (Sound Effects loops)  
 3. `rules_overview.mp3` + `rules_teams.mp3` + `rules_day.mp3` + `rules_win.mp3` (or one `rules_full.mp3`)  
 4. `first_night.mp3` / `night.mp3` / `dusk.mp3`  
@@ -603,7 +624,7 @@ Come in from the wet road.
 [Pause 0.8s]  
 Stand beneath the clocktower. Find your place in the square —  
 [Pause 0.6s]  
-the night is not finished with this town.
+the dark has not forgotten this town.
 
 ### `atm_rules_quiet.mp3`
 [Tone: Soft authority — almost a hush]  
@@ -639,7 +660,7 @@ Every word you speak rises to those stone ears.
 [Tone: Cold, careful]  
 Doubt moves through the crowd like a cold draft.  
 [Pause 0.8s]  
-Pass it carefully… or it cuts the wrong throat.
+Name it carefully… or it turns on the wrong soul.
 
 ### `atm_day_neighbors.mp3`
 [Tone: False warmth turning dark]  
@@ -679,9 +700,9 @@ Someone will choke on it before dusk.
 ### `atm_day_defend.mp3`
 [Tone: Wary, remembering]  
 [SFX | ~2s]: "Wooden shutters rattling in wind"  
-Stories shift like shutters in the wind.  
+A voice rises to defend a name.  
 [Pause 0.8s]  
-Remember what was said in this square… and what was swallowed.
+Listen hard — truth and panic wear the same coat.
 
 ### `atm_day_dead_listen.mp3`
 [Tone: Respectful, slight chill]  
@@ -877,9 +898,9 @@ Another hour closer to ruin… or to morning.
 ### `atm_blood_remember.mp3`
 [Tone: Heavy memory]  
 [SFX | ~2.5s]: "Wet memory of blood on stone, low remembering drone"  
-Blood remembers these cobblestones.  
+Blood stains these cobblestones.  
 [Pause 0.8s]  
-The town remembers louder.
+The town remembers every drop.
 
 ### `atm_whisper.mp3`
 [Tone: Conspiratorial hush]  
@@ -905,7 +926,7 @@ It laughs at your gatherings. It stands in your circle. It votes beside you.
 ### `atm_good_hope.mp3`
 [Tone: Quiet steel — hope without softness]  
 [SFX | ~2.5s]: "Quiet steel resolve swell, soft hopeful far light"  
-And still — good endures in stubborn hearts.  
+Good endures in stubborn hearts.  
 [Pause 0.8s]  
 If this town stands together, the night can break.
 
@@ -1007,7 +1028,7 @@ Close your eyes. Speak only if you are called.
 [Ambience | loop | ~12s]: "Cold wind in shutters, slow clock ticks, dark streets"  
 Darkness claims the cobblestones.  
 [Pause 0.8s]  
-Bolt the night behind your eyelids.  
+Close your eyes. Let the town go dark.  
 [Pause 0.8s]  
 What walks now is not for the square to witness.
 
@@ -1099,7 +1120,7 @@ This soul stands beneath the square’s judgment.
 [Ambience | ~8s]: "Crowd hush after a decisive count"  
 Majority. The town has spoken with one hard voice.  
 [Pause 0.8s]  
-Bring them to the edge of the stones.
+Bring them forward. Judgment waits on the stones.
 
 ### `no_majority_b.mp3`
 [Tone: Soft release — watchful]  
@@ -1132,7 +1153,7 @@ The square is split — and someone must decide.
 [SFX | ~2s]: "Thin high tension drone"  
 Breath holds in every throat.  
 [Pause 0.8s]  
-This life hangs above the cobblestones by a thread.
+This life hangs by a thread.
 
 ### `about_to_die_c.mp3`
 [Tone: Almost a whisper]  
@@ -1144,7 +1165,7 @@ Judgment is a breath away.
 ### `lives_b.mp3`
 [Tone: Relief — still unsettled]  
 [Mix: no-sfx]  
-The thread does not snap.  
+They live.  
 [Pause 0.8s]  
 They rejoin the crowd… alive, for another hour.
 
