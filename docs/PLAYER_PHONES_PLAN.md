@@ -1,0 +1,343 @@
+﻿# Plan: player phones (private character reveal, night info, notes, optional phone voting)
+
+Status: **plan only, not built.** Waiting for answers to the 12 questions in section 6.
+
+Copied unchanged from the completed planning session of Oct 12. Since then:
+- **Line references are from the Oct 12 code** (before roadmap items 1-6) and many have moved; re-check them before building.
+- **Section 2, rule 7 (PIN hardening) is done** (roadmap item 1): per-IP throttle with back-off, constant-time compare, no default-PIN hint, default-PIN warnings in the launcher, server log and Storyteller page, and a de-emphasised home-page link. Phase 0 still needs everything else (`gameId`, the `player` role, `toPlayerState`, private emits).
+- **"150 checks"** is now 193 (`npm test` runs them all, `server/test/run-all.ts`). `server/test/server-security.ts` now starts the real server and drives Socket.io clients, which is the base the socket integration tests in section 5 need.
+- Roadmap item 4 added connection presence for the Storyteller and TV; item 5 added undo, which a phone feature must not break (undo restores a snapshot, so private phone data needs a rule for what undo does to it).
+
+This can be built on the current architecture. Three things have to come first:
+
+- **A per-player projection that only copies allowed fields.** Today the Storyteller gets the whole `Player` object, which includes the true character, reminders and notes.
+- **Storing what was actually sent to each player.** The night composer currently lives only in the Storyteller's React state, so the server never knows what a player was shown.
+- **Hardening the Storyteller PIN.** Once players' phones use the same address, the PIN becomes the easiest thing to attack. The details are in section 2.
+
+The biggest open question is a game-design one, not a technical one. A phone that always shows your character is proof of identity, and BOTC is designed so that proof doesn't exist.
+
+---
+
+## 0. Current state (evidence)
+
+**Sessions and players**
+- The whole game is one `GameSession` (`server/src/types.ts:278-330`). It is saved to `data/session.json` after every change (`game.ts:360-381`, `persistence.ts:250-254`). The session path can be overridden with `BOTC_SESSION_PATH` (`persistence.ts:16`).
+- A `Player` (`types.ts:40-61`) holds public and secret fields side by side: `characterId`, `reminders` (Poisoned, Is the Drunk, Red herring…), `notes` (the Storyteller's grimoire notes), `bluffs`, `thinksCharacterId` (the Drunk), `alignment` (Travellers) and `voteTokens`.
+- Player IDs are predictable (`p1…pN`, from `persistence.ts:150-157` and `game.ts:464-469`). They are regenerated on `resetGame` (`game.ts:426`). `moveSeat` changes seat numbers but keeps the ID (`game.ts:476-491`). So a phone should be bound to a **playerId plus a secret token**, never to a seat number.
+
+**Socket.io protocol and auth**
+- `join` accepts only the roles `"tv"` (no auth) and `"storyteller"` (`index.ts:159-177`). `ClientRole` is `"storyteller" | "tv"` (`types.ts:486`).
+- The PIN check is a plain comparison with no rate limit (`index.ts:168`). The default PIN is `1234` (`config/default.json`), and the PIN screen tells whoever opens it "Enter the PIN (default 1234)" (`StorytellerPage.tsx:341`). The home page links to `/storyteller` (`HomePage.tsx:15`).
+- Every `game:*` action is blocked unless the socket is the authenticated Storyteller (`index.ts:179-181`, `277-292`).
+- On every change the server broadcasts two payloads: `state:public` to the `tv` room and `state:storyteller` to the `storyteller` room (`index.ts:153-156`). `emit()` increments `seq` and builds both (`game.ts:383-397`).
+
+**What is safe to send, and to whom**
+- `toPublicState` (`projection.ts:179-251`) is already safe to send to everyone:
+  - Players carry only id, seat, name, alive, ghost vote and Traveller name (`:198-210`).
+  - Overnight deaths stay hidden until dawn is announced (`publicAlive`, `:38-47`; `overnightDeathsArePublic`, `:27-31`).
+  - Death causes are removed (`sanitizePublicLog`, `:50-77`).
+  - Characters appear only when the game has ended (`reveal`, `:240`).
+- `toStorytellerState` passes `players: session.players` through unchanged (`projection.ts:267`), plus `night` with its truth fields. **None of this may reach a phone.**
+
+**The night "show to player" flow**
+- The server builds a `NightShowSpec` for each step (`night.ts:455-838`). When the woken player is drunk or poisoned, `applyImpairedInfoShow` (`night.ts:180-261`) puts the lie in `suggested*` and the real answer in `truth*`, `stWarning` and `registration`. The type itself warns that these must never go to the player (`types.ts:100-122`).
+- Player-facing text already exists as separate fields: `playerTitle`, `playerPrompt` and the label fields (`types.ts:126-141`).
+- What the player is actually shown is **ephemeral React state** in `NightTab` (`StorytellerPage.tsx:1077-1091`), filled by `applyShowDefaults` (`:1204-1245`).
+- Fortune Teller yes/no is computed in the Storyteller's browser from full grimoire data (`:1281-1295`).
+- For player choices, the Storyteller taps on the player's behalf and presses Confirm. That calls `game:applyNightReminder` or `game:otherDeath`, then `markNightStepDone` (`:1303-1344`; server side `game.ts:947-977`, `1016-1045`).
+- The hold-up overlay is `:1968-2184`. The Spy's grimoire view lists every character and reminder (`:2120-2140`).
+- A new Demon (Scarlet Woman or star-pass) gets a "You are the Imp" message step (`night.ts:884-904`).
+- There is currently no in-app character-reveal step; characters are handed out with physical tokens.
+
+**Voting**
+- The Storyteller toggles hands in any order (`StorytellerPage.tsx:3283-3312` → `game:toggleVote` → `game.ts:1596-1619`):
+  - Ghost votes are tracked by `canPlayerVote` (`projection.ts:295-300`) and spent only when the vote is resolved (`game.ts:1650-1656`).
+  - A living Beggar without a token is refused, with a Storyteller notice (`game.ts:1611-1614`). Token donation privately tells the Storyteller the donor's alignment (`game.ts:805-831`).
+- An illegal Butler hand still counts, and only the Storyteller sees a warning (`rules.ts:192-201`).
+- Bureaucrat ×3 and Thief −1 weights come from reminders, and only while that Traveller lives (`rules.ts:209-225`).
+- On the TV, studs are placed in clockwise order (`tv/model.ts:174-180`) and light up the moment a hand is toggled (`tv/stages.tsx:132-148`). **There is no clock-hand sweep today.**
+
+**Join info and launcher**
+- `joinBaseUrls` works out the LAN URLs (`join-info.ts:43-51`). The only QR code is printed in the terminal and points at `/` (`join-info.ts:94-100`).
+- `/api/config/public` returns only the script name and port (`index.ts:54-57`).
+- There is no browser QR library (only `qrcode-terminal` on the server), and no HTTPS.
+
+**Tests**
+- Engine tests run with `tsx` via `server/test/_harness.ts`. It uses a temp session (`:9-10`), a broadcast recorder (`:40-45`) and 150 checks (commit `f52b31c`).
+- `scripts/tv_drive.mjs` already drives the Storyteller with `socket.io-client`.
+- No socket-level multi-client tests exist, and no Playwright or Puppeteer is installed.
+
+**Official BOTC guidance used below**
+- Players take a seat by clicking "Click to Claim", and anyone else is a spectator. Setting a token on a player in the official app is "just for you to see… handy for taking notes". There are no chat dings at night by default. Whispers only go to neighbours or the Storyteller. ([BOTC.APP instructions](https://beardytas.com/botc-app-instructions/))
+- In the official app, night info arrives as silent "Night Cards". The player answers a choice or presses **GOT IT**, and night info can be reopened during the night but disappears in the day. ([r/BloodOnTheClocktower: Advice for online play](https://www.reddit.com/r/BloodOnTheClocktower/comments/1ox0z60/advice_for_online_play/); this is a community description.)
+- The app has special modes for `distribute-roles` (handing out characters as an explicit action), `hidden` votes, and `multiplier` votes for Bureaucrat/Thief. ([release.botc.app](https://release.botc.app/))
+- "If a player's alignment or character changes, they learn this at the earliest opportunity, in secret" (Rulebook, "The player learns of changes").
+- "No peeking. Please keep your character token a secret" ([Rules Explanation](https://wiki.bloodontheclocktower.com/Rules_Explanation)). Players "cannot look at each other's character tokens" ([Glossary](https://wiki.bloodontheclocktower.com/Glossary)). A widely used community rules script adds: "…you cannot simply prove who you are!" ([DIY rules explanation](https://diy.bloodontheclocktower.rocks/reference/rules-explanation.html))
+- Voting goes clockwise from the player after the nominee, and ends with the nominee. A hand counts if it is up when the Storyteller's hand reaches it. Dead players get one vote for the rest of the game. ([Rules Explanation](https://wiki.bloodontheclocktower.com/Rules_Explanation), [Glossary](https://wiki.bloodontheclocktower.com/Glossary))
+- The Butler may raise their hand only if their Master's hand is up or has already been counted ([Butler](https://wiki.bloodontheclocktower.com/Butler)).
+- Browser limits that matter here:
+  - The Screen Wake Lock API only works on HTTPS ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Screen%5FWake%5FLock%5FAPI)), and this app serves plain HTTP.
+  - iOS Safari has never supported `navigator.vibrate` ([caniuse](https://caniuse.com/mdn-api_navigator_vibrate)).
+  - `crypto.randomUUID` also needs HTTPS, so tokens must be generated on the server.
+
+---
+
+## 1. Player identity and joining
+
+**Recommended flow**
+1. **Join screen on the TV (lobby only):** one QR code and a 4-character join code pointing at `/play?c=K7QX`.
+   - The server adds `joinUrl` to `/api/config/public`, reusing `joinBaseUrls`.
+   - The web app needs a small QR library (for example `qrcode`).
+   - I would avoid a QR per seat on the TV: anyone could scan anyone's seat.
+2. **Claim a seat:** the phone lists the seats (public names only) and the player taps theirs, sending `player:claim {joinCode, playerId}`.
+   - By default the claim waits for Storyteller approval. The Setup tab shows "Seat 3 (Cora) wants to join from 'iPhone Safari'", with Approve and Deny.
+   - An optional "auto-approve while claims are open" mode skips that.
+3. **Token:** on approval the server creates `randomBytes(24).toString("base64url")` and stores only its SHA-256 hash. The raw token goes back once in the ack, and the phone keeps it in `localStorage` under `botc.player.<gameId>`.
+4. **Reconnect:** on every Socket.io `connect` the phone sends `join {role:"player", token}`. Sleep, refresh and Wi-Fi drops all recover without asking the Storyteller. The phone also reconnects on `visibilitychange` when the page becomes visible.
+5. **Storyteller controls** (new device panel per player: connected dot, last seen, device label):
+   - Revoke (deletes the hash and disconnects the socket)
+   - Reassign
+   - Hand over, which generates a one-time code for a replacement phone
+   - Rotate join code
+   - Close claims
+6. **Multiple devices:** one active token per seat by default, and a new claim replaces the old one only after Storyteller approval. The Storyteller can allow a second device for a seat (for example a shared tablet).
+7. **Spectators:** a "Watch" button on `/play` gives a read-only public view. It uses the same projection as the TV, but with no audio.
+8. **New game / reset:** `resetGame` rebuilds the players (`game.ts:426`). Either clear all claims, or re-bind them by seat number when the Storyteller ticks "same table". This is question 5.
+
+**Data model (server)**
+
+```ts
+type SeatClaim = {
+  playerId: string;
+  tokenHash: string;        // sha256; raw token never stored or projected
+  deviceLabel: string;      // from user agent, e.g. "iPhone Safari"
+  status: "pending" | "active" | "revoked";
+  claimedAt: number;
+  lastSeenAt: number;
+};
+// GameSession additions
+gameId: string;             // random per createEmptySession; scopes phone storage
+joinCode: string;
+claimsOpen: boolean;
+claims: SeatClaim[];
+```
+
+## 2. Security and privacy model
+
+**Threat model:** friends at the table, on the same LAN, possibly opening DevTools on their own phone, or opening `/storyteller` or `/tv`.
+
+**Out of scope:** Wi-Fi packet sniffing (plain HTTP is visible to anyone doing that), and someone grabbing an unlocked phone.
+
+**Rules the build must follow**
+1. **Per-socket delivery.** Each player's socket joins the room `player:<id>` and receives only `state:player` built by a new `toPlayerState(session, script, playerId)`.
+   - It is based on `toPublicState` (so it inherits death hiding and log sanitising) plus a `me` block built from an **allowlist**.
+   - It must never spread a `Player` or copy a `NightShowSpec`.
+   - Player sockets never join `tv` or `storyteller`.
+2. **The server decides who the player is.** Every `player:*` handler reads `socket.data.playerId`, which is set only after the token is verified, and ignores any `playerId` in the payload. `player:*` is a separate handler map; the `game:*` guard (`index.ts:277-292`) stays as it is.
+3. **What the player was told is stored separately from the truth.** `me.character` comes from a stored `revealedCharacterId`, set only by an explicit "Distribute", a "You are" card, or "Re-send". It is not derived live from `characterId`. This is needed because:
+   - The Storyteller's Setup edits (still shuffling the bag) would otherwise leak live.
+   - A star-pass would otherwise show up before the new-Demon wake. The rulebook says changes are learned in secret, at the earliest opportunity.
+4. **Night cards contain only what was composed.** The card is built on the server from the composed values and the player-text fields of the spec. It never contains `truth*`, `stWarning`, `registration`, `hint`, `suggested*`, reminders or notes.
+5. **Other players' status** comes only from the public projection, so a killed player's own phone uses `publicAlive` too.
+6. **Private changes emit privately.** Add an emit that goes only to the Storyteller and the affected player, without rebroadcasting public state. Otherwise every night card also bumps `seq` on every phone and the TV (`game.ts:384`), which lets someone watching network traffic count night actions.
+7. **Harden the Storyteller PIN (Phase 0):**
+   - Throttle failed attempts per IP and socket (for example 5 tries, then exponential back-off).
+   - Remove "(default 1234)" from the PIN screen.
+   - Warn in the launcher and the Storyteller UI while the PIN is still `1234`.
+   - Remove the `/storyteller` link from the home page, or hide it behind "Storyteller? tap 3×".
+   - Today a phone on the LAN could try all 10,000 PINs in seconds (`index.ts:168`).
+8. **Phones keep only the token and notes.** Game state stays in memory, so nothing private is left in browser storage after the game.
+9. **HTTPS:** not in the MVP, because self-signed certificates cause scary browser warnings. The cost is no Wake Lock and a sniffable token. This is question 10.
+
+## 3. Features
+
+Effort: S is about a day or less, M is 2–4 days, L is about a week or more. All sizes assume the Phase 0 plumbing exists.
+
+| Feature | Effort |
+|---|---|
+| Player plumbing (join/claim/token/revoke, `toPlayerState`, per-socket emit, `/play` route) | M |
+| Private character reveal (including Drunk and Travellers) | S–M |
+| Night cards: info delivery with acknowledgement | M |
+| Night cards: player choices with Storyteller confirm | L |
+| Notes (claims grid and free text) | M |
+| Phone voting with clockwise sweep | L |
+| Extras: rules and character sheet, dead view, message the Storyteller | S–M each |
+
+### 3a. Private character reveal (S–M)
+
+- **UX:** the card reads "Hold to reveal". While held, it shows the character name, team, alignment and ability text; it hides on release or after 5 seconds.
+  - Below that: the script's character sheet (reuses `buildPublicSheet`, `projection.ts:162-175`).
+  - Evil players also see their team: Minion/Demon info cards and Demon bluffs from the journal.
+- **Server:**
+  - New action `game:distributeCharacters`. It is blocked while `setupWarning` is set, or while a Drunk has no `thinksCharacterId`.
+  - It snapshots `revealedCharacterId = wakeCharacterId(p)` (`rules.ts:43-46`), so the Drunk sees their believed Townsfolk and never "drunk".
+  - Alignment shown: residents follow the shown team (the Drunk sees good, which is true). Travellers see `p.alignment` privately (`types.ts:56`); their character is already public.
+  - A "Re-send character" button in the player editor covers late fixes.
+  - The new-Demon step (`night.ts:884-904`) sends a "You are the Imp" card that updates `revealedCharacterId`.
+- **Data:** a `PlayerPrivate` record per player (see 3b).
+- **Game-design risk:** "show me your phone" becomes hard proof. A Demon won't show theirs, but a good player can prove good, which breaks bluffing. The official app avoids this because players can set any token on any seat, including their own. Options:
+  - Always viewable
+  - Viewable until the first dawn, then only during your own night cards
+  - Viewable only once
+
+  This is question 2.
+
+### 3b. Night info on the player's phone
+
+**UX, per the official Night Cards model.** At night every phone shows the same dark "Eyes closed" screen. A card arrives **silently**: no sound or vibration by default, and iOS can't vibrate anyway. The screen does not change until the player taps "I'm awake". The Storyteller still wakes players with a shoulder tap as usual, and phones stay face-down at night.
+
+**Info kinds** (number, yes-no result, pair and character, character, message, Minion/Demon info, Spy grimoire):
+1. The Storyteller composes exactly as today, including the lie pre-filled when the player is impaired.
+2. Next to "Show to X", a new **"Send to X's phone"** button appears when X has a connected device.
+3. The server builds the card, and the phone shows it with the same labels as the hold-up overlay.
+4. The player presses **Got it**, and the Storyteller sees a ✓, then presses Done → next.
+5. If there's no ✓ after N seconds, the Storyteller sees "Not seen — hold up your phone instead".
+
+**Choice kinds** (Fortune Teller picks 2, Ravenkeeper picks 1, Monk, Poisoner, Imp, Butler, Bureaucrat, Thief):
+1. The Storyteller presses "Ask on phone".
+2. The card shows a picker with min/max limits and "not yourself" where it applies (the same list as `StorytellerPage.tsx:1409-1414`).
+3. The player submits `player:choose`, which is stored as `pendingChoice`.
+4. The Storyteller's composer auto-fills `infoPlayers` and shows "Player chose A, B".
+5. The Storyteller then does what they do today:
+   - **Confirm** runs the existing `applyNightReminder` / `otherDeath` path, including star-pass and Mayor-bounce prompts (`:1303-1344`), and the phone gets "Done — go back to sleep".
+   - **Fortune Teller / Ravenkeeper:** the Storyteller reviews the answer (lie defaults when impaired, `:1260-1295`) and presses "Send answer", which updates the same card.
+6. The Storyteller can always override a choice, for example if the player mis-tapped and said so.
+
+**Server changes**
+- New `player:awake`, `player:ack` and `player:choose` handlers.
+- New `game:sendNightCard {playerIds, composed}`, `game:answerNightCard` and `game:closeNightCard` actions.
+- A pure `buildNightCard(spec, composed, session, script)` function next to `night.ts` that copies names, ids and public character text, and nothing else.
+- Group wakes (Minion info) send one card to each Minion.
+
+**Data**
+
+```ts
+type NightCard = {
+  id: string; night: number; stepId: string;
+  title: string; prompt?: string;
+  ask?: { min: number; max: number; notSelf: boolean };
+  players?: { label: string; ids: string[] };
+  character?: { label: string; id: string };        // id → public sheet text
+  number?: { label: string; value: number };
+  yesNo?: { label: string; value: "yes" | "no" };
+  bluffs?: { label: string; ids: string[] };
+  fellow?: { label: string; ids: string[] };
+  message?: { label: string; text: string };
+  grimoire?: { name: string; character: string; reminders: string[]; dead: boolean }[]; // Spy only
+  status: "sent" | "awake" | "chosen" | "answered" | "acked" | "closed";
+};
+type PlayerPrivate = {
+  revealedCharacterId: string | null;
+  revealedAlignment: "good" | "evil" | null;
+  cards: NightCard[];                 // journal (retention: question 3)
+  pendingChoice: { cardId: string; playerIds: string[]; at: number } | null;
+  inbox: { from: "st" | "player"; text: string; at: number }[];
+};
+// GameSession.private: Record<playerId, PlayerPrivate>
+```
+
+**Also private-card candidates:** the Beggar's alignment result (currently only a Storyteller notice, `game.ts:828`) and the evil Traveller's Demon info.
+
+**Effort:** info cards M, choice cards L. It touches the 1,150-line `NightTab`, so extracting the composer into its own component first is worth it.
+
+### 3c. Notes (M)
+
+- **UX:** a claims grid with one row per seat, from public names:
+  - Claimed character (token picker from the script)
+  - Good / evil / unknown marker
+  - Free text
+  - Quick tags ("voted X", "nominated Y")
+  - Plus a free-text "My notes" pad
+  - Auto-filled public facts: nominations and results from `nominationsToday` and `publicLog`
+- **Voter lists:** optionally add `voterIds` to the public `vote_result`. Hands are public at the table anyway, and the official app shows them.
+- **Storage recommendation: device only** (`localStorage` keyed by `gameId` and seat).
+  - The server and the Storyteller never see the notes, and they reset when a new game starts.
+  - They are lost if the player switches phones; an optional "export/import" QR code or file covers that.
+  - Server storage would survive a device swap, but the notes would end up in `session.json` on the Storyteller's PC.
+- **Naming:** use a different name from `Player.notes`, which holds the Storyteller's grimoire notes.
+
+### 3d. Optional phone voting (L)
+
+- **UX:**
+  1. The phone shows a big **Raise hand** toggle.
+  2. The TV shows raised hands live, as a faint glow.
+  3. A server-timed clock sweep walks `voteOrder` (clockwise from after the nominee, nominee last) and **locks** each seat in turn: lit if the hand is up, otherwise dim.
+  4. The existing studs and rising/majority cues carry on as before.
+- **Server:**
+  - `nomination.sweep = { startedAt, msPerSeat, index, paused }` plus `handsUp: string[]`.
+  - Each lock runs the existing `toggleVote` checks (`game.ts:1596-1619`): ghost vote, Beggar token, living-player rules. The Storyteller's manual toggles stay authoritative, and they can pause, rewind or override any seat.
+  - The resolve and force buttons are unchanged (`StorytellerPage.tsx:3315-3339`).
+- **Rules handling:**
+  - Ghost votes: a dead player's phone shows "1 ghost vote left" or "spent".
+  - Beggar: the button is disabled with a private "you need a vote token".
+  - Butler: never blocked (blocking would out the Butler). Optionally the Butler's own phone gets a private "your Master's hand is down" hint. The Storyteller still gets the warning.
+  - Bureaucrat/Thief weights stay on the server (`rules.ts:209-225`), and phones just raise a hand.
+- **Risks:**
+  - Players forgetting their phone, or the phone asleep: iOS drops background sockets, and there's no Wake Lock over HTTP.
+  - People no longer watching each other's hands.
+  - Latency is negligible on a LAN.
+- **Fallback:** a mixed mode. Seats without a connected device are marked "manual" on the Storyteller screen, and the Storyteller taps those. A "Phones off" switch goes back to fully manual voting, as it works today.
+
+### 3e. Extras
+
+- **Character sheet and night-order reference (S).** It comes from public script data. Showing the night order to players is optional, and I'd flag it.
+- **"I'm dead" view (S).** It shows the ghost-vote status, a reminder that dead players can't nominate, and keeps the character and notes. It switches only when `publicAlive` flips.
+- **Message the Storyteller / whisper request (S–M).** The player sends `player:message`, which lands in a Storyteller inbox with a badge, and the Storyteller can reply. A "Request a word" button notifies the Storyteller only.
+  - There is no player-to-player chat. Whispers at the table are physical, and who talks to whom is public.
+- **Keep-awake helper (S).** A "keep this screen on" tip, a low-battery dark theme, and a reconnect banner.
+
+## 4. Phased rollout
+
+1. **Phase 0 — Hardening and plumbing (S–M)**
+   - Throttle PIN attempts, remove the default-PIN hint, add default-PIN warnings.
+   - Add `gameId`.
+   - Add the `player` role in `join`, a `player:*` handler map with its guard, per-player rooms, and private emits.
+   - Add `toPlayerState` with the leak-test harness.
+2. **Phase 1 — MVP: identity and character reveal (M)**
+   - `/play` with join code, QR, claim, Storyteller approval, reconnect, revoke and the device panel.
+   - Spectator view.
+   - Distribute characters, hold-to-reveal, character sheet, dead view.
+   - The night still uses hold-up.
+3. **Phase 2 — Night info cards (M)**
+   - Send, open and acknowledge for info kinds, and the Minion/Demon info and "You are" cards.
+   - Hold-up stays as a per-player or global fallback.
+4. **Phase 3 — Night choices (L)**
+   - Asks from the phone with Storyteller confirm, for Fortune Teller, Ravenkeeper, Monk, Poisoner, Imp, Butler, Bureaucrat and Thief.
+5. **Phase 4 — Notes and messaging (M)**
+   - Device-only notes grid, public vote history, message the Storyteller.
+6. **Phase 5 — Optional phone voting (L)**
+   - Sweep, mixed mode, Storyteller override.
+
+## 5. Test strategy
+
+- **Engine and projection tests** (existing `tsx` harness, `server/test/_harness.ts`):
+  - **Canary leak test:** give every player a distinct character, reminders (Poisoned, Is the Drunk, Red herring), notes and bluffs. Then, for each player and every phase, run `JSON.stringify(toPlayerState(...))` and check it contains no other player's `characterId` (except public Travellers, or after the game has ended), and none of `truth`, `stWarning`, `registration`, `hint`, `reminders`, `notes` or those reminder strings.
+  - For every `NightShowSpec` kind, with and without `infoImpaired`: `buildNightCard` returns exactly the composed lie and no truth fields.
+  - The Drunk's reveal shows `thinksCharacterId`. A star-pass doesn't change the phone until the "You are" card is sent.
+- **Socket integration tests** (new): start the server on a random port with a temp `BOTC_SESSION_PATH` and `BOTC_PIN`. Connect a Storyteller, a TV, 5 players and 1 spectator via `socket.io-client`, and record every event per socket. Then check:
+  - Isolation: no socket receives another player's private data.
+  - Impersonation fails: a wrong or old token; `game:*` from a player socket; `player:choose` with someone else's id; claiming a seat that's already claimed.
+  - Revoke disconnects the phone.
+  - Reconnecting mid-night gets the pending card back.
+  - PIN throttling kicks in.
+  - Private card sends don't trigger a public emit.
+- **Headless multi-browser run** (add Playwright): one browser with separate contexts for the Storyteller (tablet viewport), the TV (1920×1080) and 5–8 phones (iPhone and Pixel emulation).
+  - Walk through: lobby → claim → distribute → night 1 (including a poisoned Empath lie and a Fortune Teller ask) → dawn → day → vote (Phase 5).
+  - Save screenshots per client, like the existing `docs/tv-design/_verify` runs.
+  - Simulate drops with `context.setOffline()`.
+- **Real devices:** at least one iPhone (Safari) and one Android. Emulation won't reproduce iOS suspending sockets in the background or the screen auto-locking. Also do a table noise and brightness check at night.
+
+## 6. Questions to answer before building
+
+1. **Phones at night at all?** Or keep the night as hold-up only, with phones just for the reveal, notes and messages?
+2. **Re-peeking your character:** always, until the first dawn, or once only? (This is the proof-by-phone issue.)
+3. **Night-info journal:** keep delivered cards viewable all game, or hide them after dawn like the official app?
+4. **Seat claims:** Storyteller approval (recommended) or first-come with the join code?
+5. **New game with the same people:** keep phone bindings by seat, or make everyone re-join?
+6. **Notes:** device only (recommended) or stored on the server?
+7. **Phone voting:** wanted? If so, sweep speed, and do people still raise real hands as well?
+8. **Keep the hold-up mode as a fallback?** (I recommend yes, per player.)
+9. **Spy grimoire:** on the phone, or hold-up only?
+10. **Plain HTTP:** is no Wake Lock (screens will lock) acceptable, or do you want a self-signed HTTPS option with its certificate warning?
+11. **Messaging:** only player → Storyteller (recommended), or nothing?
+12. **Sound and vibration:** confirm silent by default, with no per-player override at night.

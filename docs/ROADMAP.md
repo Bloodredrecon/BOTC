@@ -257,7 +257,7 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 9. Player phones - plan only
 
-- [ ] Status
+- [x] Status: plan copied (Oct 15) to `docs/PLAYER_PHONES_PLAN.md` with a note of what changed since (PIN hardening done, line references moved, undo to account for). Not built. Its 12 design questions (section 6) must be answered first: phones at night at all; re-peeking your character (the proof-by-phone problem); night-info journal after dawn; seat-claim approval; re-binding phones on a new game; where notes are stored; phone voting; hold-up fallback; Spy grimoire on the phone; plain HTTP without Wake Lock vs self-signed HTTPS; messaging; silent by default.
 
 **Goal.** Copy the completed plan into `docs/PLAYER_PHONES_PLAN.md`. Do not build. List the design questions that must be answered first.
 
@@ -267,5 +267,6 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 - **Storyteller PIN is still the default `1234`.** The launcher, the pre-game check and the Storyteller page now warn. Change it with `BOTC.bat` → Settings (or `BOTC.bat set -Pin ...`).
 - **More scripts (item 8):** the 10 questions at the end of `docs/SCRIPTS_PLAN.md` (first script, automation level, custom imports, icons, official text in the public repo, repo visibility, Travellers, madness, narration, jinxes).
+- **Player phones (item 9):** the 12 questions in section 6 of `docs/PLAYER_PHONES_PLAN.md`.
 - **Rules narration length (item 7):** pick option A, B or C, and allow creating audio (A/C: join existing files with ffmpeg; B: new ElevenLabs voice for 6 chapters).
 - **Port 3847 is held by another program.** `BOTC.bat check` (Oct 15) found 127.0.0.1:3847 owned by `Cursor.exe` (a utility process started 14:32 that day) answering "BeatLock WLED bridge". I did not test whether BOTC can still bind `0.0.0.0:3847` alongside it (to avoid disturbing it), but at best `localhost:3847` on this PC would reach BeatLock instead of BOTC. Either move BeatLock to another port or change BOTC's port (`BOTC.bat set -Port 3900`). Left untouched.
