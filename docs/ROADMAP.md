@@ -247,7 +247,7 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 8. More scripts (Bad Moon Rising, Sects & Violets, custom JSON) - plan only
 
-- [ ] Status
+- [x] Status: plan written (Oct 15) in `docs/SCRIPTS_PLAN.md`; stopped for the 10 decisions at its end. Nothing built; no icons or official data were added to git (official JSON was only downloaded to a temp folder for the research).
 
 **Goal.** A complete plan in `docs/SCRIPTS_PLAN.md`, reusing the partial Sep 30 findings. Then stop for user decisions.
 
@@ -266,5 +266,6 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 ## Decisions needed from the user
 
 - **Storyteller PIN is still the default `1234`.** The launcher, the pre-game check and the Storyteller page now warn. Change it with `BOTC.bat` → Settings (or `BOTC.bat set -Pin ...`).
+- **More scripts (item 8):** the 10 questions at the end of `docs/SCRIPTS_PLAN.md` (first script, automation level, custom imports, icons, official text in the public repo, repo visibility, Travellers, madness, narration, jinxes).
 - **Rules narration length (item 7):** pick option A, B or C, and allow creating audio (A/C: join existing files with ffmpeg; B: new ElevenLabs voice for 6 chapters).
 - **Port 3847 is held by another program.** `BOTC.bat check` (Oct 15) found 127.0.0.1:3847 owned by `Cursor.exe` (a utility process started 14:32 that day) answering "BeatLock WLED bridge". I did not test whether BOTC can still bind `0.0.0.0:3847` alongside it (to avoid disturbing it), but at best `localhost:3847` on this PC would reach BeatLock instead of BOTC. Either move BeatLock to another port or change BOTC's port (`BOTC.bat set -Port 3900`). Left untouched.
