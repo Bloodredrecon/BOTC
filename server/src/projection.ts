@@ -223,6 +223,20 @@ export function toPublicState(
           majority,
           votesForCount,
           toBeat: session.block?.votes ?? null,
+          phoneVote: session.nomination.phoneVote
+            ? {
+                phoneSeats: session.nomination.phoneVote.phoneSeats,
+                handsUp: session.nomination.phoneVote.handsUp,
+                sweep: session.nomination.phoneVote.sweep
+                  ? {
+                      order: session.nomination.phoneVote.sweep.order,
+                      index: session.nomination.phoneVote.sweep.index,
+                      paused: session.nomination.phoneVote.sweep.paused,
+                      msPerSeat: session.nomination.phoneVote.sweep.msPerSeat,
+                    }
+                  : null,
+              }
+            : null,
         }
       : null,
     // Names only after announceDawnDeaths — avoid leaking kills at goDawn.
@@ -295,6 +309,7 @@ export function toStorytellerState(
     audioCues: listAudioCues(),
     ambianceCatalog: listAmbianceCatalog(),
     phones: toPhonePanel(session, extras?.phoneLive ?? { connected: {}, spectators: 0 }),
+    phoneVoteOverridden: session.nomination?.phoneVote?.overridden ?? [],
   };
 }
 

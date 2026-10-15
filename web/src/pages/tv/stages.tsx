@@ -120,6 +120,14 @@ export function VoteStage({
   const step = n > 1 ? Math.min(13, 140 / (n - 1)) : 0;
   const start = 90 + (step * (n - 1)) / 2;
   const raised = order.filter((p) => voted.has(p.id)).map((p) => p.name);
+  const pv = nomination.phoneVote;
+  const handsUp = useMemo(() => new Set(pv?.handsUp ?? []), [pv?.handsUp]);
+  const sweep = pv?.sweep ?? null;
+  const passed = (id: string) => {
+    if (!sweep) return false;
+    const at = sweep.order.indexOf(id);
+    return at >= 0 && at < sweep.index;
+  };
 
   return (
     <section
@@ -133,6 +141,7 @@ export function VoteStage({
           {order.map((p, i) => {
             const isVoted = voted.has(p.id);
             const canVote = p.alive || !p.usedGhostVote || isVoted;
+            const isPassed = passed(p.id);
             return (
               <li
                 key={p.id}
@@ -141,6 +150,8 @@ export function VoteStage({
                   isVoted ? "lit" : "",
                   canVote ? "" : "spent",
                   p.id === nomination.nomineeId ? "nominee" : "",
+                  !isVoted && !isPassed && handsUp.has(p.id) ? "hand" : "",
+                  isPassed ? "passed" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -154,6 +165,19 @@ export function VoteStage({
             );
           })}
         </ol>
+        {sweep && sweep.order.length > 0 && (
+          <ClockHand
+            angleOf={(id) => {
+              const i = order.findIndex((p) => p.id === id);
+              return i < 0 ? null : start - i * step;
+            }}
+            order={sweep.order}
+            index={sweep.index}
+            paused={sweep.paused}
+            msPerSeat={sweep.msPerSeat}
+            step={step || 13}
+          />
+        )}
         <OakPlaque className="tv-vote-plaque">
           <TvLabel className="tv-vote-kicker">{kicker}</TvLabel>
           <FitText as="p" className="tv-vote-nominee" min={0.42}>
@@ -187,6 +211,53 @@ export function VoteStage({
         )}
       </FitBox>
     </section>
+  );
+}
+
+/**
+ * The phone-vote clock hand: travels from the last locked seat to the next one over one step, so it
+ * arrives as that seat locks. Timed from when this TV got the step (no clock sync with the server).
+ */
+function ClockHand({
+  angleOf,
+  order,
+  index,
+  paused,
+  msPerSeat,
+  step,
+}: {
+  angleOf: (id: string) => number | null;
+  order: string[];
+  index: number;
+  paused: boolean;
+  msPerSeat: number;
+  step: number;
+}) {
+  const done = index >= order.length;
+  const toA = done ? null : angleOf(order[index]);
+  const fromA = index > 0 ? angleOf(order[index - 1]) : toA != null ? toA + step : null;
+  const moving = !paused && !done && toA != null;
+  const [pose, setPose] = useState<{ angle: number | null; animate: boolean }>({ angle: fromA, animate: false });
+  useEffect(() => {
+    setPose({ angle: fromA, animate: false });
+    if (!moving) return;
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => setPose({ angle: toA, animate: true }));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [index, fromA, toA, moving]);
+  if (pose.angle == null) return null;
+  return (
+    <div
+      className={`tv-vote-hand ${moving ? "moving" : ""} ${done ? "done" : ""}`}
+      style={
+        {
+          "--h": `${pose.angle}deg`,
+          transition: pose.animate ? `transform ${msPerSeat}ms linear` : "none",
+        } as CSSProperties
+      }
+      aria-hidden
+    />
   );
 }
 

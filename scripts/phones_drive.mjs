@@ -417,7 +417,139 @@ async function phase3({ base, browser, st }) {
   await Promise.all(ctxs.map((c) => c.close()));
 }
 
-const PHASES = { 1: phase1, 2: phase2, 3: phase3 };
+async function phase4({ base, browser, st }) {
+  await st.act("game:setPhones", { on: true });
+  const ctxs = [];
+  const ada = await joinAndApprove(browser, "iPhone 13", base, st, "Ada", "p1");
+  const cora = await joinAndApprove(browser, "Pixel 7", base, st, "Cora", "p3");
+  const els = await joinAndApprove(browser, "iPhone 13", base, st, "Elspeth", "p5");
+  ctxs.push(ada.ctx, cora.ctx, els.ctx);
+  await st.act("game:phoneDistribute");
+  await st.act("game:startFirstNight");
+  await st.act("game:goDawn");
+  await st.act("game:finishDawn");
+  await until(() => st.st().phase === "day", "day 1");
+  // Elspeth dies by day (public at once): her phone votes with her ghost vote.
+  await st.act("game:updatePlayer", { playerId: "p5", patch: { alive: false } });
+
+  const tvCtx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  ctxs.push(tvCtx);
+  const tv = await tvCtx.newPage();
+  await tv.goto(`${base}/tv?motion=off`);
+  await tv.getByRole("button", { name: "Enable sound" }).click();
+  try {
+    await tv.locator(".sound-gate").waitFor({ state: "detached", timeout: 3000 });
+  } catch {
+    await tv.addStyleTag({ content: ".sound-gate{display:none!important}" });
+  }
+  const tablet = await browser.newContext({ viewport: { width: 820, height: 1180 }, deviceScaleFactor: 1 });
+  ctxs.push(tablet);
+  const stPage = await tablet.newPage();
+  stPage.on("dialog", (d) => d.accept());
+  await stPage.goto(`${base}/storyteller`);
+  await stPage.getByPlaceholder("PIN").fill(PIN);
+  await stPage.getByRole("button", { name: "Unlock grimoire" }).click();
+  await stPage.locator(".tabs").getByRole("button", { name: "Votes", exact: true }).click();
+
+  // Fenwick nominates Gwen: the hand goes Ada, Bram, Cora, Dmitri, Elspeth, Fenwick, then Gwen.
+  await st.act("game:goDusk");
+  await st.act("game:openNominations");
+  const nom = await st.act("game:startNomination", { nominatorId: "p6", nomineeId: "p7" });
+  if (!nom.ok) throw new Error(`nomination ${JSON.stringify(nom)}`);
+  const a = ada.page;
+  const c = cora.page;
+  const e = els.page;
+  await a.getByText("The vote opens soon").waitFor();
+  await st.act("game:phoneSweepSpeed", { ms: 3000 });
+  await st.act("game:startVote", { seconds: 60 });
+  await a.getByRole("button", { name: /Raise my hand/ }).waitFor();
+  await shot(a, "01-iphone-vote-open");
+  await a.getByRole("button", { name: /Raise my hand/ }).click();
+  await a.locator('.play-hand[aria-pressed="true"]').waitFor();
+  await shot(a, "02-iphone-hand-up");
+  await c.getByRole("button", { name: /Raise my hand/ }).click();
+  await e.getByText("Raising your hand uses your ghost vote.").waitFor();
+  await e.getByRole("button", { name: /Raise my hand/ }).click();
+  await e.locator('.play-hand[aria-pressed="true"]').waitFor();
+  await shot(e, "03-iphone-ghost-hand");
+  await until(() => st.st().nomination?.phoneVote?.handsUp.length === 3, "3 phone hands");
+  if (st.st().nomination.votesFor.length) throw new Error("phone hands counted before the clock hand");
+  // Bram has no phone: the Storyteller taps his real hand.
+  await stPage.locator(".chip-row button", { hasText: /^Bram/ }).click();
+  await until(() => st.st().nomination.votesFor.includes("p2"), "Bram tapped");
+  await tv.locator(".tv-stud.hand").nth(2).waitFor();
+  if ((await tv.locator(".tv-stud.hand").count()) !== 3) throw new Error("TV hand glows");
+  await sleep(1200);
+  await shot(tv, "04-tv-hands-glow");
+  await tv.locator(".tv-vote-ring").screenshot({ path: join(OUT, "04b-tv-ring-closeup.png") });
+  shots.push(join(OUT, "04b-tv-ring-closeup.png"));
+  await stPage.locator(".phone-count").scrollIntoViewIfNeeded();
+  await shot(stPage, "05-storyteller-phone-count");
+  log("3 phone hands glow on the TV, none counted; Bram (no phone) tapped by the Storyteller");
+
+  await stPage.getByRole("button", { name: "Start the count" }).click();
+  await until(() => st.st().nomination?.phoneVote?.sweep?.index === 1, "Ada locked", 6000);
+  await a.getByText("Locked — your vote counts.").waitFor();
+  await shot(a, "06-iphone-locked");
+  await c.getByText("The clock hand reaches you in 1 seat.").waitFor();
+  await shot(c, "07-pixel-countdown");
+  await tv.locator(".tv-vote-hand").waitFor();
+  await sleep(1400);
+  await shot(tv, "08-tv-clock-hand");
+  await tv.locator(".tv-vote-ring").screenshot({ path: join(OUT, "08b-tv-ring-closeup.png") });
+  shots.push(join(OUT, "08b-tv-ring-closeup.png"));
+  await stPage.getByRole("button", { name: "Pause", exact: true }).click();
+  await stPage.getByRole("button", { name: "Back one seat" }).click();
+  await until(() => {
+    const sw = st.st().nomination?.phoneVote?.sweep;
+    return sw?.paused && sw.index <= 1 && !st.st().nomination.votesFor.includes("p1");
+  }, "back unlocked Ada");
+  if (st.st().nomination.phoneVote.sweep.index !== 0) {
+    await stPage.getByRole("button", { name: "Back one seat" }).click();
+    await until(() => st.st().nomination.phoneVote.sweep.index === 0, "back to Ada");
+  }
+  await a.getByRole("button", { name: /Hand up/ }).click();
+  await a.locator('.play-hand[aria-pressed="false"]').waitFor();
+  log("Pause + Back: Ada unlocked and lowered her hand");
+  await st.act("game:phoneSweepSpeed", { ms: 500 });
+  await stPage.getByRole("button", { name: "Resume count" }).click();
+  await until(() => st.st().nomination?.phoneVote?.sweep?.index === 7, "count finished", 10000);
+  const counted = [...st.st().nomination.votesFor].sort().join(",");
+  if (counted !== "p2,p3,p5") throw new Error(`counted ${counted}`);
+  await a.getByText("Locked — no vote.").waitFor();
+  await sleep(1200);
+  await shot(tv, "09-tv-count-done");
+  log("count finished: Bram (by hand), Cora and Elspeth's ghost vote; Ada's lowered hand stayed out");
+  await st.act("game:resolveVote");
+
+  // A second vote, and the Storyteller switches phone voting off mid-count.
+  const nom2 = await st.act("game:startNomination", { nominatorId: "p1", nomineeId: "p4" });
+  if (!nom2.ok) throw new Error(`nomination 2 ${JSON.stringify(nom2)}`);
+  await st.act("game:phoneSweepSpeed", { ms: 3000 });
+  await st.act("game:startVote", { seconds: 60 });
+  await a.getByRole("button", { name: /Raise my hand/ }).click();
+  await until(() => st.st().nomination?.phoneVote?.handsUp.includes("p1"), "Ada up (2nd vote)");
+  // Order after Dmitri: Elspeth, Fenwick, Gwen, Ada, … — skip ahead by making the hand fast, then slow.
+  await st.act("game:phoneSweepSpeed", { ms: 500 });
+  await stPage.getByRole("button", { name: "Start the count" }).click();
+  await until(() => (st.st().nomination?.phoneVote?.sweep?.index ?? 0) >= 4, "hand past Ada", 6000);
+  await stPage.getByRole("button", { name: "Pause", exact: true }).click();
+  if (!st.st().nomination.votesFor.includes("p1")) throw new Error("Ada not counted before switch-off");
+  await stPage.locator(".phone-count").getByRole("button", { name: "Phones off for voting" }).click();
+  await until(() => st.st().phones.voting === "manual" && !st.st().nomination.phoneVote, "phone voting off");
+  if (!st.st().nomination.votesFor.includes("p1")) throw new Error("Ada's counted hand dropped on switch-off");
+  await c.getByText("Raise your real hand — the Storyteller is counting this seat.").waitFor();
+  await shot(c, "10-pixel-by-hand-after-off");
+  await stPage.locator(".phone-count").scrollIntoViewIfNeeded();
+  await shot(stPage, "11-storyteller-phones-off-voting");
+  log("Phones off for voting mid-count: the count stopped, Ada's locked hand stayed counted, phones say 'raise your real hand'");
+  await st.act("game:resolveVote");
+  await st.act("game:phoneVoting", { mode: "phones" });
+
+  await Promise.all(ctxs.map((x) => x.close()));
+}
+
+const PHASES = { 1: phase1, 2: phase2, 3: phase3, 4: phase4 };
 
 const port = await freePort();
 const dir = mkdtempSync(join(tmpdir(), "botc-phones-drive-"));

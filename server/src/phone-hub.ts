@@ -32,6 +32,8 @@ const playerRoom = (id: string) => `player:${id}`;
 const HANDOVER_TTL_MS = 10 * 60_000;
 const MESSAGE_WINDOW_MS = 60_000;
 const MESSAGES_PER_WINDOW = 6;
+const HAND_WINDOW_MS = 5_000;
+const HANDS_PER_WINDOW = 12;
 const MAX_REMEMBERED_REASONS = 500;
 
 type RemovedReason = "denied" | "revoked" | "replaced" | "cleared";
@@ -76,6 +78,7 @@ export class PhoneHub {
   /** One-time hand-over codes (memory only: they expire in minutes). */
   private handovers = new Map<string, { playerId: string; expiresAt: number }>();
   private messageTimes = new Map<string, number[]>();
+  private handTimes = new Map<string, number[]>();
   private throttle = new CodeThrottle();
 
   constructor(
@@ -385,6 +388,18 @@ export class PhoneHub {
         });
         return { ok: true };
       },
+      "player:hand": (d) => {
+        const mine = own();
+        if (!mine || mine.status !== "active" || socket.data.boundPlayerId !== mine.playerId) {
+          return { ok: false, error: "Only an approved phone can vote." };
+        }
+        const now = Date.now();
+        const recent = (this.handTimes.get(mine.playerId) ?? []).filter((t) => now - t < HAND_WINDOW_MS);
+        if (recent.length >= HANDS_PER_WINDOW) return { ok: false, error: "Slow down — your hand is still being counted." };
+        recent.push(now);
+        this.handTimes.set(mine.playerId, recent);
+        return this.engine.setPhoneHand(mine.playerId, d.up === true);
+      },
       "player:leave": () => {
         const mine = own();
         if (!mine) return { ok: true };
@@ -476,6 +491,23 @@ export class PhoneHub {
         this.engine.mutate((s) => {
           s.phones.joinCode = randomCode(4);
         });
+        return { ok: true };
+      },
+      "game:phoneVoting": (d) => {
+        this.engine.setPhoneVoting(d.mode === "manual" ? "manual" : "phones");
+        return { ok: true };
+      },
+      "game:phoneSweepSpeed": (d) => {
+        this.engine.setSweepSpeed(Number(d.ms));
+        return { ok: true };
+      },
+      "game:phoneSweepStart": () => this.engine.sweepStart(),
+      "game:phoneSweepPause": () => {
+        this.engine.sweepPause();
+        return { ok: true };
+      },
+      "game:phoneSweepBack": () => {
+        this.engine.sweepBack();
         return { ok: true };
       },
       "game:phoneClaimsOpen": (d) => {

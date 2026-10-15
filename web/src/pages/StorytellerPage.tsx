@@ -3291,6 +3291,89 @@ function VotesTab({
   );
 }
 
+/** Phone voting: the clock-hand count (start / pause / back), its speed, and the voting-only off switch. */
+function PhoneCount({ state, emit }: { state: StorytellerState; emit: (e: string, d?: unknown) => void }) {
+  const nom = state.nomination;
+  if (!nom || !state.phones.enabled) return null;
+  const pv = nom.phoneVote;
+  const sweep = pv?.sweep ?? null;
+  const done = Boolean(sweep && sweep.index >= sweep.order.length);
+  const running = Boolean(sweep && !sweep.paused && !done);
+  const at = sweep && !done ? state.players.find((p) => p.id === sweep.order[sweep.index])?.name : null;
+  if (state.phones.voting === "manual") {
+    return (
+      <div className="phone-count">
+        <p className="muted">Phone voting is off — count every hand on the chips.</p>
+        <button type="button" onClick={() => emit("game:phoneVoting", { mode: "phones" })}>
+          Use phone voting (from the next vote)
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="phone-count">
+      {!pv ? (
+        <p className="muted">
+          {state.phase === "vote"
+            ? "No phones were connected when this vote opened — count the hands on the chips."
+            : "Phones vote once you start the vote clock. Seats without a phone are counted on the chips."}
+        </p>
+      ) : (
+        <>
+          <p className="muted">
+            {pv.phoneSeats.length} {pv.phoneSeats.length === 1 ? "seat votes" : "seats vote"} by phone; the rest are counted
+            by hand. Tapping a chip sets that seat yourself.
+            {sweep
+              ? done
+                ? " Count finished."
+                : running
+                  ? ` Clock hand moving — next: ${at ?? "?"}.`
+                  : ` Paused — next: ${at ?? "?"}.`
+              : ""}
+          </p>
+          <div className="row">
+            <button className={running ? "" : "primary"} type="button" disabled={running} onClick={() => emit("game:phoneSweepStart")}>
+              {!sweep ? "Start the count" : done ? "Count again" : running ? "Counting…" : "Resume count"}
+            </button>
+            <button type="button" disabled={!running} onClick={() => emit("game:phoneSweepPause")}>
+              Pause
+            </button>
+            <button type="button" disabled={!sweep || sweep.index === 0} onClick={() => emit("game:phoneSweepBack")}>
+              Back one seat
+            </button>
+            <label className="phone-count-speed">
+              Speed{" "}
+              <select
+                value={state.phones.sweepMsPerSeat}
+                onChange={(e) => emit("game:phoneSweepSpeed", { ms: Number(e.target.value) })}
+              >
+                {[1000, 1500, 2000, 3000].includes(state.phones.sweepMsPerSeat) ? null : (
+                  <option value={state.phones.sweepMsPerSeat}>{state.phones.sweepMsPerSeat / 1000} s</option>
+                )}
+                <option value={1000}>1 s a seat</option>
+                <option value={1500}>1.5 s a seat</option>
+                <option value={2000}>2 s a seat</option>
+                <option value={3000}>3 s a seat</option>
+              </select>
+            </label>
+          </div>
+        </>
+      )}
+      <button
+        type="button"
+        className="ghost"
+        onClick={() => {
+          if (confirm("Turn phone voting off? Hands already counted stay; you count the rest on the chips.")) {
+            emit("game:phoneVoting", { mode: "manual" });
+          }
+        }}
+      >
+        Phones off for voting
+      </button>
+    </div>
+  );
+}
+
 function VotePanels({
   state,
   emit,
@@ -3341,9 +3424,21 @@ function VotePanels({
               : ""}
           </p>
           {state.butlerWarning && <p className="warn">{state.butlerWarning}</p>}
+          <PhoneCount state={state} emit={emit} />
           <div className="chip-row">
             {state.players.filter((p) => !p.leftGame).sort((a, b) => a.seat - b.seat).map((p) => {
               const on = nom.votesFor.includes(p.id);
+              const pv = nom.phoneVote;
+              const byPhone = Boolean(pv?.phoneSeats.includes(p.id));
+              const tapped = state.phoneVoteOverridden.includes(p.id);
+              const passed = Boolean(pv?.sweep && pv.sweep.order.indexOf(p.id) >= 0 && pv.sweep.order.indexOf(p.id) < pv.sweep.index);
+              const phoneTag = !pv
+                ? ""
+                : !byPhone
+                  ? "· by hand"
+                  : tapped
+                    ? "· you set"
+                    : `· phone ${pv.handsUp.includes(p.id) ? "up" : "down"}${passed ? " (locked)" : ""}`;
               // Raising a ghost hand requires an unused ghost vote (Travellers too); a living
               // Beggar needs a vote token. Lowering is always allowed while on.
               const beggarBlocked = p.alive && p.characterId === "beggar" && p.voteTokens < 1;
@@ -3363,12 +3458,13 @@ function VotePanels({
                   key={p.id}
                   type="button"
                   disabled={!can}
-                  className={`chip ${on ? "on" : ""}`}
+                  className={`chip ${on ? "on" : ""} ${byPhone && !tapped && pv?.handsUp.includes(p.id) && !on ? "phone-hand" : ""}`}
                   onClick={() => emit("game:toggleVote", { playerId: p.id })}
                 >
                   {p.name}
                   {!p.alive ? " †" : ""}
                   {mods ? ` ${mods}` : ""}
+                  {phoneTag ? ` ${phoneTag}` : ""}
                 </button>
               );
             })}

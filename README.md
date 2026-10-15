@@ -45,6 +45,7 @@ Players can use their own phones for private things, but the game never depends 
 7. **New game** with **Same table** ticked (Control tab) keeps names in their seats and every linked phone stays linked.
 8. **Notes** (phone, Notes tab) stay on that phone only: a claim, a Good / Evil guess and a line per seat, a free pad, and public facts filled in for them (nominations, vote counts, who voted, deaths). **Save a copy** / **Load a copy** moves them to another phone.
 9. **Ask** (phone) sends a question or "Request a word" to the Storyteller only, by day. They appear in a "Messages from players" banner on the Storyteller page; **Reply** goes to that one phone.
+10. **Voting:** when you start the vote clock, players with a connected phone get a big **Raise my hand** button (they raise their real hand too). On the Votes tab press **Start the count**: a clock hand goes round from the seat after the nominee, on the TV too, and locks each seat as it passes. Seats without a phone are yours to tap on the chips, and tapping any chip overrides that seat. **Pause**, **Back one seat** and **Resume** if someone needs a moment. **Phones off for voting** (Votes tab or Setup) goes back to counting every hand yourself; hands already counted stay.
 
 The design, the security model and what is built so far are in [docs/PLAYER_PHONES_PLAN.md](docs/PLAYER_PHONES_PLAN.md).
 

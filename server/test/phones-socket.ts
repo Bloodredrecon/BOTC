@@ -344,6 +344,52 @@ const cases: AsyncCase[] = [
     },
   },
   {
+    name: "Phone voting: hands from the socket's own seat only; the timed clock hand locks them; hand-counted seats stay the Storyteller's",
+    run: async () => {
+      type Nom = {
+        votesFor: string[];
+        phoneVote: { phoneSeats: string[]; handsUp: string[]; sweep: { index: number; order: string[] } | null } | null;
+      };
+      type Pub = { phase: string; nomination: Nom | null };
+      type Mine = PlayerSt & { me: { vote: { byPhone: boolean; locked: boolean; counted: boolean } | null } };
+      const nom = () => last<Pub>(tv, "state:public")?.nomination ?? null;
+      const sorted = (xs: string[] | undefined) => [...(xs ?? [])].sort().join(",");
+      const p1 = phonesBySeat.get("p1")!.rec;
+      const p3 = phonesBySeat.get("p3")!.rec;
+      await act("game:goDusk");
+      await act("game:openNominations");
+      const n = await act("game:startNomination", { nominatorId: "p6", nomineeId: "p7" });
+      if (n.ok === false) return `nomination: ${JSON.stringify(n)}`;
+      const early = await ask(p1, "player:hand", { up: true });
+      if (early.ok !== false) return "hand accepted before the vote opened";
+      await act("game:phoneSweepSpeed", { ms: 500 });
+      await act("game:startVote", { seconds: 30 });
+      await until(() => !!nom()?.phoneVote, "phone vote on the TV");
+      if (sorted(nom()!.phoneVote!.phoneSeats) !== "p1,p2,p3,p4,p6") return `phone seats ${nom()!.phoneVote!.phoneSeats}`;
+      const forged = await ask(p1, "player:hand", { up: true, playerId: "p2" });
+      if (!forged.ok) return `p1 hand: ${JSON.stringify(forged)}`;
+      if (!(await ask(p3, "player:hand", { up: true })).ok) return "p3 hand refused";
+      const stranger = await phone("hand-stranger");
+      if ((await ask(stranger, "player:hand", { up: true })).ok !== false) return "an unlinked phone voted";
+      await until(() => sorted(nom()?.phoneVote?.handsUp) === "p1,p3", "hands on the TV");
+      if (nom()!.votesFor.length) return "phone hands counted before the clock hand";
+      await act("game:toggleVote", { playerId: "p5" });
+      const started = await act("game:phoneSweepStart");
+      if (started.ok === false) return `start: ${JSON.stringify(started)}`;
+      await until(() => nom()?.phoneVote?.sweep?.index === 7, "clock hand round the table", 9000);
+      if (sorted(nom()!.votesFor) !== "p1,p3,p5") return `counted ${sorted(nom()!.votesFor)}`;
+      const late = await ask(p1, "player:hand", { up: false });
+      if (late.ok !== false || !/locked/i.test(String(late.error))) return `lowered after lock: ${JSON.stringify(late)}`;
+      await until(() => !!last<Mine>(p1, "state:player")?.me.vote?.locked, "p1 sees locked");
+      const v = last<Mine>(p1, "state:player")!.me.vote!;
+      if (!v.byPhone || !v.counted) return `p1 vote card ${JSON.stringify(v)}`;
+      if (JSON.stringify(tv.events).includes("overridden")) return "override list reached the TV";
+      await act("game:resolveVote");
+      await until(() => nom() === null, "vote closed");
+      return null;
+    },
+  },
+  {
     name: "New game: 'same table' keeps phones bound by seat; a plain new game clears them",
     run: async () => {
       await act("game:reset", { sameTable: true });

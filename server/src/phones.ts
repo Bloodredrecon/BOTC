@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import type { ScriptData } from "./persistence.js";
+import { meVote } from "./phone-vote.js";
 import { wakeCharacterId } from "./rules.js";
 import type {
   GameSession,
@@ -212,6 +213,7 @@ export function toPlayerState(
     alignment: priv?.revealedAlignment ?? null,
     revealedAt: priv?.revealedAt ?? null,
     messages: (priv?.messages ?? []).map((m) => ({ id: m.id, from: m.from, kind: m.kind, text: m.text, at: m.at })),
+    vote: meVote(session, playerId),
   };
   return { ...phonePublic, me };
 }

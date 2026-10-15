@@ -4,6 +4,7 @@ import { CharacterCard } from "./CharacterCard";
 import { MessagesView, unreadReplies } from "./MessagesView";
 import { NotesView } from "./NotesView";
 import { SheetView, TownView, isNight, phaseLine } from "./TownView";
+import { VoteCard } from "./VoteCard";
 
 type Emit = (event: string, data?: unknown, ack?: (r: unknown) => void) => void;
 type Tab = "character" | "town" | "notes" | "ask";
@@ -55,6 +56,7 @@ export function PlayerView({ state, emit, onLeave }: { state: PlayerState; emit:
           <b>You are dead.</b> Keep talking — you have {me.usedGhostVote ? "used your one ghost vote" : "one ghost vote left"}.
         </div>
       )}
+      <VoteCard state={state} emit={emit} />
       <nav className="play-tabs" aria-label="Sections">
         {TABS.map(([id, label]) => (
           <button key={id} type="button" className={tab === id ? "on" : ""} onClick={() => setTab(id)}>

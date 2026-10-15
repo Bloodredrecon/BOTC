@@ -241,6 +241,79 @@
   line-height: 1.35;
 }
 
+/* Vote card (phone voting) */
+.play-vote {
+  border-color: var(--brass-dim);
+  text-align: center;
+}
+
+.play-vote-pair {
+  margin: 0;
+  line-height: 1.35;
+}
+
+.play-vote-tally {
+  margin: 0.2rem 0 0.6rem;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  color: var(--brass);
+}
+
+.play-vote-tally span {
+  font-size: 1.1rem;
+  color: var(--ink-dim);
+}
+
+.play button.play-hand {
+  width: 100%;
+  min-height: 6.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border: 2px solid var(--brass-dim);
+  border-radius: 16px;
+  background: rgba(196, 163, 90, 0.08);
+  color: var(--bone);
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  text-transform: none;
+  touch-action: manipulation;
+}
+
+.play button.play-hand small {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--ink-dim);
+}
+
+.play button.play-hand[aria-pressed="true"] {
+  border-color: var(--brass);
+  background: radial-gradient(circle at 50% 30%, rgba(242, 200, 102, 0.45), rgba(139, 90, 30, 0.35));
+  box-shadow: 0 0 1.4rem rgba(255, 190, 80, 0.35);
+}
+
+.play button.play-hand:disabled {
+  opacity: 0.6;
+}
+
+.play-vote.locked button.play-hand {
+  opacity: 0.85;
+  border-style: dashed;
+}
+
+.play-vote-status {
+  margin: 0.7rem 0 0;
+  line-height: 1.35;
+}
+
+.play-vote-note {
+  margin: 0.4rem 0 0;
+  color: var(--ink-dim);
+  font-style: italic;
+}
+
 /* Hold-to-reveal card */
 .play-reveal-card {
   width: 100%;

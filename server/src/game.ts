@@ -4,6 +4,17 @@ import { expandFirstAvailableVariants, expandSoundVariants, resolveSoundCueId } 
 import { buildNightSteps } from "./night.js";
 import type { ScriptData } from "./persistence.js";
 import { createEmptySession, normalizePlayer, saveSession } from "./persistence.js";
+import {
+  advanceSweep,
+  haltSweep,
+  markOverride,
+  openPhoneVote,
+  pauseSweep,
+  setPhoneHand,
+  startSweep,
+  stopPhoneVote,
+  sweepBack,
+} from "./phone-vote.js";
 import { phonesForNewGame, randomCode, revealNewDemon } from "./phones.js";
 import {
   canPlayerVote,
@@ -291,6 +302,9 @@ export class GameEngine {
   private shotTimer: ReturnType<typeof setTimeout> | null = null;
   /** Starts the night once the end-of-day execution cue has finished. */
   private nightTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Next step of the phone-vote clock hand (follows `nomination.phoneVote.sweep.nextAt`). */
+  private sweepTimer: ReturnType<typeof setTimeout> | null = null;
+  private sweepTimerAt: number | null = null;
 
   constructor(
     session: GameSession,
@@ -299,6 +313,39 @@ export class GameEngine {
     private broadcast: BroadcastFn,
   ) {
     this.session = session;
+    // A saved count can't still be running after a restart: the Storyteller resumes it.
+    haltSweep(this.session);
+  }
+
+  /** Player ids with a connected, approved phone (set by the server; none in engine tests). */
+  phoneVoters: () => Iterable<string> = () => [];
+
+  private syncSweepTimer() {
+    const sw = this.session.nomination?.phoneVote?.sweep;
+    const at = sw && !sw.paused && this.session.phase === "vote" ? sw.nextAt : null;
+    if (at === this.sweepTimerAt && (at === null || this.sweepTimer)) return;
+    if (this.sweepTimer) clearTimeout(this.sweepTimer);
+    this.sweepTimer = null;
+    this.sweepTimerAt = at;
+    if (at === null) return;
+    this.sweepTimer = setTimeout(() => {
+      this.sweepTimer = null;
+      this.sweepTimerAt = null;
+      this.sweepTick();
+    }, Math.max(0, at - Date.now()));
+    this.sweepTimer.unref?.();
+  }
+
+  /** One step of the clock hand (the timer calls this; tests may too). */
+  sweepTick(now = Date.now()) {
+    const sw = this.session.nomination?.phoneVote?.sweep;
+    if (!sw || sw.paused || sw.index >= sw.order.length || this.session.phase !== "vote") {
+      this.syncSweepTimer();
+      return;
+    }
+    this.mutate((s) => {
+      advanceSweep(s, now);
+    });
   }
 
   private clearDawnThenDayTimer() {
@@ -385,6 +432,7 @@ export class GameEngine {
       if (opts.hue) void this.hue.applyScene(opts.hue);
     }
     saveSession(this.session);
+    this.syncSweepTimer();
     this.emit();
     this.lastSound = null;
     this.lastHue = null;
@@ -435,6 +483,56 @@ export class GameEngine {
     this.mutate((s) => {
       s.phones.enabled = on;
       if (on && !s.phones.joinCode) s.phones.joinCode = randomCode(4);
+      if (!on && stopPhoneVote(s)) {
+        pushStNotice(s, "Player phones are off — the phone count stopped; hands already counted stay. Count the rest on the chips.");
+      }
+    });
+  }
+
+  /** "Phones off" for voting only: the vote goes back to hand counting (from the next vote when switched on). */
+  setPhoneVoting(mode: "phones" | "manual") {
+    this.mutate((s) => {
+      s.phones.voting = mode === "manual" ? "manual" : "phones";
+      if (s.phones.voting === "manual" && stopPhoneVote(s)) {
+        pushStNotice(s, "Phone voting is off — the phone count stopped; hands already counted stay. Count the rest on the chips.");
+      }
+    });
+  }
+
+  setSweepSpeed(ms: number) {
+    if (!Number.isFinite(ms)) return;
+    this.mutate((s) => {
+      s.phones.sweepMsPerSeat = Math.max(500, Math.min(5000, Math.round(ms)));
+      const sw = s.nomination?.phoneVote?.sweep;
+      if (sw) sw.msPerSeat = s.phones.sweepMsPerSeat;
+    });
+  }
+
+  /** A phone's own hand (the hub has already checked the phone owns this seat). */
+  setPhoneHand(playerId: string, up: boolean): { ok: true } | { ok: false; error: string } {
+    const before = Boolean(this.session.nomination?.phoneVote?.handsUp.includes(playerId));
+    const r = setPhoneHand(this.session, playerId, up);
+    if (r.ok && before !== up) this.mutate(() => {});
+    return r;
+  }
+
+  sweepStart(): { ok: boolean; message?: string } {
+    let r: { ok: boolean; message?: string } = { ok: false };
+    this.mutate((s) => {
+      r = startSweep(s, Date.now());
+    });
+    return r;
+  }
+
+  sweepPause() {
+    this.mutate((s) => {
+      pauseSweep(s);
+    });
+  }
+
+  sweepBack() {
+    this.mutate((s) => {
+      sweepBack(s);
     });
   }
 
@@ -512,10 +610,12 @@ export class GameEngine {
     this.clearShotTimer();
     this.clearNightTimer();
     this.cancelPendingWin();
+    if (haltSweep(next)) cancelled.push("the running vote count (paused — resume it on the Votes tab)");
     this.session = next;
     this.lastSound = null;
     this.lastHue = null;
     saveSession(this.session);
+    this.syncSweepTimer();
     this.emit();
     return cancelled;
   }
@@ -1706,6 +1806,7 @@ export class GameEngine {
         if (!s.nomination) return;
         s.phase = "vote";
         s.timer = { endsAt: Date.now() + seconds * 1000, label: "Vote" };
+        openPhoneVote(s, this.phoneVoters());
       },
       { hue: "nomination", sound: pickSound("vote_open", "atm_hands_ready", "atm_silence_for_vote") },
     );
@@ -1722,6 +1823,7 @@ export class GameEngine {
         // raised a ghost hand (usedGhostVote is only consumed on resolveVote).
         s.nomination.votesFor.splice(idx, 1);
         if (!p.alive) p.usedGhostVote = false;
+        markOverride(s, playerId);
         // The Butler's hand is never lowered for them: an illegal Butler vote is the Butler's
         // mistake and still counts (the Storyteller sees a private warning).
       } else {
@@ -1731,6 +1833,7 @@ export class GameEngine {
           return;
         }
         s.nomination.votesFor.push(playerId);
+        markOverride(s, playerId);
         // Do not spend ghost vote until resolve — hand can still be lowered.
       }
     });

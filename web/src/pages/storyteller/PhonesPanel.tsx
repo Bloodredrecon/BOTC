@@ -207,6 +207,20 @@ export function PhonesPanel({ state, emit }: { state: StorytellerState; emit: Em
           </div>
           {!ph.claimsOpen && <p className="muted">Seat claims are closed: the TV hides the code and new phones can&apos;t ask.</p>}
 
+          <h3 className="phone-sub">Voting</h3>
+          <p className="muted">
+            {ph.voting === "phones"
+              ? "Phone voting: connected phones raise hands, and the clock hand locks each seat in turn. Seats without a phone are counted on the chips."
+              : "Phones off for voting: every hand is counted on the chips, as without phones."}
+          </p>
+          <button
+            type="button"
+            aria-pressed={ph.voting === "phones"}
+            onClick={() => emit("game:phoneVoting", { mode: ph.voting === "phones" ? "manual" : "phones" })}
+          >
+            {ph.voting === "phones" ? "Phones off for voting" : "Use phone voting"}
+          </button>
+
           <h3 className="phone-sub">Characters on phones</h3>
           <p className="muted">
             Sends each player what they should believe (the Drunk sees their Townsfolk; Travellers see their alignment). Later

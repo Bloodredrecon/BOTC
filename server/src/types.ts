@@ -305,6 +305,8 @@ export type GameSession = {
     returnPhase?: "day" | "dusk";
     /** The Virgin's ability this nomination spent — restored if the nomination is cancelled. */
     virginRestore?: { playerId: string; abilityUsed: boolean; hadNoAbility: boolean };
+    /** Phone hands for this vote; absent when the vote is counted by hand only. */
+    phoneVote?: PhoneVote | null;
   } | null;
   dawnDeathIds: string[];
   /** True after announceDawnDeaths this dawn; overnight deaths stay private on TV until then. */
@@ -380,6 +382,28 @@ export type PhonePrivate = {
   unreadByStoryteller: number;
 };
 
+/**
+ * The clock-hand count: the hand moves clockwise from the seat after the nominee (nominee last);
+ * `order[0..index)` are locked. `nextAt` is when `order[index]` locks (null while paused or done).
+ */
+export type VoteSweep = {
+  order: string[];
+  index: number;
+  paused: boolean;
+  msPerSeat: number;
+  nextAt: number | null;
+};
+
+export type PhoneVote = {
+  /** Seats with a connected, approved phone when the vote opened; every other seat is counted by hand. */
+  phoneSeats: string[];
+  /** Phone hands up right now (a seat counts only once the clock hand locks it). */
+  handsUp: string[];
+  /** Phone seats the Storyteller tapped: their tap stands and the phone can't change it. */
+  overridden: string[];
+  sweep: VoteSweep | null;
+};
+
 export type PhonesState = {
   enabled: boolean;
   /** Short code on the TV; needed to ask for a seat. */
@@ -453,6 +477,12 @@ export type PublicState = {
     votesForCount: number;
     /** Block holder's (or tied) vote count this vote must beat; null if the block is empty. */
     toBeat: number | null;
+    /** Phone hands and the clock hand (public: real hands are up at the table too). */
+    phoneVote: {
+      phoneSeats: string[];
+      handsUp: string[];
+      sweep: { order: string[]; index: number; paused: boolean; msPerSeat: number } | null;
+    } | null;
   } | null;
   dawnDeathIds: string[];
   /** Overnight deaths are public on TV only after announceDawnDeaths. */
@@ -538,6 +568,8 @@ export type StorytellerState = PublicState & {
   }[];
   ambianceCatalog: AmbianceLayerDef[];
   phones: PhonePanel;
+  /** Phone seats whose vote the Storyteller set by hand this vote. */
+  phoneVoteOverridden: string[];
 };
 
 /** The Storyteller's view of player phones (never the token hashes). */
@@ -593,6 +625,21 @@ export type PhoneMe = {
   alignment: Alignment | null;
   revealedAt: number | null;
   messages: PhoneMessage[];
+  /** This seat's hand while a nomination is open; null otherwise. */
+  vote: PhoneMeVote | null;
+};
+
+export type PhoneMeVote = {
+  /** False: the Storyteller counts this seat's real hand. */
+  byPhone: boolean;
+  handUp: boolean;
+  /** The clock hand has passed this seat (or the Storyteller set it): the phone can't change it. */
+  locked: boolean;
+  storytellerSet: boolean;
+  /** Counted when the hand locks: true if this seat's vote is in. */
+  counted: boolean;
+  canRaise: boolean;
+  note: string | null;
 };
 
 export type PlayerState = PhonePublic & { me: PhoneMe };

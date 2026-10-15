@@ -276,6 +276,12 @@ export type PublicState = {
     votesForCount: number;
     /** Block holder's (or tied) count this vote must beat; null if the block is empty. */
     toBeat: number | null;
+    /** Phone hands and the clock hand (public: real hands are up at the table too). */
+    phoneVote: {
+      phoneSeats: string[];
+      handsUp: string[];
+      sweep: { order: string[]; index: number; paused: boolean; msPerSeat: number } | null;
+    } | null;
   } | null;
   dawnDeathIds: string[];
   /** Overnight deaths are public on TV only after announceDawnDeaths. */
@@ -390,6 +396,8 @@ export type StorytellerState = Omit<PublicState, "players"> & {
   audioCues: AudioCueInfo[];
   ambianceCatalog: AmbianceLayerDef[];
   phones: PhonePanel;
+  /** Phone seats whose vote the Storyteller set by hand this vote. */
+  phoneVoteOverridden: string[];
 };
 
 export type PhoneMessage = {
@@ -464,6 +472,20 @@ export type PhoneMe = {
   alignment: Alignment | null;
   revealedAt: number | null;
   messages: PhoneMessage[];
+  /** This seat's hand while a nomination is open; null otherwise. */
+  vote: PhoneMeVote | null;
+};
+
+export type PhoneMeVote = {
+  /** False: the Storyteller counts this seat's real hand. */
+  byPhone: boolean;
+  handUp: boolean;
+  /** The clock hand has passed this seat (or the Storyteller set it). */
+  locked: boolean;
+  storytellerSet: boolean;
+  counted: boolean;
+  canRaise: boolean;
+  note: string | null;
 };
 
 export type PlayerState = PhonePublic & { me: PhoneMe };

@@ -192,6 +192,7 @@ const engine = new GameEngine(loadSession(config.playerPhones), script, hue, ({ 
 const phones = new PhoneHub(io, engine, script, actionLog);
 phoneHub = phones;
 engine.phoneLive = () => phones.live();
+engine.phoneVoters = () => phones.connectedPlayerIds();
 engine.privateBroadcast = (storyteller, playerIds) => {
   broadcasts += 1;
   io.to("storyteller").emit("state:storyteller", storyteller);
