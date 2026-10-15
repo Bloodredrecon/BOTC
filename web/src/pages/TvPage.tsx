@@ -101,7 +101,7 @@ export function TvPage() {
   const showDawn = state.phase === "dawn" && state.dawnDeathsAnnounced;
   const showSheet = !!state.sheet && !drama;
   const showTimer = seconds !== null && !!state.timer;
-  const plateKey = plateKeyForPhase(state.phase, state.winner);
+  const plateKey = plateKeyForPhase(state.phase, state.winner, state.dayNumber);
   const plateLogo = plateHasLogo(plateKey);
 
   return (
@@ -119,7 +119,7 @@ export function TvPage() {
         .filter(Boolean)
         .join(" ")}
     >
-      <Atmosphere phase={state.phase} winner={state.winner} />
+      <Atmosphere phase={state.phase} winner={state.winner} dayNumber={state.dayNumber} />
       <h1 className="visually-hidden">Blood on the Clocktower</h1>
 
       {!soundOn && <SoundGate onEnable={enableSound} />}

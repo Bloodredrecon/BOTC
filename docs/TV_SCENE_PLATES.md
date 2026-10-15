@@ -24,14 +24,16 @@ restyle away from that look.
 ## Live plates (`web/public/tv/`)
 
 Night, dawn, day, gallows and good-win are the older art from `_prior_plates/` (byte-identical
-copies); the design-comp exports are kept in `_design_plates/`. `bg-nomination.png` and
-`bg-evil-win.png` are the user's own art (added 2026-09-28, 3840×2160).
+copies); the design-comp exports are kept in `_design_plates/`. `bg-nomination.png`,
+`bg-evil-win.png` and `bg-day2.png` are the user's own art (added 2026-09-28, 3840×2160).
+`bg-day2.png` is the same town as `bg-day.png` under a grey, overcast sky.
 
 | File | Key | Baked logo (`hasLogo`) | Used for | `_design_plates/` equivalent |
 |------|-----|------------------------|----------|------------------------------|
 | `bg-night.jpg` | `night` | **yes**, top-left | first night, night | `bg-night.png` (A–G–H **Night**, no logo) |
 | `bg-dawn.png` | `dawn` | **yes**, top-left | dawn | A–G–H **Dawn**, no logo |
-| `bg-day.png` | `day` | **yes**, top-left | lobby, day (discussion) | A–G–H **Day**, no logo |
+| `bg-day.png` | `day` | **yes**, top-left | lobby, day 1 (discussion) | A–G–H **Day**, no logo |
+| `bg-day2.png` | `day2` | **yes**, top-left | day 2 onward (discussion); also the day fallback below from day 2 | — |
 | `bg-nomination.png` | `nomination` | no | dusk: nominations open, before a nominee is picked and between votes | — |
 | `bg-gallows.png` | `gallows` | no | a nominee is picked: nomination, vote, execution | F **7. Execution**, no logo |
 | `bg-good-win.png` | `good-win` | **yes**, top-left | ended, Good wins | F **8. Ended** mood, no logo |
@@ -78,11 +80,21 @@ Plates without a flag (or with `false`) keep the CSS wordmark.
 |--------------|-----------|----------|
 | `firstNight`, `night` | `night` | — |
 | `dawn` | `dawn` | `night` |
-| `day`, `lobby` | `day` | `night` |
+| `lobby` | `day` | `night` |
+| `day`, day 1 | `day` | `night` |
+| `day`, day 2+ | `day2` | `day` → `night` |
 | `dusk` (the dusk announcement, nominations open between votes, the hold after an end-of-day execution) | `nomination` | `dawn` graded to nightfall → `night` |
-| `nomination`, `vote`, `execution` | `gallows` | `day` → `night` |
-| `ended` + good | `good-win` | `day` → `night` |
-| `ended` + evil | `evil-win` | `day` → `night` |
+| `nomination`, `vote`, `execution` | `gallows` | day plate for that day → `night` |
+| `ended` + good | `good-win` | day plate for that day → `night` |
+| `ended` + evil | `evil-win` | day plate for that day → `night` |
+
+"Day plate for that day" is `day2` from day 2 (if the file exists), otherwise `day`
+(`plateKeyForPhase` in `web/src/pages/tv/assets.ts`).
+
+Day-2 logo check (Oct 15 2026): the baked logo in `bg-day2.png` sits in the same box as
+`bg-day.png`, and rendered `/tv` at 1920×1080 and 3840×2160 with 8 and 15 seats (long names)
+keeps the hero plaque at x ≥ 35% and the town/dawn column at y ≥ 37%, clear of the lettering
+(x ≤ 30%) and drips (y ≤ 36.5%).
 
 Dedicated plates soften `.tv-atmosphere-tint` via `.tv-plate-{key}`. The heavy indigo dusk
 grade applies only to the `dawn` fallback (`.tv-plate-dawn.phase-dusk`).

@@ -14,7 +14,7 @@ from pathlib import Path
 TARGET_AR = 16 / 9
 AR_TOL = 0.02
 PREF_W, PREF_H = 3840, 2160
-KNOWN_KEYS = ("night", "dawn", "day", "nomination", "gallows", "good-win", "evil-win")
+KNOWN_KEYS = ("night", "dawn", "day", "day2", "nomination", "gallows", "good-win", "evil-win")
 REPO = Path(__file__).resolve().parents[1]
 TV_DIR = REPO / "web" / "public" / "tv"
 

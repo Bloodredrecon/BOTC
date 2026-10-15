@@ -2,8 +2,16 @@ import type { Phase, PublicState } from "../../types";
 import { plateKeyForPhase, plateUrl } from "./assets";
 
 /** Full-bleed scene plate + grade layers (plates stay cover-fit behind the 16:9 stage). */
-export function Atmosphere({ phase, winner }: { phase?: Phase; winner?: PublicState["winner"] }) {
-  const plateKey = plateKeyForPhase(phase, winner);
+export function Atmosphere({
+  phase,
+  winner,
+  dayNumber,
+}: {
+  phase?: Phase;
+  winner?: PublicState["winner"];
+  dayNumber?: number;
+}) {
+  const plateKey = plateKeyForPhase(phase, winner, dayNumber);
   const src = plateUrl(plateKey);
   return (
     <div className={`tv-atmosphere tv-plate-${plateKey}`} aria-hidden data-plate={plateKey}>

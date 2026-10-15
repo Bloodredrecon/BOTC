@@ -9,7 +9,15 @@ const TV_BG_PLATES: Record<string, { file: string; mtime: string; hasLogo?: bool
     ? __TV_BG_PLATES__
     : { night: { file: "/tv/bg-night.png", mtime: __TV_BG_MTIME__ } };
 
-export type TvPlateKey = "night" | "dawn" | "day" | "nomination" | "gallows" | "good-win" | "evil-win";
+export type TvPlateKey =
+  | "night"
+  | "dawn"
+  | "day"
+  | "day2"
+  | "nomination"
+  | "gallows"
+  | "good-win"
+  | "evil-win";
 
 export function plateUrl(key: TvPlateKey): string {
   const hit = TV_BG_PLATES[key] ?? TV_BG_PLATES.night;
@@ -27,8 +35,18 @@ export function plateHasLogo(key: TvPlateKey): boolean {
   return (TV_BG_PLATES[key] ?? TV_BG_PLATES.night)?.hasLogo === true;
 }
 
-/** Phase (+ winner) → plate key; missing optional files fall back toward night. */
-export function plateKeyForPhase(phase: Phase | undefined, winner?: PublicState["winner"]): TvPlateKey {
+/** Day 1 (and the lobby) uses `day`; day 2 onward uses `day2` when that plate exists. */
+function dayPlate(dayNumber: number | undefined): TvPlateKey | null {
+  if ((dayNumber ?? 0) >= 2 && hasPlate("day2")) return "day2";
+  return hasPlate("day") ? "day" : null;
+}
+
+/** Phase (+ winner, day number) → plate key; missing optional files fall back toward night. */
+export function plateKeyForPhase(
+  phase: Phase | undefined,
+  winner?: PublicState["winner"],
+  dayNumber?: number,
+): TvPlateKey {
   switch (phase) {
     case "firstNight":
     case "night":
@@ -43,12 +61,13 @@ export function plateKeyForPhase(phase: Phase | undefined, winner?: PublicState[
     case "vote":
     case "execution":
       if (hasPlate("gallows")) return "gallows";
-      return hasPlate("day") ? "day" : "night";
+      return dayPlate(dayNumber) ?? "night";
     case "ended":
       if (winner === "good" && hasPlate("good-win")) return "good-win";
       if (winner === "evil" && hasPlate("evil-win")) return "evil-win";
-      return hasPlate("day") ? "day" : "night";
+      return dayPlate(dayNumber) ?? "night";
     case "day":
+      return dayPlate(dayNumber) ?? "night";
     case "lobby":
       return hasPlate("day") ? "day" : "night";
     default:

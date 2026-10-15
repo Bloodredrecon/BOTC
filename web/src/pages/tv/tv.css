@@ -132,6 +132,7 @@
   height: 22%;
 }
 .tv.tv-plate-day.phase-day .tv-atmosphere-tint,
+.tv.tv-plate-day2.phase-day .tv-atmosphere-tint,
 .tv.tv-plate-day.phase-lobby .tv-atmosphere-tint {
   background: rgba(0, 0, 0, 0.04);
 }

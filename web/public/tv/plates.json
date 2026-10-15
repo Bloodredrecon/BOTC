@@ -3,6 +3,7 @@
   "night": { "hasLogo": true },
   "dawn": { "hasLogo": true },
   "day": { "hasLogo": true },
+  "day2": { "hasLogo": true },
   "nomination": { "hasLogo": false },
   "gallows": { "hasLogo": false },
   "good-win": { "hasLogo": true },

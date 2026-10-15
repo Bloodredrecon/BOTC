@@ -21,14 +21,14 @@ function tvPlateFlags(): Record<string, PlateFlags> {
   }
 }
 
-/** Scene plates under public/tv/bg-{night,dawn,day,nomination,gallows,good-win,evil-win}.* */
+/** Scene plates under public/tv/bg-{night,dawn,day,day2,nomination,gallows,good-win,evil-win}.* */
 function tvBgPlates(): Record<string, { file: string; mtime: string; hasLogo: boolean }> {
   const out: Record<string, { file: string; mtime: string; hasLogo: boolean }> = {};
   if (!existsSync(tvDir)) return out;
   const flags = tvPlateFlags();
   for (const name of readdirSync(tvDir)) {
     const m =
-      /^bg-(night|dawn|day|nomination|gallows|good-win|evil-win)\.(jpe?g|png|webp)$/i.exec(
+      /^bg-(night|dawn|day2?|nomination|gallows|good-win|evil-win)\.(jpe?g|png|webp)$/i.exec(
         name,
       );
     if (!m) continue;
