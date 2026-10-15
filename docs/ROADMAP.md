@@ -51,7 +51,12 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 2. Finish and commit half-done work
 
-- [ ] Status
+- [x] Status: done (Oct 15)
+
+**Done.**
+- Day-2 plate documented in `docs/TV_SCENE_PLATES.md` (plate table, phase-to-plate table with day 1 vs day 2+, fallback rule). Rendered check: a test game driven to day 1 and day 2 shows `tv-plate-day` then `tv-plate-day2`; at 1920x1080 and 3840x2160 with 8 seats and 15 long-named seats, the hero plaque starts at x 35% and the town column at y 37%, clear of the baked logo (lettering x <= 30%, drips y <= 36.5%). Commit `e7f016a`.
+- Narration work (Oct 6-9) committed as `7575b5f` after typecheck, 161/161 tests and build passed with it in the tree; diff scanned for API keys (none; keys come from environment variables).
+- Untracked `docs/_tv_*.md` scratch files left alone.
 
 **Goal.** No uncommitted work left over from Sep 30 - Oct 9.
 
