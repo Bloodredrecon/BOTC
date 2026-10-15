@@ -16,6 +16,7 @@ import { GameEngine } from "./game.js";
 import { createHueDriver } from "./hue.js";
 import { formatJoinInfo } from "./join-info.js";
 import { loadConfig, loadScript, loadSession, ROOT, saveSession } from "./persistence.js";
+import { PinGuard } from "./pin-guard.js";
 import type { AmbianceState, Phase } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -155,8 +156,15 @@ const engine = new GameEngine(loadSession(), script, hue, ({ public: pub, storyt
   io.to("storyteller").emit("state:storyteller", storyteller);
 });
 
+const pinGuard = new PinGuard(config.storytellerPin);
+
+function clientAddress(raw: string): string {
+  return raw.startsWith("::ffff:") ? raw.slice(7) : raw;
+}
+
 io.on("connection", (socket) => {
-  socket.on("join", (payload: { role: "tv" | "storyteller"; pin?: string }) => {
+  socket.on("join", (payload: { role: "tv" | "storyteller"; pin?: string } | null) => {
+    if (!payload || typeof payload !== "object") return;
     if (payload.role === "tv") {
       socket.join("tv");
       socket.data.role = "tv";
@@ -165,13 +173,17 @@ io.on("connection", (socket) => {
     }
 
     if (payload.role === "storyteller") {
-      if (payload.pin !== config.storytellerPin) {
-        socket.emit("auth:error", { message: "Invalid PIN" });
+      const clientKey = clientAddress(socket.handshake.address);
+      const check = pinGuard.attempt(clientKey, payload.pin);
+      if (!check.ok) {
+        app.log.warn({ client: clientKey, reason: check.reason, retryAfterMs: check.retryAfterMs }, "storyteller PIN refused");
+        socket.emit("auth:error", { message: PinGuard.message(check), retryAfterMs: check.retryAfterMs });
         return;
       }
       socket.join("storyteller");
       socket.data.role = "storyteller";
       socket.data.authenticated = true;
+      socket.emit("auth:info", { pinIsDefault: pinGuard.isDefaultPin });
       engine.setConnected("storyteller", true);
     }
   });

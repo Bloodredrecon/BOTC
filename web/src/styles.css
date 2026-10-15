@@ -296,6 +296,28 @@ textarea {
   color: var(--brass);
 }
 
+.home .home-st-link {
+  display: inline-block;
+  margin-top: 2.5rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  opacity: 0.55;
+  text-decoration: none;
+}
+
+.home .home-st-link:hover {
+  opacity: 1;
+  color: var(--brass);
+}
+
+.pin-default-warning {
+  margin: 0 0 0.75rem;
+  border-color: rgba(214, 54, 60, 0.6);
+  color: #f0c878;
+  font-weight: 600;
+}
+
 /* TV styles live in pages/tv/tv.css */
 
 .panel {

@@ -117,6 +117,8 @@ function Get-BotcConfig {
   return [pscustomobject]$cfg
 }
 
+function Test-DefaultPin($cfg) { return ([string]$cfg.Pin -eq '1234') }
+
 function Set-LocalSetting([string]$key, $value, $defaultValue) {
   $obj = Read-JsonFile $LocalConfigPath
   if (-not $obj) { $obj = New-Object psobject }
@@ -533,6 +535,7 @@ function Show-Status {
     if ($state.Stale) { Write-Info "(stale PID file for PID $($state.Info.pid) - will be cleared on next start/stop)" }
   }
   Write-Info ("Settings: port {0} ({1}), host {2} ({3}), PIN {4} ({5})" -f $cfg.Port, $cfg.PortSource, $cfg.Host, $cfg.HostSource, $cfg.Pin, $cfg.PinSource)
+  if (Test-DefaultPin $cfg) { Write-Warn "The Storyteller PIN is still the default ($($cfg.Pin)); anyone on the network could open the grimoire. Change it: BOTC.bat set -Pin <4-12 digits>" }
   return $true
 }
 
@@ -727,6 +730,9 @@ function Show-Header {
     Write-Host '   Server:  STOPPED' -ForegroundColor DarkGray
   }
   Write-Host ("   Settings: port {0} | host {1} | PIN {2}" -f $cfg.Port, $cfg.Host, $cfg.Pin) -ForegroundColor DarkGray
+  if (Test-DefaultPin $cfg) {
+    Write-Host "   WARNING: Storyteller PIN is still the default ($($cfg.Pin)). Change it: 9) Settings > 3) PIN" -ForegroundColor Yellow
+  }
   Write-Host ''
 }
 

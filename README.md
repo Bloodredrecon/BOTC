@@ -27,7 +27,7 @@ Also: dawn overnight-death announce, setup bag counts, fabled on TV, session aut
 3. Choose **1) Start server**. The first start installs dependencies and builds the app, so give it a minute.
 4. The launcher prints the addresses to use, plus a QR code:
    - TV: `http://<this-pc-ip>:3847/tv`
-   - Storyteller phone: `http://<this-pc-ip>:3847/storyteller` (PIN **1234** by default)
+   - Storyteller phone: `http://<this-pc-ip>:3847/storyteller` (PIN **1234** by default; change it under **Settings**, the launcher and Storyteller page warn until you do)
 
 The server keeps running in the background after you close the launcher window. Open `BOTC.bat` again to **Stop**, **Restart**, **Rebuild and start** (after updating the app), show the join addresses again, open the TV page, view the log, or change **Settings** (port, host, PIN).
 
@@ -101,6 +101,11 @@ Trouble Brewing ships in `data/scripts/trouble-brewing.json`. Folders are ready 
 
 - `/tv` is public on your LAN (alive/dead, votes, log — no characters)
 - `/storyteller` requires the PIN; keep it off guest devices
+- Wrong PINs are throttled per device: after 5 misses it locks for 5 s, doubling per further miss (max 5 min)
+
+## Tests
+
+`npm test` runs every server test in `server/test/` (engine rules plus a socket/HTTP check that starts a real server on a free port with a temporary session; `data/session.json` is never touched). One file: `cd server && npx tsx test/<name>.ts`.
 
 ## Assets / copyright
 

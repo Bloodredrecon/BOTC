@@ -54,13 +54,20 @@ export function useTvState(socketRef: React.MutableRefObject<Socket | null>) {
   return { state, joined };
 }
 
+/**
+ * `attempt` must change on every Unlock press: re-submitting the same PIN (e.g. after a
+ * "try again in N s" refusal) would otherwise not re-run the join.
+ */
 export function useStoryteller(
   socketRef: React.MutableRefObject<Socket | null>,
   pin: string | null,
+  attempt = 0,
 ) {
   const [state, setState] = useState<StorytellerState | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [retryAt, setRetryAt] = useState<number | null>(null);
   const [authed, setAuthed] = useState(false);
+  const [pinIsDefault, setPinIsDefault] = useState(false);
 
   useEffect(() => {
     const socket = socketRef.current;
@@ -70,24 +77,29 @@ export function useStoryteller(
       setState(s);
       setAuthed(true);
       setAuthError(null);
+      setRetryAt(null);
     };
-    const onAuthErr = (e: { message: string }) => {
+    const onAuthErr = (e: { message: string; retryAfterMs?: number }) => {
       setAuthError(e.message);
+      setRetryAt(e.retryAfterMs ? Date.now() + e.retryAfterMs : null);
       setAuthed(false);
     };
+    const onAuthInfo = (i: { pinIsDefault?: boolean }) => setPinIsDefault(Boolean(i.pinIsDefault));
     const join = () => socket.emit("join", { role: "storyteller", pin });
 
     socket.on("state:storyteller", onState);
     socket.on("auth:error", onAuthErr);
+    socket.on("auth:info", onAuthInfo);
     socket.on("connect", join);
     if (socket.connected) join();
 
     return () => {
       socket.off("state:storyteller", onState);
       socket.off("auth:error", onAuthErr);
+      socket.off("auth:info", onAuthInfo);
       socket.off("connect", join);
     };
-  }, [socketRef, pin]);
+  }, [socketRef, pin, attempt]);
 
-  return { state, authError, authed };
+  return { state, authError, authed, retryAt, pinIsDefault };
 }

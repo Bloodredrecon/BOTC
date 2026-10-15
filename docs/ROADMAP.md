@@ -10,7 +10,17 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 1. Security: Storyteller PIN hardening and `@fastify/static` upgrade
 
-- [ ] Status
+- [x] Status: done (Oct 15)
+
+**Done.**
+- `server/src/pin-guard.ts`: per-IP throttle (5 free misses, then 5 s lock doubling per miss, cap 5 min, forgotten after 30 min idle); attempts during a lock-out are refused without checking the PIN; constant-time compare. Refusals are logged as `storyteller PIN refused` with client IP, never the typed PIN.
+- Found and fixed while testing: a socket `join` with a `null` payload crashed the whole server (old build: `TypeError: Cannot read properties of null (reading 'role')`, process exited). Now ignored.
+- PIN screen: no default hint; shows "Try again in N s" countdown and disables Unlock; re-submitting the same PIN now re-sends (previously a no-op because the join effect only re-ran when the PIN string changed, `web/src/socket.ts`).
+- Default-PIN warnings: launcher header and `BOTC.bat status`, server startup join info, Storyteller page banner (`auth:info { pinIsDefault }`).
+- Home page: Town Square is the only button; "storyteller sign-in" is a small muted link.
+- `@fastify/static` 8.3.0 -> 10.1.6 (no code changes needed; options used are unchanged). `npm audit --omit=dev`: 0 vulnerabilities.
+- `npm test` runs all server tests (`server/test/run-all.ts`); new `pin-guard.ts` (7) and `server-security.ts` (4: malformed payloads, auth required, throttling over a real socket, static serving incl. raw path-traversal attempts). 161/161 pass.
+- Known limit (not verified): in dev mode the Vite proxy opens the socket from the PC itself, so clients probably all share one throttle key there; production (`BOTC.bat`) sees real client IPs.
 
 **Goal.** A guest on the LAN can't brute-force or guess their way into the Storyteller screen, and the server has no known high-severity dependency issues.
 

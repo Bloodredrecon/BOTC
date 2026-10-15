@@ -315,8 +315,17 @@ export function StorytellerPage() {
   const { socketRef, connected, emit } = useSocket();
   const [pinInput, setPinInput] = useState(() => localStorage.getItem(PIN_KEY) ?? "");
   const [pin, setPin] = useState<string | null>(() => localStorage.getItem(PIN_KEY));
-  const { state, authError, authed } = useStoryteller(socketRef, pin);
+  const [attempt, setAttempt] = useState(0);
+  const { state, authError, authed, retryAt, pinIsDefault } = useStoryteller(socketRef, pin, attempt);
   const [tab, setTab] = useState<Tab>("control");
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!retryAt) return;
+    const t = setInterval(() => setTick((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, [retryAt]);
+  const waitSecs = retryAt ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1000)) : 0;
 
   // When the story phase changes, open the matching tab (Setup → Night → Dawn → Votes → …)
   useEffect(() => {
@@ -326,8 +335,10 @@ export function StorytellerPage() {
 
   function login(e: React.FormEvent) {
     e.preventDefault();
+    if (waitSecs > 0) return;
     localStorage.setItem(PIN_KEY, pinInput);
     setPin(pinInput);
+    setAttempt((n) => n + 1);
   }
 
   if (!pin || (!authed && authError)) {
@@ -338,7 +349,7 @@ export function StorytellerPage() {
             Storyteller
           </h1>
           <i className="ornament" aria-hidden />
-          <p className="muted">Enter the PIN (default 1234). Guard this from the town.</p>
+          <p className="muted">Enter the Storyteller PIN. Guard this from the town.</p>
           <input
             type="password"
             inputMode="numeric"
@@ -347,9 +358,11 @@ export function StorytellerPage() {
             placeholder="PIN"
             autoFocus
           />
-          {authError && <p className="warn">{authError}</p>}
+          {authError && (
+            <p className="warn">{waitSecs > 0 ? `Too many wrong PINs. Try again in ${waitSecs} s.` : authError}</p>
+          )}
           <div className="row" style={{ marginTop: "0.75rem" }}>
-            <button className="primary" type="submit">
+            <button className="primary" type="submit" disabled={waitSecs > 0}>
               Unlock grimoire
             </button>
           </div>
@@ -375,6 +388,13 @@ export function StorytellerPage() {
         <h1 className="brand">BOTC</h1>
         <div className="muted">{formatStatus(state)}</div>
       </div>
+
+      {pinIsDefault && (
+        <div className="panel pin-default-warning" role="alert">
+          The Storyteller PIN is still the default (1234), so anyone on this network could open the
+          grimoire. Change it on the server PC: <b>BOTC.bat</b> &gt; Settings &gt; Storyteller PIN.
+        </div>
+      )}
 
       <div className="tabs">
         {(

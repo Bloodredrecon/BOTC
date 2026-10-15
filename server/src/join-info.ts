@@ -1,5 +1,6 @@
 import { networkInterfaces } from "node:os";
 import qrcode from "qrcode-terminal";
+import { DEFAULT_PIN } from "./pin-guard.js";
 
 export type LanAddress = { iface: string; address: string };
 
@@ -84,6 +85,12 @@ export function formatJoinInfo(opts: {
       lines.push("  Also reachable at:");
       for (const u of urls.main.slice(1)) lines.push(`    ${u}`);
     }
+  }
+  if (pin === DEFAULT_PIN) {
+    lines.push(
+      `  WARNING: the Storyteller PIN is still the default (${DEFAULT_PIN}). Anyone on this network`,
+      "  could open the grimoire. Change it: BOTC.bat > Settings > Storyteller PIN.",
+    );
   }
   if (urls.other.length > 0) {
     lines.push("  Other (virtual adapters, usually not reachable from the TV/phone):");

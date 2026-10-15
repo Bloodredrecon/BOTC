@@ -12,9 +12,11 @@ export function HomePage() {
         <i className="ornament" aria-hidden />
         <p>When the sun dies and the town wakes hungry for blood — keep the clock, the votes, and the night.</p>
         <div className="home-links">
-          <Link to="/storyteller">Storyteller</Link>
           <Link to="/tv">Town Square</Link>
         </div>
+        <Link to="/storyteller" className="home-st-link">
+          storyteller sign-in
+        </Link>
       </div>
     </div>
   );
