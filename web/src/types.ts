@@ -372,3 +372,21 @@ export type StorytellerState = Omit<PublicState, "players"> & {
   audioCues: AudioCueInfo[];
   ambianceCatalog: AmbianceLayerDef[];
 };
+
+/** One line of the Storyteller-only game action log (server/src/action-log.ts). */
+export type GameLogEntry = {
+  t: number;
+  kind: "action" | "system" | "auth" | "connection";
+  action?: string;
+  args?: Record<string, unknown>;
+  outcome: "ok" | "rejected" | "error" | "no-change" | "info";
+  reason?: string;
+  phase: string;
+  day: number;
+  phaseAfter?: string;
+  dayAfter?: number;
+  notices?: string[];
+  events?: string[];
+  client?: string;
+  text: string;
+};

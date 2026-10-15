@@ -14,6 +14,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT = join(__dirname, "..", "..");
 export const DATA_DIR = join(ROOT, "data");
 export const SESSION_PATH = process.env.BOTC_SESSION_PATH || join(DATA_DIR, "session.json");
+/** Game action log; defaults to a `logs` folder next to the session file (data/logs normally). */
+export const GAME_LOG_DIR = process.env.BOTC_LOG_DIR || join(dirname(SESSION_PATH), "logs");
 export const SCRIPT_PATH = join(DATA_DIR, "scripts", "trouble-brewing.json");
 export const CONFIG_PATH = join(ROOT, "config", "default.json");
 export const LOCAL_CONFIG_PATH = join(ROOT, "config", "local.json");

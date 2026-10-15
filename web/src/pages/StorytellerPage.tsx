@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSocket, useStoryteller } from "../socket";
 import type { AudioCueInfo, NightShowSpec, Player, StorytellerState, Team } from "../types";
+import { LogPanel } from "./storyteller/LogPanel";
 
 const PIN_KEY = "botc_storyteller_pin";
 
@@ -16,7 +17,8 @@ type Tab =
   | "sound"
   | "ambiance"
   | "rules"
-  | "travel";
+  | "travel"
+  | "log";
 
 function nextDayNumber(dayNumber: number) {
   return dayNumber === 0 ? 1 : dayNumber + 1;
@@ -409,6 +411,7 @@ export function StorytellerPage() {
             ["rules", "Rules"],
             ["sound", "Sound"],
             ["ambiance", "Ambiance"],
+            ["log", "Log"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -457,6 +460,7 @@ export function StorytellerPage() {
       {tab === "rules" && <RulesTab state={state} emit={emit} />}
       {tab === "sound" && <SoundTab state={state} emit={emit} />}
       {tab === "ambiance" && <AmbianceTab state={state} emit={emit} />}
+      {tab === "log" && <LogPanel socketRef={socketRef} />}
     </div>
   );
 }

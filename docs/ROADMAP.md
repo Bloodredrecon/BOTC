@@ -75,7 +75,16 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 3. Game action log
 
-- [ ] Status
+- [x] Status: done (Oct 15)
+
+**Done.**
+- `server/src/action-log.ts` + wiring in `server/src/index.ts`. Every Storyteller action is written to `data/logs/game-YYYY-MM-DD.jsonl` (rotates to `-2`, `-3`... past 2 MB; keeps the newest 30 files) with phase/day before and after, player ids resolved to "Name (seat N)", outcome `ok` / `rejected` (engine's `{ ok: false, message }`) / `no-change` (no state change) / `error` (thrown), new Storyteller notices and new chronicle events. Timer-driven changes (dawn-to-day, game over, timer end) are logged as `automatic`. Sign-ins (incl. wrong PIN / lock-out, never the PIN itself), TV/Storyteller connects and disconnects are logged too. `game:refresh` is skipped; slider bursts of `game:setAmbiance` are coalesced into one entry.
+- Storyteller-only: sent live as `log:entry` to the Storyteller room and on request via `log:recent` (refused for unauthenticated sockets); the TV never receives it (tested).
+- Storyteller page: new **Log** tab with filters All / Refused-errors / My actions / Game events.
+- Launcher: `BOTC.bat log [-Lines N]` shows the game log (refusals red, no-effect yellow); `BOTC.bat log -Server` shows the raw server log; menu option 8 asks which.
+- Log dir defaults to `logs` next to the session file; `BOTC_LOG_DIR` overrides (server and launcher), so tests never write to `data/logs`.
+- Found while testing: `new ActionLog()` threw `ENOTDIR` if the log path wasn't a folder, which would have stopped the server at startup; now it just runs without a file.
+- Tests: `action-log.ts` (7) + one more real-server case. 169/169 pass. Screenshots: `docs/tv-design/_verify/item3-gamelog/`.
 
 **Goal.** A structured, human-readable record of every Storyteller/game action and its outcome, including rejected actions and why, so problems can be diagnosed from evidence.
 

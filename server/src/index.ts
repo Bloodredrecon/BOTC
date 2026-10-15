@@ -15,7 +15,16 @@ import {
 import { GameEngine } from "./game.js";
 import { createHueDriver } from "./hue.js";
 import { formatJoinInfo } from "./join-info.js";
-import { loadConfig, loadScript, loadSession, ROOT, saveSession } from "./persistence.js";
+import {
+  ActionLog,
+  describeArgs,
+  describeEvent,
+  diffSession,
+  outcomeOf,
+  snapshotSession,
+  type SessionSnapshot,
+} from "./action-log.js";
+import { GAME_LOG_DIR, loadConfig, loadScript, loadSession, ROOT, saveSession } from "./persistence.js";
 import { PinGuard } from "./pin-guard.js";
 import type { AmbianceState, Phase } from "./types.js";
 
@@ -151,10 +160,68 @@ const io = new Server(app.server, {
   cors: { origin: true },
 });
 
+const actionLog = new ActionLog(GAME_LOG_DIR);
+actionLog.onEntry((e) => io.to("storyteller").emit("log:entry", e));
+
+let engineReady = false;
+let inAction = false;
+let broadcasts = 0;
+
 const engine = new GameEngine(loadSession(), script, hue, ({ public: pub, storyteller }) => {
+  broadcasts += 1;
   io.to("tv").emit("state:public", pub);
   io.to("storyteller").emit("state:storyteller", storyteller);
+  if (engineReady && !inAction) logSystemChanges();
 });
+let lastSnap: SessionSnapshot = snapshotSession(engine.session);
+engineReady = true;
+
+function here() {
+  return { phase: engine.session.phase, day: engine.session.dayNumber };
+}
+
+/** Phase changes, deaths and notices that happen on a timer rather than from a Storyteller action. */
+function logSystemChanges() {
+  const s = engine.session;
+  const { notices, events } = diffSession(lastSnap, s);
+  const moved = s.phase !== lastSnap.phase || s.dayNumber !== lastSnap.day;
+  if (moved || notices.length || events.length) {
+    actionLog.record({
+      t: Date.now(),
+      kind: "system",
+      outcome: "info",
+      reason: "automatic",
+      phase: lastSnap.phase,
+      day: lastSnap.day,
+      phaseAfter: s.phase,
+      dayAfter: s.dayNumber,
+      notices: notices.length ? notices : undefined,
+      events: events.length ? events.map((e) => describeEvent(s, e)) : undefined,
+    });
+  }
+  lastSnap = snapshotSession(s);
+}
+
+/** Slider-driven actions fire many times a second; log only the last of each burst. */
+const COALESCED_ACTIONS = new Set(["game:setAmbiance"]);
+let pendingCoalesced: { action: string; entry: Parameters<ActionLog["record"]>[0]; timer: NodeJS.Timeout } | null =
+  null;
+function flushCoalesced() {
+  if (!pendingCoalesced) return;
+  clearTimeout(pendingCoalesced.timer);
+  actionLog.record(pendingCoalesced.entry);
+  pendingCoalesced = null;
+}
+function recordAction(entry: Parameters<ActionLog["record"]>[0]) {
+  if (entry.action && COALESCED_ACTIONS.has(entry.action) && entry.outcome === "ok") {
+    if (pendingCoalesced && pendingCoalesced.action !== entry.action) flushCoalesced();
+    if (pendingCoalesced) clearTimeout(pendingCoalesced.timer);
+    pendingCoalesced = { action: entry.action, entry, timer: setTimeout(flushCoalesced, 1500) };
+    return;
+  }
+  flushCoalesced();
+  actionLog.record(entry);
+}
 
 const pinGuard = new PinGuard(config.storytellerPin);
 
@@ -163,29 +230,48 @@ function clientAddress(raw: string): string {
 }
 
 io.on("connection", (socket) => {
+  const client = clientAddress(socket.handshake.address);
+
   socket.on("join", (payload: { role: "tv" | "storyteller"; pin?: string } | null) => {
     if (!payload || typeof payload !== "object") return;
     if (payload.role === "tv") {
       socket.join("tv");
       socket.data.role = "tv";
+      actionLog.record({ t: Date.now(), kind: "connection", action: "tv:join", outcome: "info", client, ...here() });
       engine.setConnected("tv", true);
       return;
     }
 
     if (payload.role === "storyteller") {
-      const clientKey = clientAddress(socket.handshake.address);
-      const check = pinGuard.attempt(clientKey, payload.pin);
+      const check = pinGuard.attempt(client, payload.pin);
       if (!check.ok) {
-        app.log.warn({ client: clientKey, reason: check.reason, retryAfterMs: check.retryAfterMs }, "storyteller PIN refused");
+        app.log.warn({ client, reason: check.reason, retryAfterMs: check.retryAfterMs }, "storyteller PIN refused");
+        actionLog.record({
+          t: Date.now(),
+          kind: "auth",
+          action: "storyteller:join",
+          outcome: "rejected",
+          reason: check.reason === "locked" ? `locked out for ${Math.ceil(check.retryAfterMs / 1000)} s` : "wrong PIN",
+          client,
+          ...here(),
+        });
         socket.emit("auth:error", { message: PinGuard.message(check), retryAfterMs: check.retryAfterMs });
         return;
       }
       socket.join("storyteller");
       socket.data.role = "storyteller";
       socket.data.authenticated = true;
+      actionLog.record({ t: Date.now(), kind: "auth", action: "storyteller:join", outcome: "ok", client, ...here() });
       socket.emit("auth:info", { pinIsDefault: pinGuard.isDefaultPin });
       engine.setConnected("storyteller", true);
     }
+  });
+
+  socket.on("log:recent", (data: unknown, ack?: (r: unknown) => void) => {
+    if (typeof ack !== "function") return;
+    if (!requireStoryteller()) return ack({ ok: false, error: "Storyteller auth required" });
+    const n = Number((data as { limit?: unknown } | null)?.limit ?? 200);
+    ack({ ok: true, entries: actionLog.recent(Number.isFinite(n) ? Math.min(1000, Math.max(1, n)) : 200) });
   });
 
   function requireStoryteller(): boolean {
@@ -289,21 +375,77 @@ io.on("connection", (socket) => {
   for (const [event, handler] of Object.entries(actions)) {
     socket.on(event, (data, ack?: (result: unknown) => void) => {
       if (!requireStoryteller()) {
+        if (!socket.data.loggedUnauthorized) {
+          socket.data.loggedUnauthorized = true;
+          actionLog.record({
+            t: Date.now(),
+            kind: "auth",
+            action: event,
+            outcome: "rejected",
+            reason: "not signed in as Storyteller (further attempts from this connection not logged)",
+            client,
+            ...here(),
+          });
+        }
         socket.emit("auth:error", { message: "Storyteller auth required" });
         return;
       }
+      if (event === "game:refresh") {
+        handler({});
+        if (typeof ack === "function") ack({ ok: true });
+        return;
+      }
+      const before = snapshotSession(engine.session);
+      const args = describeArgs(engine.session, data);
+      const b0 = broadcasts;
+      let result: unknown;
+      let error: unknown = null;
+      inAction = true;
       try {
-        const result = handler((data ?? {}) as Record<string, unknown>);
-        if (typeof ack === "function") ack(result ?? { ok: true });
+        result = handler((data ?? {}) as Record<string, unknown>);
       } catch (err) {
-        app.log.error(err);
-        socket.emit("action:error", { message: String(err) });
-        if (typeof ack === "function") ack({ ok: false, error: String(err) });
+        error = err;
+      } finally {
+        inAction = false;
+      }
+      const s = engine.session;
+      const { notices, events } = diffSession(before, s);
+      const outcome = error ? { outcome: "error" as const, reason: String(error) } : outcomeOf(result, broadcasts > b0);
+      recordAction({
+        t: Date.now(),
+        kind: "action",
+        action: event,
+        args,
+        ...outcome,
+        phase: before.phase,
+        day: before.day,
+        phaseAfter: s.phase,
+        dayAfter: s.dayNumber,
+        notices: notices.length ? notices : undefined,
+        events: events.length ? events.map((e) => describeEvent(s, e)) : undefined,
+      });
+      lastSnap = snapshotSession(s);
+      if (error) {
+        app.log.error(error);
+        socket.emit("action:error", { message: String(error) });
+        if (typeof ack === "function") ack({ ok: false, error: String(error) });
+      } else if (typeof ack === "function") {
+        ack(result ?? { ok: true });
       }
     });
   }
 
   socket.on("disconnect", () => {
+    if (socket.data.role === "tv" || socket.data.role === "storyteller") {
+      actionLog.record({
+        t: Date.now(),
+        kind: "connection",
+        action: `${socket.data.role}:disconnect`,
+        outcome: "info",
+        client,
+        ...here(),
+      });
+    }
     if (socket.data.role === "tv") {
       const tvs = io.sockets.adapter.rooms.get("tv");
       engine.setConnected("tv", !!(tvs && tvs.size > 0));
@@ -332,6 +474,7 @@ async function shutdown(reason: string): Promise<void> {
     process.exit(1);
   }, 5000).unref();
   clearInterval(timerTick);
+  flushCoalesced();
   try {
     io.disconnectSockets(true);
     io.engine.close();

@@ -311,6 +311,54 @@ textarea {
   color: var(--brass);
 }
 
+.game-log ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.game-log-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(196, 163, 90, 0.12);
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.game-log-badge {
+  flex: 0 0 5.2rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.game-log-text {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.82rem;
+  word-break: break-word;
+  color: var(--ink);
+}
+
+.game-log-row.outcome-rejected .game-log-badge,
+.game-log-row.outcome-error .game-log-badge {
+  color: var(--blood-bright);
+  font-weight: 700;
+}
+
+.game-log-row.outcome-no-change .game-log-badge {
+  color: #f0c878;
+}
+
+.game-log-row.kind-system .game-log-text,
+.game-log-row.kind-connection .game-log-text {
+  color: var(--ink-dim);
+}
+
 .pin-default-warning {
   margin: 0 0 0.75rem;
   border-color: rgba(214, 54, 60, 0.6);

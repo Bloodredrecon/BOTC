@@ -9,6 +9,8 @@
 
   Non-interactive use:
     BOTC.bat start | stop | restart | rebuild | status | addresses | dev | log
+    BOTC.bat log [-Lines 100]      game action log (data\logs\game-*.jsonl)
+    BOTC.bat log -Server           raw server output (data\logs\server.log)
     BOTC.bat set -Port 3900 -BindHost 0.0.0.0 -Pin 1234
     BOTC.bat reset-settings
   Add -Yes to auto-confirm stopping another BOTC server that holds the port.
@@ -21,7 +23,9 @@ param(
   [int]$Port = 0,
   [string]$BindHost = '',
   [string]$Pin = '',
-  [switch]$Yes
+  [switch]$Yes,
+  [switch]$Server,
+  [int]$Lines = 60
 )
 
 $ErrorActionPreference = 'Stop'
@@ -360,6 +364,32 @@ function Show-LogTail([int]$lines = 40) {
   if (-not (Test-Path -LiteralPath $LogFile)) { Write-Info 'No log file yet.'; return }
   Write-Host "  ----- last $lines lines of $LogFile -----" -ForegroundColor DarkGray
   Get-Content -LiteralPath $LogFile -Tail $lines -Encoding UTF8 | ForEach-Object { Write-Host $_ }
+  Write-Host '  -----' -ForegroundColor DarkGray
+}
+
+$GameLogDir = if ($env:BOTC_LOG_DIR) { $env:BOTC_LOG_DIR } else { $LogDir }
+
+function Get-GameLogFiles {
+  if (-not (Test-Path -LiteralPath $GameLogDir)) { return @() }
+  # Sort by write time: name order puts game-<date>-2.jsonl before game-<date>.jsonl.
+  return @(Get-ChildItem -LiteralPath $GameLogDir -Filter 'game-*.jsonl' -File | Sort-Object LastWriteTimeUtc)
+}
+
+function Show-GameLog([int]$lines = 60) {
+  $files = Get-GameLogFiles
+  if ($files.Count -eq 0) { Write-Info 'No game log yet (it starts with the first Storyteller action).'; return }
+  $tail = New-Object System.Collections.Generic.List[string]
+  for ($i = $files.Count - 1; $i -ge 0 -and $tail.Count -lt $lines; $i--) {
+    $chunk = @(Get-Content -LiteralPath $files[$i].FullName -Tail ($lines - $tail.Count) -Encoding UTF8)
+    $tail.InsertRange(0, [string[]]$chunk)
+  }
+  Write-Host "  ----- last $($tail.Count) game log entries ($GameLogDir\game-*.jsonl) -----" -ForegroundColor DarkGray
+  foreach ($line in $tail) {
+    if (-not $line.Trim()) { continue }
+    try { $e = $line | ConvertFrom-Json } catch { Write-Host $line; continue }
+    $color = switch ($e.outcome) { 'rejected' { 'Red' } 'error' { 'Red' } 'no-change' { 'Yellow' } default { if ($e.kind -eq 'system' -or $e.kind -eq 'connection') { 'DarkGray' } else { 'Gray' } } }
+    Write-Host "  $($e.text)" -ForegroundColor $color
+  }
   Write-Host '  -----' -ForegroundColor DarkGray
 }
 
@@ -746,7 +776,7 @@ function Show-MainMenu {
     Write-Info '5) Show join addresses + QR code'
     Write-Info '6) Open TV page in browser'
     Write-Info '7) Open Storyteller page in browser'
-    Write-Info '8) View server log'
+    Write-Info '8) View game log / server log'
     Write-Info '9) Settings (port, host, PIN)'
     Write-Info 'D) Dev mode (hot reload, for developers)'
     Write-Info 'Q) Quit'
@@ -763,8 +793,15 @@ function Show-MainMenu {
         '6' { Open-Page '/tv' }
         '7' { Open-Page '/storyteller' }
         '8' {
-          Show-LogTail 60
-          if ((Test-Path -LiteralPath $LogFile) -and (Confirm-Choice 'Open the full log in Notepad?' $false)) { Start-Process notepad.exe -ArgumentList "`"$LogFile`"" }
+          $which = (Read-Host '  G) game log (what happened in the game)  S) server log (technical)  [G/s]').Trim().ToLower()
+          if ($which -eq 's') {
+            Show-LogTail 60
+            if ((Test-Path -LiteralPath $LogFile) -and (Confirm-Choice 'Open the full server log in Notepad?' $false)) { Start-Process notepad.exe -ArgumentList "`"$LogFile`"" }
+          } else {
+            Show-GameLog 60
+            $latest = @(Get-GameLogFiles) | Select-Object -Last 1
+            if ($latest -and (Confirm-Choice 'Open the latest game log file in Notepad?' $false)) { Start-Process notepad.exe -ArgumentList "`"$($latest.FullName)`"" }
+          }
         }
         '9' { Show-SettingsMenu; $pause = $false }
         'd' { [void](Start-DevMode) }
@@ -799,7 +836,7 @@ switch ($Action) {
   'status' { $ok = Show-Status }
   'addresses' { $ok = Show-Addresses }
   'dev' { $ok = Start-DevMode }
-  'log' { Show-LogTail 60 }
+  'log' { if ($Server) { Show-LogTail $Lines } else { Show-GameLog $Lines } }
   'set' { $ok = Invoke-SetAction }
   'reset-settings' { $ok = Reset-Settings }
 }

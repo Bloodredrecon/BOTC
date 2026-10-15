@@ -4,7 +4,7 @@
  * Run: cd server && npx tsx test/server-security.ts
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -15,8 +15,9 @@ import { io, type Socket } from "socket.io-client";
 const SERVER_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = join(SERVER_DIR, "..");
 const TSX_CLI = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
-const PIN = "8642";
-const WRONG_PIN = "97531";
+/** Long enough not to appear by chance inside millisecond timestamps in the logs. */
+const PIN = "73914826";
+const WRONG_PIN = "51627384";
 
 /** GET without URL normalisation (fetch would resolve %2e%2e and ../ before sending). */
 function rawGet(port: number, path: string): Promise<{ status: number; body: string }> {
@@ -42,8 +43,18 @@ function freePort(): Promise<number> {
   });
 }
 
+const serverDir = mkdtempSync(join(tmpdir(), "botc-srv-"));
+const LOG_DIR = join(serverDir, "logs");
+
+function readGameLog(): string {
+  if (!existsSync(LOG_DIR)) return "";
+  return readdirSync(LOG_DIR)
+    .map((f) => readFileSync(join(LOG_DIR, f), "utf-8"))
+    .join("");
+}
+
 async function startServer(port: number): Promise<{ child: ChildProcess; output: () => string }> {
-  const dir = mkdtempSync(join(tmpdir(), "botc-srv-"));
+  const dir = serverDir;
   let out = "";
   const child = spawn(process.execPath, [TSX_CLI, "src/index.ts"], {
     cwd: SERVER_DIR,
@@ -53,6 +64,7 @@ async function startServer(port: number): Promise<{ child: ChildProcess; output:
       BOTC_HOST: "127.0.0.1",
       BOTC_PIN: PIN,
       BOTC_SESSION_PATH: join(dir, "session.json"),
+      BOTC_LOG_DIR: LOG_DIR,
       BOTC_CONTROL_TOKEN: "",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -141,6 +153,47 @@ const cases: AsyncCase[] = [
     },
   },
   {
+    name: "Game log: accepted and rejected actions recorded, Storyteller-only, no PIN in the file",
+    run: async () => {
+      const tv = await sock();
+      const tvGotLog: unknown[] = [];
+      tv.on("log:entry", (e) => tvGotLog.push(e));
+      tv.emit("join", { role: "tv" });
+      const st = await sock();
+      const auth = await joinStoryteller(st, PIN);
+      if (!auth.ok) return `ST join failed: ${JSON.stringify(auth)}`;
+      const stGot: { action?: string; outcome: string }[] = [];
+      st.on("log:entry", (e) => stGot.push(e));
+      const act = (event: string, data: unknown) =>
+        new Promise<unknown>((resolve) => st.emit(event, data, (r: unknown) => resolve(r)));
+      await act("game:setPlayerCount", { count: 6 });
+      const refused = (await act("game:startNomination", { nominatorId: "p1", nomineeId: "p2" })) as { ok: boolean };
+      if (refused.ok) return "nomination in the lobby was accepted";
+      await act("game:refresh", {});
+      await new Promise((r) => setTimeout(r, 300));
+      const recent = (await new Promise((resolve) => st.emit("log:recent", { limit: 50 }, resolve))) as {
+        ok: boolean;
+        entries: { kind: string; action?: string; outcome: string; reason?: string; text: string }[];
+      };
+      if (!recent.ok) return "log:recent refused for the Storyteller";
+      const set = recent.entries.find((e) => e.action === "game:setPlayerCount");
+      const nom = recent.entries.find((e) => e.action === "game:startNomination");
+      if (set?.outcome !== "ok") return `setPlayerCount: ${JSON.stringify(set)}`;
+      if (nom?.outcome !== "rejected" || !nom.reason) return `startNomination: ${JSON.stringify(nom)}`;
+      if (recent.entries.some((e) => e.kind === "action" && e.action === "game:refresh")) return "refresh was logged";
+      if (!stGot.some((e) => e.action === "game:startNomination")) return "no live log:entry to the Storyteller";
+      if (tvGotLog.length) return `TV received ${tvGotLog.length} log entries`;
+      const tvAsk = (await new Promise((resolve) => tv.emit("log:recent", {}, resolve))) as { ok: boolean };
+      if (tvAsk.ok) return "TV could read the log";
+      const file = readGameLog();
+      if (!file.includes('"action":"game:startNomination"') || !file.includes('"outcome":"rejected"')) {
+        return "rejection not in the log file";
+      }
+      if (file.includes(PIN)) return "PIN written to the game log";
+      return null;
+    },
+  },
+  {
     name: "Wrong PINs are throttled; the right PIN is refused during the lock-out",
     run: async () => {
       const s = await sock();
@@ -154,6 +207,11 @@ const cases: AsyncCase[] = [
       if (!/storyteller PIN refused/.test(output())) return "refusal not logged";
       const leak = output().split("\n").find((l) => l.includes(WRONG_PIN));
       if (leak) return `typed PIN leaked into the server log: ${leak}`;
+      const game = readGameLog();
+      if (game.includes(WRONG_PIN)) return "typed PIN leaked into the game log";
+      if (!/"kind":"auth","action":"storyteller:join","outcome":"rejected","reason":"locked out/.test(game)) {
+        return "lock-out not in the game log";
+      }
       return null;
     },
   },
