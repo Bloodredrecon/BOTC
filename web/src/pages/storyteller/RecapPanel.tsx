@@ -56,10 +56,16 @@ function buildSections(state: StorytellerState, name: (id: string) => string): S
           `Day ${day}`,
           e.alreadyDead
             ? `${name(e.playerId)} executed (already dead)`
-            : e.died
+            : e.virgin
+              ? `${name(e.playerId)} nominated the Virgin and was executed`
+              : e.died
               ? `${name(e.playerId)} executed and died`
               : `${name(e.playerId)} executed but did not die`,
         );
+        break;
+      case "slayer_shot":
+        day = e.dayNumber;
+        add(`Day ${day}`, `${name(e.shooterId)} shot at ${name(e.targetId)} (Slayer) — ${e.hit ? "they died" : "nothing happened"}`);
         break;
       case "no_execution":
         day = e.dayNumber;

@@ -1,4 +1,5 @@
 // Storyteller driver for TV verification: node scripts/tv_drive.mjs <step> [args]
+// e.g. setup 8 short | night1 | dawn 4 | day 300 | role 5 slayer | shoot 5 3 | dusk | openNominations | nominate 2 6
 // Env: TV_DRIVE_URL (default http://127.0.0.1:3900), BOTC_PIN (default 4321)
 import { io } from "socket.io-client";
 
@@ -121,6 +122,17 @@ const steps = {
     for (const p of next.slice(0, Number(handsCount))) {
       await act(socket, "game:toggleVote", { playerId: p.id });
     }
+  },
+  async role(socket, st, [seat = "1", characterId = "slayer"]) {
+    const p = seated(st).find((x) => x.seat === Number(seat));
+    await act(socket, "game:updatePlayer", { playerId: p.id, patch: { characterId } });
+  },
+  async shoot(socket, st, [fromSeat = "1", toSeat = "3"]) {
+    const ps = seated(st);
+    const from = ps.find((p) => p.seat === Number(fromSeat));
+    const to = ps.find((p) => p.seat === Number(toSeat));
+    const r = await act(socket, "game:slayerShot", { shooterId: from.id, targetId: to.id });
+    console.log(JSON.stringify({ shot: r }));
   },
   async resolve(socket) {
     await act(socket, "game:resolveVote");

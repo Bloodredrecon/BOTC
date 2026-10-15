@@ -1603,6 +1603,7 @@ export class GameEngine {
             type: "execution",
             playerId: nominatorId,
             died: true,
+            virgin: true,
             dayNumber: Math.max(1, s.dayNumber || 1),
             at: Date.now(),
           });
@@ -1991,6 +1992,16 @@ export class GameEngine {
           }
         }
         pushStNotice(s, outcome.reason);
+        if (shooter && target) {
+          s.publicLog.push({
+            type: "slayer_shot",
+            shooterId,
+            targetId,
+            hit: outcome.hit,
+            dayNumber: Math.max(1, s.dayNumber || 1),
+            at: Date.now(),
+          });
+        }
         if (!outcome.hit || !target) return;
         const wasDemon = findDef(this.script, target.characterId)?.team === "demon";
         target.alive = false;

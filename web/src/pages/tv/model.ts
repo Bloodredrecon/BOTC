@@ -130,10 +130,21 @@ export function ledgerLine(e: PublicEvent, nameOf: (id: string) => string): Ledg
       if (e.alreadyDead) {
         return { text: `${nameOf(e.playerId)} was executed — already dead`, marker: { kind: "day", n: day } };
       }
+      if (e.virgin) {
+        return { text: `${nameOf(e.playerId)} was struck down by the Virgin's purity`, marker: { kind: "day", n: day }, emphasis: true };
+      }
       return e.died
         ? { text: `${nameOf(e.playerId)} was executed`, marker: { kind: "day", n: day }, emphasis: true }
         : { text: `${nameOf(e.playerId)} survived the gallows`, marker: { kind: "day", n: day } };
     }
+    case "slayer_shot":
+      // The death itself is its own "died by day" line; this line never says who was what.
+      return {
+        text: e.hit
+          ? `${nameOf(e.shooterId)} takes a shot at ${nameOf(e.targetId)}`
+          : `${nameOf(e.shooterId)} takes a shot at ${nameOf(e.targetId)} — nothing happens`,
+        marker: { kind: "day", n: chronicleDay(e.dayNumber) },
+      };
     case "exile": {
       const who = e.playerName || nameOf(e.playerId);
       const day = chronicleDay(e.dayNumber);

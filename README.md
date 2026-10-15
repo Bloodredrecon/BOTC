@@ -20,6 +20,12 @@ Storyteller tools:
 - **Undo** (top of the Storyteller page): takes back the last action, naming it first. Sounds and lights are not replayed; a pending automatic step (dawn to day, game over) is cancelled and you're told. The history is kept in memory (up to 30 steps) and cleared by New game or a server restart.
 - **History** tab: a recap (who was what, starting characters, how each player died, each day's nominations and votes) and the full action log.
 
+TV:
+
+- Slow plate zoom, drifting fog and embers at night. They switch off when the TV asks for reduced motion; on a slow TV browser open `/tv?motion=off` to stop them.
+- Short full-screen moments for a Slayer shot (aim, then hit or miss in time with the sound), a Virgin execution and the Demon slain. While the shot sound plays, the town board and Gazette are hidden so they don't give the result away. A TV that joins late does not replay old moments.
+- At game end the characters are revealed seat by seat.
+
 ## Requirements
 
 - Node.js 20+

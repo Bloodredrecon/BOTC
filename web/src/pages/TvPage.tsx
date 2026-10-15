@@ -6,6 +6,7 @@ import { Atmosphere } from "./tv/Atmosphere";
 import { OakPlaque, PhaseWord, TvBrandLogo, TvLabel, TvScript } from "./tv/chrome";
 import "./tv/fonts";
 import { panelVisibility, townColumns } from "./tv/model";
+import { MomentOverlay, useMoment } from "./tv/moments";
 import { CharacterSheet, DawnReveal, DayTag, Gazette, HeroPlaque, TimerBadge, TownBoard } from "./tv/panels";
 import { ExecutionStage, ExileStage, NominationStage, VoteStage } from "./tv/stages";
 import "./tv/tv.css";
@@ -42,6 +43,9 @@ export function TvPage() {
   const { state } = useTvState(socketRef);
   const [soundOn, setSoundOn] = useState(isAudioUnlocked());
   const seconds = useCountdown(state?.timer?.endsAt);
+  const moment = useMoment(state);
+  // /tv?motion=off turns off the idle motion for a slow TV browser (prefers-reduced-motion does too).
+  const still = useMemo(() => new URLSearchParams(window.location.search).get("motion") === "off", []);
 
   useEffect(() => {
     if (!state?.soundCue || !soundOn) return;
@@ -71,7 +75,7 @@ export function TvPage() {
     const lobbyPlate = plateKeyForPhase("lobby");
     const lobbyLogo = plateHasLogo(lobbyPlate);
     return (
-      <div className={`tv phase-lobby tv-plate-${lobbyPlate} ${lobbyLogo ? "tv-plate-logo" : ""}`}>
+      <div className={`tv phase-lobby tv-plate-${lobbyPlate} ${lobbyLogo ? "tv-plate-logo" : ""} ${still ? "tv-still" : ""}`}>
         <Atmosphere phase="lobby" />
         <div className="tv-stage16">
           {!lobbyLogo && <TvBrandLogo />}
@@ -115,6 +119,9 @@ export function TvPage() {
         drama ? "tv-drama-focus" : "",
         showDawn ? "tv-dawn-funeral" : "",
         showTimer ? "has-timer" : "",
+        moment ? "tv-moment-on" : "",
+        moment && !moment.resolved ? "tv-moment-aim" : "",
+        still ? "tv-still" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -154,7 +161,7 @@ export function TvPage() {
           {showDawn && <DawnReveal deaths={dawnDeaths} />}
           <TownBoard
             players={seated}
-            reveal={state.phase === "ended" ? state.reveal : null}
+            reveal={state.phase === "ended" && moment?.kind !== "demon-slain" ? state.reveal : null}
             hidden={!panels.town || showExile || showSheet}
           />
         </div>
@@ -164,6 +171,7 @@ export function TvPage() {
           state={state}
           hidden={!panels.gazette || showExile || showSheet}
         />
+        {moment && <MomentOverlay moment={moment} nameOf={nameOf} />}
       </div>
     </div>
   );

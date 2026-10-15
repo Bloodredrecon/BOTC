@@ -1580,3 +1580,233 @@
   border: 1px solid rgba(196, 30, 36, 0.55);
   border-radius: 3px;
 }
+
+/* ——— Idle motion: compositor-only (transform / opacity) so 4K stays smooth ——— */
+/* Pure zoom about the centre: a plate's baked-in logo only ever moves outward, away from the overlays. */
+.tv-atmosphere-plate {
+  transform-origin: 50% 50%;
+  animation: tv-plate-breathe 80s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes tv-plate-breathe {
+  from { transform: scale(1); }
+  to { transform: scale(1.03); }
+}
+
+/* Soft fog banks drifting along the ground: one tile repeated twice, slid by one tile for a seamless loop. */
+.tv-atmosphere-fog {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 200%;
+  height: 40%;
+  background-image:
+    radial-gradient(ellipse 20% 42% at 12% 78%, rgba(205, 195, 185, 0.11), transparent 70%),
+    radial-gradient(ellipse 24% 34% at 36% 88%, rgba(205, 195, 185, 0.09), transparent 70%),
+    radial-gradient(ellipse 18% 46% at 60% 72%, rgba(205, 195, 185, 0.1), transparent 70%),
+    radial-gradient(ellipse 22% 38% at 84% 84%, rgba(205, 195, 185, 0.09), transparent 70%);
+  background-size: 50% 100%;
+  background-repeat: repeat-x;
+  opacity: 0.45;
+  transition: opacity 2s ease;
+  animation: tv-fog-drift 150s linear infinite;
+  will-change: transform;
+}
+@keyframes tv-fog-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+.tv.phase-night .tv-atmosphere-fog,
+.tv.phase-firstNight .tv-atmosphere-fog,
+.tv.phase-dusk .tv-atmosphere-fog,
+.tv.phase-dawn .tv-atmosphere-fog {
+  opacity: 1;
+}
+.tv.phase-day .tv-atmosphere-fog {
+  opacity: 0.3;
+}
+
+.tv-atmosphere-embers {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 2.5s ease;
+}
+.tv.phase-night .tv-atmosphere-embers,
+.tv.phase-firstNight .tv-atmosphere-embers,
+.tv.phase-dusk .tv-atmosphere-embers,
+.tv.phase-execution .tv-atmosphere-embers,
+.tv.tv-plate-evil-win .tv-atmosphere-embers {
+  opacity: 1;
+}
+.tv-atmosphere-embers span {
+  position: absolute;
+  bottom: -2vh;
+  left: var(--x);
+  width: 0.38vmin;
+  height: 0.38vmin;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffe0a0 0%, #ff8a32 45%, rgba(255, 90, 20, 0) 72%);
+  opacity: 0;
+  animation: tv-ember var(--d) linear var(--delay) infinite;
+  will-change: transform, opacity;
+}
+@keyframes tv-ember {
+  0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0; }
+  12% { opacity: 0.9; }
+  65% { opacity: 0.55; }
+  100% { transform: translate3d(var(--sway), -68vh, 0) scale(0.35); opacity: 0; }
+}
+.tv-atmosphere-embers span:nth-child(1) { --x: 6%; --d: 13s; --delay: -2s; --sway: 3vw; }
+.tv-atmosphere-embers span:nth-child(2) { --x: 14%; --d: 17s; --delay: -9s; --sway: -2vw; }
+.tv-atmosphere-embers span:nth-child(3) { --x: 23%; --d: 11s; --delay: -5s; --sway: 2vw; }
+.tv-atmosphere-embers span:nth-child(4) { --x: 31%; --d: 15s; --delay: -12s; --sway: -3vw; }
+.tv-atmosphere-embers span:nth-child(5) { --x: 42%; --d: 19s; --delay: -1s; --sway: 1.5vw; }
+.tv-atmosphere-embers span:nth-child(6) { --x: 50%; --d: 12s; --delay: -7s; --sway: -1.5vw; }
+.tv-atmosphere-embers span:nth-child(7) { --x: 58%; --d: 16s; --delay: -14s; --sway: 2.5vw; }
+.tv-atmosphere-embers span:nth-child(8) { --x: 66%; --d: 14s; --delay: -4s; --sway: -2.5vw; }
+.tv-atmosphere-embers span:nth-child(9) { --x: 74%; --d: 18s; --delay: -10s; --sway: 2vw; }
+.tv-atmosphere-embers span:nth-child(10) { --x: 82%; --d: 12.5s; --delay: -6s; --sway: -2vw; }
+.tv-atmosphere-embers span:nth-child(11) { --x: 89%; --d: 15.5s; --delay: -11s; --sway: 1vw; }
+.tv-atmosphere-embers span:nth-child(12) { --x: 95%; --d: 13.5s; --delay: -3s; --sway: -1vw; }
+
+/* ——— End of game: seat-by-seat reveal ——— */
+.tv-seat.revealed .tv-seat-status {
+  display: block;
+  animation: tv-reveal-in 0.8s ease both;
+  animation-delay: calc(0.6s + var(--ri, 0) * 0.5s);
+}
+@keyframes tv-reveal-in {
+  from { opacity: 0; transform: translateY(0.6cqw) scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+.tv-seat.revealed .tv-seat-emblem::after {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  border-radius: 50%;
+  box-shadow: 0 0 1cqw 0.25cqw rgba(231, 200, 120, 0.75);
+  opacity: 0;
+  animation: tv-reveal-glow 1.8s ease both;
+  animation-delay: calc(0.6s + var(--ri, 0) * 0.5s);
+}
+.tv-seat.revealed.align-evil .tv-seat-emblem::after {
+  box-shadow: 0 0 1.1cqw 0.3cqw rgba(226, 85, 74, 0.9);
+}
+@keyframes tv-reveal-glow {
+  0% { opacity: 0; }
+  35% { opacity: 1; }
+  100% { opacity: 0.45; }
+}
+
+/* ——— Moments: Slayer shot, Virgin, Demon slain ——— */
+.tv-moment {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  animation: tv-moment-life var(--moment-ms, 7s) linear both;
+}
+@keyframes tv-moment-life {
+  0% { opacity: 0; }
+  7% { opacity: 1; }
+  93% { opacity: 1; }
+  100% { opacity: 0; }
+}
+/* While the shot cue plays, the board and Gazette (which already know the outcome) step back. */
+.tv.tv-moment-aim .tv-town,
+.tv.tv-moment-aim .tv-gazette {
+  opacity: 0;
+}
+.tv-moment-veil {
+  position: absolute;
+  inset: -25%;
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, rgba(14, 4, 6, 0.55), rgba(0, 0, 0, 0.9) 100%);
+}
+.tv-moment-flash {
+  position: absolute;
+  inset: -25%;
+  opacity: 0;
+}
+.tv-moment.tone-blood .tv-moment-flash {
+  background: radial-gradient(circle at 50% 50%, rgba(196, 48, 42, 0.5), transparent 60%);
+  animation: tv-moment-flash 1.6s ease-out 0.15s both;
+}
+.tv-moment.tone-dawn .tv-moment-flash {
+  background: radial-gradient(circle at 50% 50%, rgba(240, 200, 120, 0.45), transparent 62%);
+  animation: tv-moment-flash 2.2s ease-out 0.2s both;
+}
+@keyframes tv-moment-flash {
+  0% { opacity: 0; transform: scale(0.85); }
+  25% { opacity: 1; }
+  100% { opacity: 0.25; transform: scale(1.08); }
+}
+.tv-moment-plaque {
+  --oak-s: 0.0088cqw;
+  position: relative;
+  min-width: 46cqw;
+  max-width: 76cqw;
+  padding: 0.5cqw 2.6cqw 0.7cqw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5cqw;
+  animation: tv-moment-rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes tv-moment-rise {
+  from { opacity: 0; transform: translateY(2cqw) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+.tv-moment-label {
+  font-size: 1.55cqw;
+}
+.tv-moment-word {
+  font-size: inherit;
+  line-height: 1;
+}
+.tv-moment-fit {
+  display: block;
+  max-width: 68cqw;
+  font-size: calc(7.2cqw * var(--fit, 1));
+  white-space: nowrap;
+}
+.tv-moment-script {
+  font-size: 2.7cqw;
+}
+.tv-moment.tone-still .tv-moment-fit {
+  font-size: calc(5.6cqw * var(--fit, 1));
+}
+
+/* ——— Reduced motion (and /tv?motion=off for slow TVs) ——— */
+.tv.tv-still .tv-atmosphere-plate,
+.tv.tv-still .tv-atmosphere-fog,
+.tv.tv-still .tv-candles span::before {
+  animation: none;
+}
+.tv.tv-still .tv-atmosphere-embers {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv *,
+  .tv *::before,
+  .tv *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .tv .tv-atmosphere-plate,
+  .tv .tv-atmosphere-fog {
+    animation: none !important;
+  }
+  .tv .tv-atmosphere-embers {
+    display: none;
+  }
+  .tv .tv-moment {
+    animation: none !important;
+    opacity: 1;
+  }
+}

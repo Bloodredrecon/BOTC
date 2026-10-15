@@ -175,8 +175,19 @@ export type PublicEvent =
       died: boolean;
       /** The executed player was already dead (the execution counts; nobody dies). */
       alreadyDead?: boolean;
+      /** Executed at once for nominating the Virgin. */
+      virgin?: boolean;
       /** Current day when logged (optional on older sessions). */
       dayNumber?: number;
+      at: number;
+    }
+  | {
+      /** A public Slayer shot; `hit` = the target died (never says why). */
+      type: "slayer_shot";
+      shooterId: string;
+      targetId: string;
+      hit: boolean;
+      dayNumber: number;
       at: number;
     }
   | {

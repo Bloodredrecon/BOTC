@@ -217,15 +217,17 @@ export function TownBoard({
         <Fleur flip />
       </h2>
       <div className="tv-town-grid">
-        {players.map((p) => {
+        {players.map((p, i) => {
           const r = revealById.get(p.id);
           const state = p.alive ? "alive" : p.usedGhostVote ? "spent" : "ghost";
           const team = r?.team ?? null;
+          const evil = team === "minion" || team === "demon" || (team === "traveller" && r?.alignment === "evil");
           return (
             <article
               key={p.id}
-              className={`tv-seat ${state} ${team ? `team-${team}` : ""}`}
+              className={`tv-seat ${state} ${team ? `team-${team} revealed ${evil ? "align-evil" : "align-good"}` : ""}`}
               title={team ? TEAM_LABEL[team] : undefined}
+              style={r ? ({ "--ri": i } as CSSProperties) : undefined}
             >
               <span className="tv-seat-emblem" aria-hidden>
                 <img src={p.alive ? TV_EL.emblemSun : TV_EL.emblemSkull} alt="" draggable={false} />

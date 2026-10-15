@@ -169,7 +169,16 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 6. TV: idle motion, dramatic moments, end-of-game reveal
 
-- [ ] Status
+- [x] Status: done (Oct 15)
+
+**Done.**
+- Before: the TV only had candle flicker and a hero fade-in; a Slayer shot was only a sound cue plus a Gazette line, and the board/Gazette showed the target dead (or "nothing happens") as soon as the shot was fired, while the 8.4 s shot cue was still playing. A Virgin execution looked like any other execution. The end reveal appeared all at once.
+- **Public events** (`server/src/game.ts`, `types.ts`): new `slayer_shot` event (shooter, target, `hit` = the target died; never why) and `virgin: true` on the Virgin's execution. Both are things the whole table sees in real play. A hit on the Imp with a Scarlet Woman alive shows only "X falls" (the existing plain death cue is kept). The action log, Gazette and recap describe both.
+- **Moments** (`web/src/pages/tv/moments.tsx`): Slayer "takes aim" (8.4 s, in time with the shot cue; the town board and Gazette are hidden meanwhile) then "The shot rings true / X falls" or "The shot rings out / Nothing happens"; "The Virgin's purity"; "The Demon is slain" when good wins with "The Demon is dead.". Events already in the log when the TV loads are never replayed.
+- **End reveal**: seats reveal one by one (0.5 s apart) with a gold/red glow by alignment, after the Demon-slain moment.
+- **Idle motion** (`tv.css`, `Atmosphere.tsx`): plate zoom 1.00 to 1.03 about the centre over 80 s (a baked logo only moves outward), drifting fog banks, 12 embers at night/dusk/execution/evil wins. Transform/opacity only. Off under `prefers-reduced-motion` (moments and the reveal then appear without animation) and with `/tv?motion=off`.
+- Tests: `tv-moments.ts` (8): no reveal or private player keys in any phase before the end; reveal at the end; Slayer hit on the Imp with the Scarlet Woman alive leaks no "imp/demon/scarlet/slayer/minion" text to the TV; miss and bluffed shot recorded; Virgin flag (and not on normal executions); win reason; action-log lines. 193/193 pass.
+- Live check (port 3919, temp session; 1920x1080, 3840x2160, and 1080p with reduced motion emulated): miss, Virgin, Scarlet Woman takeover, Demon slain, staggered reveal, reload at the end (no replay), `?motion=off` (0 idle animations). Running animations only touch `transform`/`opacity`. Headless Chrome held 60 fps at both sizes, but that is software rendering, not the TV's GPU; if the TV stutters, use `?motion=off`. No console errors. Screenshots: `docs/tv-design/_verify/item6-tv/`.
 
 **Goal.** The TV feels alive and lands the big moments.
 

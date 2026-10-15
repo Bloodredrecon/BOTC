@@ -1,6 +1,9 @@
 import type { Phase, PublicState } from "../../types";
 import { plateKeyForPhase, plateUrl } from "./assets";
 
+/** Rising embers at night / dusk; each has its own lane, speed and delay in tv.css. */
+const EMBERS = 12;
+
 /** Full-bleed scene plate + grade layers (plates stay cover-fit behind the 16:9 stage). */
 export function Atmosphere({
   phase,
@@ -19,6 +22,12 @@ export function Atmosphere({
       <div className="tv-atmosphere-tint" />
       <div className="tv-atmosphere-vignette" />
       <div className="tv-atmosphere-mist" />
+      <div className="tv-atmosphere-fog" />
+      <div className="tv-atmosphere-embers">
+        {Array.from({ length: EMBERS }, (_, i) => (
+          <span key={i} />
+        ))}
+      </div>
       <div className="tv-atmosphere-dawn-ink" />
     </div>
   );

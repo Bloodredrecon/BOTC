@@ -200,6 +200,8 @@ export type PublicEvent =
       died: boolean;
       /** The executed player was already dead (the execution still counts; nobody dies). */
       alreadyDead?: boolean;
+      /** Executed at once for nominating the Virgin (public: the town sees it happen). */
+      virgin?: boolean;
       /** Current day when logged (optional on older sessions). */
       dayNumber?: number;
       at: number;
@@ -222,6 +224,15 @@ export type PublicEvent =
       dayNumber?: number;
       /** True when death happened overnight (firstNight / night / dawn). */
       duringNight?: boolean;
+      at: number;
+    }
+  | {
+      /** A player publicly claims the Slayer and shoots. `hit` = the target died (never says why). */
+      type: "slayer_shot";
+      shooterId: string;
+      targetId: string;
+      hit: boolean;
+      dayNumber: number;
       at: number;
     }
   | {

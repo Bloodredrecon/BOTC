@@ -246,7 +246,9 @@ export function describeEvent(s: GameSession, e: PublicEvent): string {
     case "no_execution":
       return `No execution, day ${e.dayNumber}`;
     case "execution":
-      return `Execution: ${name(e.playerId)} ${e.alreadyDead ? "(already dead)" : e.died ? "died" : "survived"}`;
+      return `Execution: ${name(e.playerId)} ${e.alreadyDead ? "(already dead)" : e.died ? "died" : "survived"}${e.virgin ? " (Virgin)" : ""}`;
+    case "slayer_shot":
+      return `Slayer shot: ${name(e.shooterId)} shoots ${name(e.targetId)} - ${e.hit ? "dies" : "nothing happens"}`;
     case "exile":
       return `Exile of ${e.playerName ?? name(e.playerId)}: ${e.supporters}/${e.threshold} - ${e.exiled ? "exiled" : "spared"}`;
     case "other_death":
