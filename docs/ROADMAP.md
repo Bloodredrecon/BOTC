@@ -197,7 +197,43 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 7. Rules narration length
 
-- [ ] Status
+- [x] Status: proposal written (Oct 15). No audio was changed; the user picks an option below.
+
+**Measured** (exact MP3 frame count, all 48 kHz 192 kbps; words and pauses counted from `docs/NARRATION_SCRIPT.md` section C):
+
+| Chapter | Seconds | Words | Scripted pauses |
+|---|---|---|---|
+| 1. Overview | 51.1 | 111 | 4.2 s |
+| 2. Teams | 53.6 | 114 | 5.0 s |
+| 3. Setup | 52.1 | 111 | 5.2 s |
+| 4. Night | 76.3 | 175 | 7.6 s |
+| 5. Day | 71.0 | 166 | 6.8 s |
+| 6. Execution | 55.3 | 130 | 4.2 s |
+| 7. The dead | 35.4 | 76 | 3.4 s |
+| 8. Abilities | 130.9 | 300 | 6.0 s |
+| 9. Winning | 37.5 | 73 | 5.0 s |
+| 10. Travellers | 59.7 | 125 | 3.8 s |
+| 11. Etiquette | 42.7 | 81 | 3.6 s |
+| **Total** | **665.6** | **1,462** | **54.8 s** |
+
+`rules_full.mp3` is 665.3 s: it is the eleven chapters joined back to back (`stitch_rules_full()` in `scripts/generate_narration.py`, ffmpeg concat, no re-recording). The chapters fit "0.40 s per word + the scripted pauses + about 3 s per chapter" to within 4 s each, so a cut of N words saves about 0.4 x N seconds. Each chapter ends with about 1 s of silence; an ambience bed runs under the voice, so silences can't be trimmed reliably. The target of 8-9 min (480-540 s) means cutting 126-186 s.
+
+**Option A - "Quick rules" from the existing chapters (no new voice, no cost).** Join a subset of the recorded chapters:
+- Overview, Teams, Setup, Night, Day, Execution, The dead, Winning, Etiquette = **475 s (7.9 min)**. This leaves out Abilities (131 s; the TV character sheet and the Storyteller cover it) and Travellers (60 s; play it only when a Traveller arrives).
+- Without Setup and Etiquette (the Storyteller says these in person) = **380 s (6.3 min)**.
+- Either as a new `rules_quick.mp3` made the same way as `rules_full.mp3` (ffmpeg concat of existing files), or as a "Quick rules" button that plays the chapters one after another (needs a small play-queue in the app; today each cue is a single file).
+
+**Option B - Tighten the full teach to about 8.1 min (re-record 6 chapters).** Proposed edits, estimated with the model above:
+- Travellers moves out of the full teach (still its own cue): -60 s.
+- Abilities 300 -> about 170 words: keep only what changes public play (Virgin, Slayer, Saint, Mayor, Scarlet Woman, Imp star-pass, drunk/poisoned); the rest is on the character sheet: -52 s.
+- Night 175 -> about 130 words: -18 s. Day 166 -> about 130 words: -14 s.
+- Etiquette 81 -> about 45 words (secrecy and "ask me" are already in Setup and Day): -15 s.
+- Setup 111 -> about 85 words: -10 s. Teams: drop the two win lines repeated in Winning: -8 s.
+- Total about -177 s, so about **489 s (8.1 min)**. Needs about 650 new words (about 3,700 characters) of ElevenLabs voice for 6 chapters (Teams, Setup, Night, Day, Abilities, Etiquette), then a re-stitch of `rules_full.mp3`.
+
+**Option C - Only drop Travellers from `rules_full.mp3`.** Change the stitch order and re-stitch: **606 s (10.1 min)**. No new voice, but still over the target.
+
+**Recommendation.** A first (free, keeps the current recordings), with Travellers played only when needed; B later if the full teach must hit 8-9 min. **Decision needed:** which option, and permission to create audio (A or C: an ffmpeg join of existing files; B: new voice recordings).
 
 **Goal.** A rules explanation that fits the target (8-9 min) or a short "quick rules" option.
 
@@ -230,4 +266,5 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 ## Decisions needed from the user
 
 - **Storyteller PIN is still the default `1234`.** The launcher, the pre-game check and the Storyteller page now warn. Change it with `BOTC.bat` → Settings (or `BOTC.bat set -Pin ...`).
+- **Rules narration length (item 7):** pick option A, B or C, and allow creating audio (A/C: join existing files with ffmpeg; B: new ElevenLabs voice for 6 chapters).
 - **Port 3847 is held by another program.** `BOTC.bat check` (Oct 15) found 127.0.0.1:3847 owned by `Cursor.exe` (a utility process started 14:32 that day) answering "BeatLock WLED bridge". I did not test whether BOTC can still bind `0.0.0.0:3847` alongside it (to avoid disturbing it), but at best `localhost:3847` on this PC would reach BeatLock instead of BOTC. Either move BeatLock to another port or change BOTC's port (`BOTC.bat set -Port 3900`). Left untouched.
