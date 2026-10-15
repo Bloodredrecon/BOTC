@@ -1,0 +1,181 @@
+# BOTC Companion roadmap
+
+Working order is top to bottom. Items 1-7 are built, tested and pushed one at a time; items 8 and 9 are planning documents only.
+
+Baseline (Oct 15 2026): HEAD `385079f`, typecheck clean, 150/150 server tests pass (`server/test/*.ts` via `npx tsx`).
+
+Every item is verified with `npm run typecheck`, all server tests, `npm run build`, and a live check on a spare port (never 3847) with a temporary `BOTC_SESSION_PATH`. `data/session.json` is never touched. Screenshots go to `docs/tv-design/_verify/<item>/` (gitignored).
+
+---
+
+## 1. Security: Storyteller PIN hardening and `@fastify/static` upgrade
+
+- [ ] Status
+
+**Goal.** A guest on the LAN can't brute-force or guess their way into the Storyteller screen, and the server has no known high-severity dependency issues.
+
+**Evidence.**
+- The PIN check is a plain comparison with no rate limit (`server/src/index.ts:168`); 10,000 PINs can be tried in seconds.
+- The default PIN is `1234` (`config/default.json`) and the PIN screen says "Enter the PIN (default 1234)" (`web/src/pages/StorytellerPage.tsx:341`).
+- The home page links to `/storyteller` (`web/src/pages/HomePage.tsx:15`).
+- `npm audit --omit=dev`: 1 high, `@fastify/static <=10.1.1` (4 advisories); installed 8.3.0; fix is 10.1.6 (breaking).
+
+**Scope.**
+- Throttle failed PIN attempts per client IP (and per socket) with exponential back-off; reply with "try again in N s".
+- Constant-time PIN compare.
+- Remove the default-PIN hint from the PIN screen.
+- Warn while the PIN is still `1234`: launcher header/start output, server startup log, and a banner on the Storyteller page (the server tells the authenticated Storyteller `pinIsDefault`).
+- De-emphasise the `/storyteller` link on the home page.
+- Upgrade `@fastify/static` to a non-vulnerable version; keep `web/dist` serving (SPA fallback, rebuilt hashed assets without restart), `/custom-audio/` from `data/audio`, and TV plate cache-busting (`?v=` query) working.
+
+**Acceptance.**
+- Unit tests for the throttle (lock-out after N failures, back-off grows, success resets, per-IP isolation).
+- Live: wrong PINs get throttled; right PIN still works after the wait; `/`, `/tv`, `/storyteller`, `/assets/*`, `/tv/*.png?v=...`, `/custom-audio/*` all return 200; unknown `/api/x` returns 404.
+- `npm audit --omit=dev` clean (or each remaining finding explained).
+
+**Files.** `server/src/index.ts`, new `server/src/pin-guard.ts`, `server/package.json`, `package-lock.json`, `web/src/pages/StorytellerPage.tsx`, `web/src/pages/HomePage.tsx`, `web/src/types.ts`, `server/src/types.ts`, `server/src/projection.ts`, `scripts/botc.ps1`, `server/src/join-info.ts`, tests.
+
+**Risks.** `@fastify/static` major-version changes (option names, `wildcard` behaviour, `sendFile` decoration). Throttle must not lock out the real Storyteller for long (cap the back-off).
+
+---
+
+## 2. Finish and commit half-done work
+
+- [ ] Status
+
+**Goal.** No uncommitted work left over from Sep 30 - Oct 9.
+
+**Scope.**
+- Day-2 plate: document `bg-day2.png` (used when `dayNumber >= 2`, `hasLogo: true`) in `docs/TV_SCENE_PLATES.md`; take rendered TV screenshots on day 2+ and check the logo does not overlap the TV content.
+- Commit the narration work (pickSoundOrFallback, first_night takes, Lives fallback, voice/mix tweaks, tie cue rewrites, `vol:` tags) as its own commit, after typecheck/tests/build pass.
+- Leave the untracked scratch files `docs/_tv_*.md` alone.
+
+**Acceptance.** Screenshots of day 1 and day 2 TV scenes; typecheck/tests/build green; two commits (day-2 plate, narration) pushed.
+
+**Files.** `docs/TV_SCENE_PLATES.md` plus the 12 already-modified files.
+
+**Risks.** Logo overlap on day 2 may need a layout tweak (`hasLogo` handling in `tv.css`).
+
+---
+
+## 3. Game action log
+
+- [ ] Status
+
+**Goal.** A structured, human-readable record of every Storyteller/game action and its outcome, including rejected actions and why, so problems can be diagnosed from evidence.
+
+**Evidence.** Server logs only record HTTP requests and the Hue stub; socket actions are not logged (`server/src/index.ts:277-292` only logs thrown errors; `data/logs/server.log` Oct 12 has no game actions).
+
+**Scope.**
+- `data/logs/game-YYYY-MM-DD.jsonl` (one JSON line per action) with rotation (by day and size; keep the newest N files).
+- Each entry: time, action, sanitised args (player names resolved), outcome (`ok` / `rejected` + reason / `error`), phase/day before and after, auth failures (without the PIN typed).
+- Rejected actions: engine methods that return `{ ok: false, error }` or emit a Storyteller notice are logged as `rejected`.
+- Storyteller-only: never sent to the TV room; the Storyteller page gets a "Log" panel (last N entries via an authenticated socket request).
+- `BOTC.bat log` / menu option 8 shows the game log as readable lines (with a switch for the raw server log).
+- Never log the PIN, control token, or anything secret in public output.
+
+**Acceptance.** Tests for the logger (format, rotation, redaction, rejected outcomes); live check shows entries for accepted and rejected actions; Storyteller panel screenshot; TV payload contains no log.
+
+**Files.** new `server/src/action-log.ts`, `server/src/index.ts`, `web/src/pages/StorytellerPage.tsx`, `web/src/socket.ts`, `scripts/botc.ps1`, tests.
+
+**Risks.** Log volume (vote toggles, timers); keep entries compact and skip `game:refresh`.
+
+---
+
+## 4. Reliability: pre-game check and disconnect handling
+
+- [ ] Status
+
+**Goal.** Before guests arrive, one command tells you whether tonight will work; during the game, dropped connections are obvious and recover on their own.
+
+**Evidence.**
+- Stale PID: `data/server.pid` (PID 20504, Oct 12) with nothing on 3847. `BOTC.bat status` already reports "stale PID file ... will be cleared on next start/stop", and `Start-BotcServer`/`Stop-BotcServer` clear it (`scripts/botc.ps1:394`, `:482`). Verify the remaining paths (menu header, `addresses`, `dev`) and test with a fake stale file.
+- The engine already tracks `tvConnected`/`storytellerConnected` (`server/src/index.ts:163`, `:294-303`).
+
+**Scope.**
+- `BOTC.bat check`: Node version, dependencies, build fresh, server tests (optional `-Full`), port free or held by our server, firewall rule for node on Private networks, LAN address list and a reachability probe of `/api/health` on the LAN IP, plates and audio cues present, PIN not default, session file readable.
+- Disconnect handling: Storyteller sees TV connected/disconnected with time since; TV and Storyteller show a banner while their socket is disconnected; socket.io reconnect re-joins and the server resends full state (resync); TV also re-fetches on `visibilitychange`.
+- Stale PID: confirm and cover any path that doesn't clear it.
+
+**Acceptance.** `BOTC.bat check` output on this PC; live test killing/restarting the server shows banners then recovery; screenshots.
+
+**Files.** `scripts/botc.ps1`, `BOTC.bat`, `server/src/index.ts`, `web/src/socket.ts`, `web/src/pages/TvPage.tsx`, `web/src/pages/StorytellerPage.tsx`, CSS.
+
+**Risks.** Firewall query needs no admin rights (read-only `Get-NetFirewallApplicationFilter` may be slow); keep it best-effort.
+
+---
+
+## 5. Storyteller tools: setup wizard, grimoire, undo, history
+
+- [ ] Status
+
+**Goal.** Faster, safer storytelling: set up a legal game in a minute, see the table as a grimoire, undo mistakes, review what happened.
+
+**Scope.**
+- **Setup wizard:** player count -> legal Townsfolk/Outsider/Minion/Demon distribution (Baron +2 Outsiders); random or hand-picked deal; Drunk's believed Townsfolk; Fortune Teller red herring; three Demon bluffs (not in play).
+- **Grimoire view:** circle of seats with character, alive/dead, ghost vote, reminder tokens.
+- **Undo:** server-side snapshots before each state-changing action (ring buffer); "Undo last action" restores the previous session, with a confirmation that names the action being undone.
+- **Game history:** timeline built from the action log; end-of-game recap (who was what, deaths, executions, nominations).
+
+**Acceptance.** Tests for the deal (legal counts for 5-15 players, Baron adjustment, Drunk/red herring/bluffs constraints) and undo (restores exact state, multiple steps, not across reset); screenshots of each panel.
+
+**Files.** new `server/src/setup-wizard.ts`, `server/src/undo.ts`, `server/src/game.ts`, `server/src/index.ts`, `web/src/pages/StorytellerPage.tsx` (+ new components), tests.
+
+**Risks.** Undo must not replay side effects (sounds, Hue) or roll back connection flags/timers incorrectly; StorytellerPage is 3,400 lines, so new UI goes in new files.
+
+---
+
+## 6. TV: idle motion, dramatic moments, end-of-game reveal
+
+- [ ] Status
+
+**Goal.** The TV feels alive and lands the big moments.
+
+**Scope.**
+- Idle motion: subtle fog drift, embers, candle flicker, slow parallax over the scene plates; disabled under `prefers-reduced-motion`; CSS transforms/opacity only so 4K stays smooth.
+- Dramatic moments: Virgin execution, Slayer shot (hit and miss), Demon death, each a short full-screen sequence in the existing style.
+- End-of-game reveal: seat-by-seat character reveal (name, character, alignment) with the existing art style.
+
+**Acceptance.** Screenshots/recordings at 1080p and 4K viewport; reduced-motion check; no leak of characters before game end (projection tests).
+
+**Files.** `web/src/pages/TvPage.tsx`, `web/src/pages/tv/*`, `web/src/pages/tv/tv.css`, possibly `server/src/projection.ts` for public moment events.
+
+**Risks.** GPU cost on the TV's browser; keep layers few and animations compositor-only.
+
+---
+
+## 7. Rules narration length
+
+- [ ] Status
+
+**Goal.** A rules explanation that fits the target (8-9 min) or a short "quick rules" option.
+
+**Evidence.** `rules_full.mp3` is about 665 s (11.1 min); chapters are separate cues already.
+
+**Scope.** Planning only unless trivial: measure each chapter, propose cuts or a "quick rules" track built from a subset of chapters, write it up. Do not regenerate audio without asking.
+
+**Acceptance.** A proposal section in `docs/NARRATION_SCRIPT.md` or here with per-chapter timings and options.
+
+---
+
+## 8. More scripts (Bad Moon Rising, Sects & Violets, custom JSON) - plan only
+
+- [ ] Status
+
+**Goal.** A complete plan in `docs/SCRIPTS_PLAN.md`, reusing the partial Sep 30 findings. Then stop for user decisions.
+
+**Licensing note.** The repo is public (the user accepts that). Keep official icons out of git (fetch into a gitignored cache) unless the user decides otherwise.
+
+---
+
+## 9. Player phones - plan only
+
+- [ ] Status
+
+**Goal.** Copy the completed plan into `docs/PLAYER_PHONES_PLAN.md`. Do not build. List the design questions that must be answered first.
+
+---
+
+## Decisions needed from the user
+
+(Filled in as items are worked through.)
