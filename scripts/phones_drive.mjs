@@ -100,7 +100,173 @@ async function shot(page, name) {
 }
 
 const NAMES = ["Ada", "Bram", "Cora", "Dmitri", "Elspeth", "Fenwick", "Gwen"];
-const ROLES = ["washerwoman", "empath", "fortuneteller", "drunk", "monk", "poisoner", "imp"];
+// A legal 7-player bag with the Baron (T3/O2/M1/D1): Dmitri is the Drunk who thinks he is the Chef.
+const ROLES = ["washerwoman", "empath", "fortuneteller", "drunk", "saint", "baron", "imp"];
+
+async function holdCard(page, name) {
+  const card = page.locator(".play-reveal-card");
+  await card.scrollIntoViewIfNeeded();
+  const box = await card.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await card.and(page.locator(".shown")).waitFor();
+  const text = await card.innerText();
+  await shot(page, name);
+  await page.mouse.up();
+  await card.and(page.locator(":not(.shown)")).waitFor();
+  return text;
+}
+
+async function phonePage(browser, device) {
+  const ctx = await browser.newContext({ ...devices[device] });
+  const page = await ctx.newPage();
+  return { ctx, page };
+}
+
+async function phase2({ base, browser, st }) {
+  await st.act("game:setPhones", { on: true });
+  await until(() => st.st().phones.enabled, "phones on");
+  const code = st.st().phones.joinCode;
+  const ctxs = [];
+
+  const tvCtx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  ctxs.push(tvCtx);
+  const tv = await tvCtx.newPage();
+  tv.on("dialog", (d) => d.accept());
+  await tv.goto(`${base}/tv?motion=off`);
+  await tv.getByRole("button", { name: "Enable sound" }).click();
+  try {
+    await tv.locator(".sound-gate").waitFor({ state: "detached", timeout: 3000 });
+  } catch {
+    await tv.addStyleTag({ content: ".sound-gate{display:none!important}" });
+  }
+  await tv.locator(".tv-join-qr svg").waitFor();
+  await sleep(1200);
+  await shot(tv, "01-tv-lobby-qr");
+
+  // Ada (iPhone): arrives by the QR link, so the code is pre-filled and the seat list appears at once.
+  const ada = await phonePage(browser, "iPhone 13");
+  ctxs.push(ada.ctx);
+  await ada.page.goto(`${base}/play?c=${code}`);
+  await ada.page.getByText("Which seat is yours?").waitFor();
+  await shot(ada.page, "02-iphone-seat-list");
+  await ada.page.getByRole("button", { name: /Ada/ }).click();
+  await ada.page.getByText("Is this you?").waitFor();
+  await shot(ada.page, "03-iphone-confirm");
+  await ada.page.getByRole("button", { name: "Yes, that's me" }).click();
+  await ada.page.getByText("Waiting for the Storyteller").waitFor();
+  await shot(ada.page, "04-iphone-pending");
+
+  // Dmitri (Pixel, the Drunk) types the code by hand.
+  const dmitri = await phonePage(browser, "Pixel 7");
+  ctxs.push(dmitri.ctx);
+  await dmitri.page.goto(`${base}/play`);
+  await dmitri.page.getByLabel("Join code").fill(code.toLowerCase());
+  await dmitri.page.getByRole("button", { name: "Find my seat" }).click();
+  await dmitri.page.getByRole("button", { name: /Dmitri/ }).click();
+  await dmitri.page.getByRole("button", { name: "Yes, that's me" }).click();
+  await dmitri.page.getByText("Waiting for the Storyteller").waitFor();
+
+  // Fenwick (iPhone, the Baron).
+  const fen = await phonePage(browser, "iPhone 13");
+  ctxs.push(fen.ctx);
+  await fen.page.goto(`${base}/play?c=${code}`);
+  await fen.page.getByRole("button", { name: /Fenwick/ }).click();
+  await fen.page.getByRole("button", { name: "Yes, that's me" }).click();
+  await fen.page.getByText("Waiting for the Storyteller").waitFor();
+
+  // Storyteller (tablet): the pending banner sits above the tabs; approve Ada there.
+  const tablet = await browser.newContext({ viewport: { width: 820, height: 1180 }, deviceScaleFactor: 1 });
+  ctxs.push(tablet);
+  const stPage = await tablet.newPage();
+  await stPage.goto(`${base}/storyteller`);
+  await stPage.getByPlaceholder("PIN").fill(PIN);
+  await stPage.getByRole("button", { name: "Unlock grimoire" }).click();
+  const banner = stPage.locator(".phone-pending");
+  await banner.getByText("Ada").waitFor();
+  await shot(stPage, "05-storyteller-pending-banner");
+  await banner.locator("li", { hasText: "Ada" }).getByRole("button", { name: "Approve" }).click();
+  await ada.page.getByRole("button", { name: "Character" }).waitFor();
+  for (const pid of ["p4", "p6"]) {
+    const c = st.st().phones.claims.find((x) => x.playerId === pid && x.status === "pending");
+    await st.act("game:phoneApprove", { claimId: c.id });
+  }
+  await dmitri.page.getByRole("button", { name: "Character" }).waitFor();
+  await fen.page.getByRole("button", { name: "Character" }).waitFor();
+  await ada.page.getByText("hasn't sent characters").waitFor();
+  await shot(ada.page, "06-iphone-before-distribute");
+
+  // Distribute from the device panel.
+  await stPage.getByRole("button", { name: "Setup" }).click();
+  const panel = stPage.locator(".panel", { has: stPage.getByRole("heading", { name: "Player phones" }) });
+  await panel.getByRole("button", { name: "Send characters to phones" }).click();
+  await until(() => st.st().phones.private.p1?.revealedCharacterId === "washerwoman", "distributed");
+  await panel.getByText("Phone shows: Washerwoman").waitFor();
+  await panel.scrollIntoViewIfNeeded();
+  await shot(stPage, "07-storyteller-device-panel");
+
+  await ada.page.getByText("New").waitFor();
+  await shot(ada.page, "08-iphone-card-hidden");
+  const adaCard = await holdCard(ada.page, "09-iphone-card-held");
+  if (!/Washerwoman/i.test(adaCard) || !/You are good/i.test(adaCard)) throw new Error(`Ada card: ${adaCard}`);
+  const drunkCard = await holdCard(dmitri.page, "10-pixel-drunk-sees-chef");
+  if (!/Chef/i.test(drunkCard) || /Drunk/i.test(drunkCard)) throw new Error(`Drunk card: ${drunkCard}`);
+  const baronCard = await holdCard(fen.page, "11-iphone-baron-evil");
+  if (!/Baron/i.test(baronCard) || !/You are evil/i.test(baronCard)) throw new Error(`Baron card: ${baronCard}`);
+  log("cards: Ada = Washerwoman (good), Dmitri (Drunk) = Chef, Fenwick = Baron (evil)");
+
+  // A grimoire fix does not reach the phone until Re-send.
+  await st.act("game:updatePlayer", { playerId: "p1", patch: { characterId: "investigator" } });
+  await panel.getByText("Grimoire now says Investigator").waitFor();
+  await panel.locator(".phone-seat", { has: stPage.locator(".phone-seat-head", { hasText: /^1\W+Ada/ }) }).scrollIntoViewIfNeeded();
+  await shot(stPage, "12-storyteller-stale-card");
+  if (!/Washerwoman/i.test(await holdCard(ada.page, "13-iphone-still-old-card"))) throw new Error("grimoire edit leaked live");
+  await panel.locator(".phone-seat", { has: stPage.locator(".phone-seat-head", { hasText: /^1\W+Ada/ }) }).getByRole("button", { name: "Re-send character" }).click();
+  await ada.page.getByText("Your card changed").waitFor();
+  await shot(ada.page, "14-iphone-card-changed");
+  if (!/Investigator/i.test(await holdCard(ada.page, "15-iphone-new-card"))) throw new Error("re-send did not arrive");
+
+  // Spectator.
+  const watcher = await phonePage(browser, "Pixel 7");
+  ctxs.push(watcher.ctx);
+  await watcher.page.goto(`${base}/play`);
+  await watcher.page.getByRole("button", { name: "Just watch" }).click();
+  await watcher.page.getByText("Watching").waitFor();
+  await watcher.page.getByText("The town").waitFor();
+  await shot(watcher.page, "16-pixel-spectator");
+
+  // Night: dark screen. Ada dies overnight; her phone says so only after the dawn announcement.
+  await st.act("game:startFirstNight");
+  await ada.page.locator(".play-night").waitFor();
+  await shot(ada.page, "17-iphone-night");
+  await st.act("game:goDawn");
+  await st.act("game:setDawnDeaths", { playerIds: ["p1"] });
+  await sleep(500);
+  if (await ada.page.getByText("You are dead").count()) throw new Error("death shown before the dawn announcement");
+  await st.act("game:announceDawnThenDay");
+  await ada.page.getByText("You are dead").waitFor();
+  await shot(ada.page, "18-iphone-dead");
+  await fen.page.getByRole("button", { name: "Town" }).click();
+  await fen.page.locator(".play-seats li.dead", { hasText: "Ada" }).waitFor();
+  await shot(fen.page, "19-iphone-town");
+  await until(() => st.st().phase === "day", "server reaches day", 30000);
+  try {
+    await tv.locator(".tv-join-badge").waitFor({ timeout: 8000 });
+  } catch (e) {
+    const probe = await tv.evaluate(() => ({
+      cls: document.querySelector(".tv")?.className,
+      badge: !!document.querySelector(".tv-join-badge"),
+      hero: document.querySelector(".tv-hero")?.textContent,
+    }));
+    log("TV probe", JSON.stringify(probe), "server phase", st.st().phase, "phoneJoin code", st.st().phones.joinCode);
+    throw e;
+  }
+  await sleep(1500);
+  await shot(tv, "20-tv-day-badge");
+  log("night screen, dead banner only after dawn announcement, town tab, TV day badge");
+
+  await Promise.all(ctxs.map((c) => c.close()));
+}
 
 async function phase1({ base, browser, st }) {
   const iphone = await browser.newContext({ ...devices["iPhone 13"] });
@@ -127,7 +293,7 @@ async function phase1({ base, browser, st }) {
   await until(() => st.st().phones.enabled, "phones on");
   await panel.getByText("Join code").waitFor();
   await shot(stPage, "03-storyteller-setting-on");
-  await a.getByText("Player phones are on").waitFor();
+  await a.getByText("Join the game").waitFor();
   await shot(a, "04-on-iphone");
   stPage.once("dialog", (d) => d.accept());
   await panel.getByRole("button", { name: /Player phones: on/ }).click();
@@ -136,7 +302,7 @@ async function phase1({ base, browser, st }) {
   await Promise.all([iphone.close(), pixel.close(), tablet.close()]);
 }
 
-const PHASES = { 1: phase1 };
+const PHASES = { 1: phase1, 2: phase2 };
 
 const port = await freePort();
 const dir = mkdtempSync(join(tmpdir(), "botc-phones-drive-"));

@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import type { ScriptData } from "./persistence.js";
+import { wakeCharacterId } from "./rules.js";
 import type {
   GameSession,
   PhoneClaim,
@@ -238,6 +239,81 @@ export function toPhonePanel(
     private: ph.private,
     spectators: live.spectators,
   };
+}
+
+/**
+ * What a player is told they are: the Drunk gets the Townsfolk they think they are (and good);
+ * a Traveller gets their character and the alignment the Storyteller chose for them.
+ */
+export function revealFor(
+  script: ScriptData,
+  p: GameSession["players"][number],
+): { characterId: string; alignment: "good" | "evil" } | { error: string } {
+  const shown = wakeCharacterId(p);
+  if (!shown) {
+    return {
+      error:
+        p.characterId === "drunk"
+          ? `${p.name} is the Drunk but has no "thinks they are" Townsfolk yet.`
+          : `${p.name} has no character yet.`,
+    };
+  }
+  if (p.isTraveller) return { characterId: shown, alignment: p.alignment ?? "good" };
+  const team = (script.characters.find((c) => c.id === shown) ?? script.travellers.find((c) => c.id === shown))?.team;
+  const alignment = teamAlignment(team);
+  if (!alignment) return { error: `${p.name}: unknown character ${shown}.` };
+  return { characterId: shown, alignment };
+}
+
+function storeReveal(s: GameSession, playerId: string, r: { characterId: string; alignment: "good" | "evil" }, now: number) {
+  const priv = privateFor(s, playerId);
+  priv.revealedCharacterId = r.characterId;
+  priv.revealedAlignment = r.alignment;
+  priv.revealedAt = now;
+}
+
+/**
+ * "Distribute characters": snapshot what every seated player is told. In the lobby it waits for a
+ * legal bag (no setup warning); every player needs a character, and the Drunk a believed Townsfolk.
+ */
+export function distributeCharacters(
+  s: GameSession,
+  script: ScriptData,
+  setupWarning: string | null,
+  now = Date.now(),
+): { ok: true; playerIds: string[] } | { ok: false; message: string } {
+  if (!s.phones.enabled) return { ok: false, message: "Player phones are off." };
+  if (s.phase === "lobby" && setupWarning) return { ok: false, message: `Fix the bag first: ${setupWarning}` };
+  const seated = s.players.filter((p) => !p.leftGame);
+  const reveals = seated.map((p) => ({ p, r: revealFor(script, p) }));
+  const problems = reveals.filter((x) => "error" in x.r).map((x) => (x.r as { error: string }).error);
+  if (problems.length) return { ok: false, message: problems.join(" ") };
+  for (const { p, r } of reveals) storeReveal(s, p.id, r as { characterId: string; alignment: "good" | "evil" }, now);
+  return { ok: true, playerIds: seated.map((p) => p.id) };
+}
+
+/** "Re-send": tell one player their current character (after a grimoire fix, a star-pass, a Scarlet Woman). */
+export function resendCharacter(
+  s: GameSession,
+  script: ScriptData,
+  playerId: string,
+  now = Date.now(),
+): { ok: true } | { ok: false; message: string } {
+  const p = s.players.find((x) => x.id === playerId && !x.leftGame);
+  if (!p) return { ok: false, message: "Pick a seat." };
+  const r = revealFor(script, p);
+  if ("error" in r) return { ok: false, message: r.error };
+  storeReveal(s, p.id, r, now);
+  return { ok: true };
+}
+
+/** The new-Demon wake ("You are the Demon") also updates that player's phone card, if it had one. */
+export function revealNewDemon(s: GameSession, script: ScriptData, playerId: string, now = Date.now()) {
+  if (!s.phones.private[playerId]?.revealedCharacterId) return;
+  const p = s.players.find((x) => x.id === playerId);
+  if (!p) return;
+  const r = revealFor(script, p);
+  if (!("error" in r)) storeReveal(s, playerId, r, now);
 }
 
 export type ClaimResult =

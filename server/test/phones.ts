@@ -8,8 +8,6 @@ import { player, projection, persistence, runCases, script, setup, type Case, ty
 
 const phones = await import("../src/phones.js");
 const undo = await import("../src/undo.js");
-const rules = await import("../src/rules.js");
-
 const NAMES = ["Ada", "Bo", "Cy", "Di", "Ed", "Flo", "Gus"];
 const ROLES = ["washerwoman", "empath", "fortuneteller", "drunk", "monk", "poisoner", "imp"];
 
@@ -32,9 +30,8 @@ function canaryGame(): Engine {
   });
   // What each phone was told: the Drunk believes they are the Chef.
   for (const p of e.session.players) {
-    const priv = phones.privateFor(e.session, p.id);
-    priv.revealedCharacterId = rules.wakeCharacterId(p);
-    priv.revealedAlignment = phones.teamAlignment(script.characters.find((c) => c.id === priv.revealedCharacterId)?.team);
+    const r = phones.resendCharacter(e.session, script, p.id);
+    if (!r.ok) throw new Error(`canary reveal ${p.id}: ${r.message}`);
   }
   return e;
 }
@@ -303,6 +300,72 @@ const cases: Case[] = [
       e.resetGame();
       if (e.session.phones.claims.length) return "claims kept without same table";
       return e.session.players[0]!.name === "Player 1" ? null : "names kept without same table";
+    },
+  },
+  {
+    name: "Distribute: refused while off, with a bad bag in the lobby, or a Drunk with no Townsfolk",
+    run: () => {
+      const e = setup(["washerwoman", "empath", "chef", "drunk", "saint", "baron", "imp"], { phase: "lobby" });
+      const warn = () => projection.setupWarning(e.session, script);
+      if (phones.distributeCharacters(e.session, script, warn()).ok) return "distributed while phones are off";
+      e.session.phones.enabled = true;
+      const noThinks = phones.distributeCharacters(e.session, script, warn());
+      if (noThinks.ok || !/Drunk/.test(noThinks.message)) return `drunk: ${JSON.stringify(noThinks)}`;
+      player(e, "p4").thinksCharacterId = "fortuneteller";
+      player(e, "p3").characterId = "imp";
+      const badBag = phones.distributeCharacters(e.session, script, warn());
+      if (badBag.ok || !/bag/.test(badBag.message)) return `bag: ${JSON.stringify(badBag)}`;
+      player(e, "p3").characterId = "chef";
+      const ok = phones.distributeCharacters(e.session, script, warn());
+      if (!ok.ok || ok.playerIds.length !== 7) return `ok: ${JSON.stringify(ok)}`;
+      const drunk = playerState(e, "p4")!.me;
+      if (drunk.character?.id !== "fortuneteller" || drunk.alignment !== "good") return `drunk card ${JSON.stringify(drunk)}`;
+      const imp = playerState(e, "p7")!.me;
+      return imp.character?.id === "imp" && imp.alignment === "evil" ? null : `imp card ${JSON.stringify(imp)}`;
+    },
+  },
+  {
+    name: "Grimoire edits after Distribute don't reach the phone until Re-send",
+    run: () => {
+      const e = canaryGame();
+      e.updatePlayer("p1", { characterId: "investigator" });
+      if (playerState(e, "p1")!.me.character?.id !== "washerwoman") return "setup edit leaked live";
+      const r = phones.resendCharacter(e.session, script, "p1");
+      if (!r.ok) return JSON.stringify(r);
+      return playerState(e, "p1")!.me.character?.id === "investigator" ? null : "re-send did not update";
+    },
+  },
+  {
+    name: "Star-pass: the new Imp's phone changes only at their 'You are the Imp' wake",
+    run: () => {
+      const e = canaryGame();
+      e.session.phase = "day";
+      e.session.dayNumber = 1;
+      e.startNight();
+      for (let i = 0; i < 40 && e.session.night!.steps[e.session.night!.stepIndex]?.id !== "char-imp"; i++) e.nightNext();
+      const r = e.otherDeath("p7", "Demon", { starPassTo: "p6" });
+      if (!r.ok || player(e, "p6").characterId !== "imp") return `star-pass failed ${JSON.stringify(r)}`;
+      if (playerState(e, "p6")!.me.character?.id !== "poisoner") return "star-pass reached the phone before the wake";
+      e.markNightStepDone();
+      const step = e.session.night!.steps[e.session.night!.stepIndex];
+      if (step?.id !== "new-demon-p6") return `next step ${step?.id}`;
+      e.markNightStepDone();
+      const me = playerState(e, "p6")!.me;
+      if (me.character?.id !== "imp" || me.alignment !== "evil") return `after wake: ${JSON.stringify(me.character)}`;
+      return leaksForAll(e);
+    },
+  },
+  {
+    name: "A Traveller's phone shows their character and their secret alignment, to them only",
+    run: () => {
+      const e = canaryGame();
+      e.addTraveller("Tess", "thief", { alignment: "evil" });
+      const t = e.session.players.find((p) => p.isTraveller)!;
+      if (!phones.resendCharacter(e.session, script, t.id).ok) return "re-send refused";
+      const me = playerState(e, t.id)!.me;
+      if (me.character?.id !== "thief" || me.alignment !== "evil") return JSON.stringify(me);
+      const other = JSON.stringify(playerState(e, "p1"));
+      return other.includes('"evil"') ? "another phone saw the Traveller's alignment" : null;
     },
   },
   {

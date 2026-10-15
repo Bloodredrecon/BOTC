@@ -7,17 +7,19 @@ import {
   clearClaims,
   createClaim,
   deviceLabel,
+  distributeCharacters,
   dropOrphanClaims,
   findClaimByToken,
   hashToken,
   randomCode,
   reassignClaim,
   removeClaim,
+  resendCharacter,
   toPhonePublic,
   toPlayerState,
   type ClaimChange,
 } from "./phones.js";
-import { toPublicState } from "./projection.js";
+import { setupWarning, toPublicState } from "./projection.js";
 import type { GameSession, PhoneClaim, PhoneStatus, PublicState } from "./types.js";
 
 /** Every /play socket (players and spectators) is in this room; player data only ever goes to `player:<id>`. */
@@ -418,6 +420,22 @@ export class PhoneHub {
         this.handovers.set(code, { playerId, expiresAt });
         this.engine.emitPrivate();
         return { ok: true, code, expiresAt };
+      },
+      "game:phoneDistribute": () => {
+        let ids: string[] = [];
+        const r = this.engine.mutatePrivate((s) => {
+          const out = distributeCharacters(s, this.script, setupWarning(s, this.script));
+          if (out.ok) ids = out.playerIds;
+          return out;
+        });
+        this.afterPrivate(ids);
+        return r.ok ? { ok: true, message: `Sent to ${ids.length} seats.` } : r;
+      },
+      "game:phoneResend": (d) => {
+        const playerId = String(d.playerId ?? "");
+        const r = this.engine.mutatePrivate((s) => resendCharacter(s, this.script, playerId));
+        if (r.ok) this.afterPrivate([playerId]);
+        return r;
       },
       "game:phoneRotateCode": () => {
         this.engine.mutate((s) => {

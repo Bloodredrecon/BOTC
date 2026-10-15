@@ -4,7 +4,7 @@ import { expandFirstAvailableVariants, expandSoundVariants, resolveSoundCueId } 
 import { buildNightSteps } from "./night.js";
 import type { ScriptData } from "./persistence.js";
 import { createEmptySession, normalizePlayer, saveSession } from "./persistence.js";
-import { phonesForNewGame, randomCode } from "./phones.js";
+import { phonesForNewGame, randomCode, revealNewDemon } from "./phones.js";
 import {
   canPlayerVote,
   majorityNeeded,
@@ -1131,6 +1131,10 @@ export class GameEngine {
     this.mutate((s) => {
       if (!s.night) return;
       const step = s.night.steps[s.night.stepIndex];
+      // The "You are the Demon" wake is how the new Demon learns: their phone card follows it, not the grimoire.
+      if (step?.id.startsWith("new-demon-") && !step.skipped) {
+        for (const id of step.playerIds) revealNewDemon(s, this.script, id);
+      }
       if (step?.id === "evil-traveller-info") {
         for (const id of step.playerIds) {
           const p = s.players.find((x) => x.id === id);

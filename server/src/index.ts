@@ -14,7 +14,7 @@ import {
 } from "./audio-library.js";
 import { GameEngine } from "./game.js";
 import { createHueDriver } from "./hue.js";
-import { formatJoinInfo } from "./join-info.js";
+import { formatJoinInfo, joinBaseUrls } from "./join-info.js";
 import {
   ActionLog,
   describeArgs,
@@ -76,6 +76,8 @@ if (controlToken) {
 app.get("/api/config/public", async () => ({
   scriptName: script.name,
   port: config.port,
+  // Where phones should go (the TV may itself be on localhost); null while player phones are off.
+  joinBase: engine.session.phones.enabled ? (joinBaseUrls(config.host, config.port).main[0] ?? null) : null,
 }));
 
 app.get("/api/audio/cues", async () => ({ cues: listAudioCues() }));

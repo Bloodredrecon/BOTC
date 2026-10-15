@@ -4,7 +4,7 @@ import type { AudioCueInfo, NightShowSpec, Player, StorytellerState, Team } from
 import { ConnectionBanners, ConnectionPills } from "./storyteller/ConnectionStatus";
 import { GrimoireCircle } from "./storyteller/GrimoireCircle";
 import { LogPanel } from "./storyteller/LogPanel";
-import { PhonesPanel } from "./storyteller/PhonesPanel";
+import { PendingClaimsBanner, PhonesPanel } from "./storyteller/PhonesPanel";
 import { RecapPanel } from "./storyteller/RecapPanel";
 import { SetupWizard } from "./storyteller/SetupWizard";
 import { UndoBar } from "./storyteller/UndoBar";
@@ -401,6 +401,7 @@ export function StorytellerPage() {
 
       <ConnectionBanners connected={connected} presence={presence} phase={state.phase} droppedAt={droppedAt} />
       <UndoBar undo={undo} emit={emit} />
+      <PendingClaimsBanner state={state} emit={emit} />
 
       {pinIsDefault && (
         <div className="panel pin-default-warning" role="alert">
@@ -495,6 +496,7 @@ function ControlTab({
   state: StorytellerState;
   emit: (e: string, d?: unknown) => void;
 }) {
+  const [sameTable, setSameTable] = useState(false);
   const activeMarks = state.players
     .filter((p) => !p.leftGame && p.reminders.length > 0)
     .map((p) => ({ name: p.name, reminders: p.reminders }));
@@ -649,10 +651,22 @@ function ControlTab({
             className="danger"
             type="button"
             onClick={() => {
-              if (confirm("Reset the whole game session?")) emit("game:reset");
+              const msg = sameTable
+                ? "New game with the same table? Names stay in their seats and linked phones stay linked."
+                : "Reset the whole game session?";
+              if (confirm(msg)) emit("game:reset", { sameTable });
             }}
           >
             New game
+          </button>
+          <button
+            type="button"
+            className={`chip ${sameTable ? "on" : ""}`}
+            aria-pressed={sameTable}
+            title="Keep names and seats (and linked phones) for the next game"
+            onClick={() => setSameTable((v) => !v)}
+          >
+            Same table
           </button>
         </div>
       </div>

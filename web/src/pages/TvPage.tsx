@@ -6,6 +6,7 @@ import { Atmosphere } from "./tv/Atmosphere";
 import { OakPlaque, PhaseWord, TvBrandLogo, TvLabel, TvScript } from "./tv/chrome";
 import "./tv/fonts";
 import { panelVisibility, townColumns } from "./tv/model";
+import { PhoneJoinBadge, PhoneJoinCard } from "./tv/join";
 import { MomentOverlay, useMoment } from "./tv/moments";
 import { CharacterSheet, DawnReveal, DayTag, Gazette, HeroPlaque, TimerBadge, TownBoard } from "./tv/panels";
 import { ExecutionStage, ExileStage, NominationStage, VoteStage } from "./tv/stages";
@@ -105,6 +106,8 @@ export function TvPage() {
   const showDawn = state.phase === "dawn" && state.dawnDeathsAnnounced;
   const showSheet = !!state.sheet && !drama;
   const showTimer = seconds !== null && !!state.timer;
+  const showJoinCard = !!state.phoneJoin && state.phase === "lobby" && !showSheet;
+  const showJoinBadge = !!state.phoneJoin && !drama && !showJoinCard && (state.phase === "day" || state.phase === "dusk");
   const plateKey = plateKeyForPhase(state.phase, state.winner, state.dayNumber);
   const plateLogo = plateHasLogo(plateKey);
 
@@ -156,6 +159,8 @@ export function TvPage() {
         {showExecution && <ExecutionStage name={nameOf(state.executionPendingId!)} />}
         {showExile && <ExileStage players={state.players} exile={state.exile!} nameOf={nameOf} />}
         {showSheet && <CharacterSheet state={state} />}
+        {showJoinCard && <PhoneJoinCard code={state.phoneJoin!.code} />}
+        {showJoinBadge && <PhoneJoinBadge code={state.phoneJoin!.code} />}
 
         <div className="tv-left">
           {showDawn && <DawnReveal deaths={dawnDeaths} />}

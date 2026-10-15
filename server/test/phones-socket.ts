@@ -277,6 +277,37 @@ const cases: AsyncCase[] = [
     },
   },
   {
+    name: "Distribute: each phone gets only its own card, the TV gets nothing; Re-send reaches one phone only",
+    run: async () => {
+      const roles: Record<string, string> = { p1: "washerwoman", p2: "empath", p3: "fortuneteller", p4: "monk", p6: "poisoner" };
+      const tvBefore = count(tv, "state:public");
+      const r = await act("game:phoneDistribute");
+      if (!r.ok) return `distribute ${JSON.stringify(r)}`;
+      type Card = PlayerSt & { me: { character: { id: string } | null; alignment: string | null } };
+      for (const [id, { rec }] of phonesBySeat) {
+        await until(() => last<Card>(rec, "state:player")?.me.character?.id === roles[id], `${id} card`);
+        const { sheet: _s, ...rest } = last<Card>(rec, "state:player")!;
+        const json = JSON.stringify(rest);
+        for (const [other, role] of Object.entries({ ...roles, p5: "chef", p7: "imp" })) {
+          if (other !== id && json.includes(`"${role}"`)) return `${id} payload mentions ${role}`;
+        }
+      }
+      if (last<Card>(phonesBySeat.get("p6")!.rec, "state:player")!.me.alignment !== "evil") return "poisoner not told evil";
+      if (count(tv, "state:public") !== tvBefore) return "TV got a state for a private reveal";
+      await act("game:updatePlayer", { playerId: "p1", patch: { characterId: "investigator" } });
+      await sleep(300);
+      const p1 = phonesBySeat.get("p1")!.rec;
+      if (last<Card>(p1, "state:player")!.me.character?.id !== "washerwoman") return "grimoire edit reached the phone live";
+      const p2 = phonesBySeat.get("p2")!.rec;
+      const p2Before = count(p2, "state:player");
+      const re = await act("game:phoneResend", { playerId: "p1" });
+      if (!re.ok) return `resend ${JSON.stringify(re)}`;
+      await until(() => last<Card>(p1, "state:player")?.me.character?.id === "investigator", "re-sent card");
+      await sleep(200);
+      return count(p2, "state:player") === p2Before ? null : "another phone got a state on someone else's re-send";
+    },
+  },
+  {
     name: "New game: 'same table' keeps phones bound by seat; a plain new game clears them",
     run: async () => {
       await act("game:reset", { sameTable: true });

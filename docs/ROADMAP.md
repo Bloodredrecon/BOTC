@@ -266,7 +266,7 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 - [x] Status: plan copied (Oct 15) to `docs/PLAYER_PHONES_PLAN.md` with a note of what changed since (PIN hardening done, line references moved, undo to account for).
 - [x] Decisions recorded (Oct 15) in section 6 of the plan: an opt-in "Player phones" setting (off by default, so the old way is the fallback); no phones at night; character always viewable behind hold-to-reveal; Storyteller approves claims; same-table re-binding; device-only notes; phone voting with real hands too; optional self-signed HTTPS; player → Storyteller messages only.
 - [x] Phase 1: plumbing and security (on/off setting, `player` role, token claims, `toPlayerState`, private emits, leak and socket tests). Done Oct 15; 216/216 tests.
-- [ ] Phase 2: join, claim, device panel, character reveal, spectator and dead views, same-table re-binding.
+- [x] Phase 2: join, claim, device panel, character reveal, spectator and dead views, same-table re-binding. Done Oct 15; 221/221 tests.
 - [ ] Phase 3: device-only notes, player → Storyteller messages.
 - [ ] Phase 4: phone voting with the clockwise sweep.
 - [ ] Phase 5: optional HTTPS.

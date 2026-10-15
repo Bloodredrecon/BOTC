@@ -1198,3 +1198,21 @@ code {
 .recap-section h3 { font-family: var(--font-display); font-size: 0.9rem; color: var(--brass); margin: 0.6rem 0 0.2rem; }
 .recap-section ul { margin: 0; padding-left: 1.1rem; }
 .recap-vote { list-style: none; margin-left: 0.6rem; color: var(--ink-dim); font-size: 0.9em; }
+
+/* ---- Player phones (Storyteller side) ---- */
+.phone-pending { border-color: var(--brass); }
+.phone-code-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.4rem; margin: 0.75rem 0 0.4rem; }
+.phone-code { font-family: var(--font-display); letter-spacing: 0.14em; font-size: 1.15rem; color: var(--bone); }
+.phone-sub { font-family: var(--font-display); font-size: 0.95rem; color: var(--brass); margin: 1rem 0 0.2rem; }
+.phone-seats { list-style: none; margin: 0.8rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
+.phone-seat { border: 1px solid rgba(196, 163, 90, 0.18); border-radius: 4px; padding: 0.5rem 0.6rem; }
+.phone-seat-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.3rem 0.8rem; }
+.phone-stale { margin: 0.35rem 0 0; }
+.phone-none { margin: 0.3rem 0; }
+.phone-claim-list { list-style: none; margin: 0.4rem 0; padding: 0; display: grid; gap: 0.35rem; }
+.phone-claim-list > li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.35rem 0.6rem; }
+.phone-claim.pending .phone-claim-what { color: var(--brass); }
+.phone-claim-actions select { width: auto; }
+.phone-dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--muted); margin-right: 0.4rem; vertical-align: middle; }
+.phone-dot.on { background: var(--good); box-shadow: 0 0 6px var(--good); }
+.phone-handover { margin: 0.4rem 0 0; }

@@ -34,6 +34,16 @@ Players can use their own phones for private things, but the game never depends 
 - **Switching on mid-game works too.**
 - **Default for new sessions:** `"playerPhones": true` in `config/local.json` (or `BOTC_PHONES=1`). A saved game keeps its own setting.
 
+**At the table, with phones on:**
+
+1. The TV lobby shows a QR code, the `/play` address and a 4-letter code (by day a small "Phones · /play" badge keeps the code on screen for late arrivals).
+2. Each player scans it, picks their seat and confirms. The Storyteller page shows "Phones asking for a seat" above the tabs: **Approve** or **Deny** each one.
+3. On the **Setup** tab, **Send characters to phones** gives each player what they should believe: the Drunk sees their Townsfolk, Travellers see their secret alignment. Players hold the card to see it; it hides when they let go.
+4. Later grimoire changes do **not** reach a phone by themselves. The device panel flags "Grimoire now says …" and you press **Re-send character**. The new-Demon wake ("You are the Imp") updates that player's phone when you mark it done.
+5. At night phones go to a dark "eyes closed" screen. A dead player's phone says so only after the dawn announcement, with their ghost vote.
+6. The device panel can also move a phone to another seat, unlink it, give a one-time **hand-over code** for a new phone, close seat claims, show a new code and unlink everyone. Friends who just want to follow along tap **Just watch** on `/play`.
+7. **New game** with **Same table** ticked (Control tab) keeps names in their seats and every linked phone stays linked.
+
 The design, the security model and what is built so far are in [docs/PLAYER_PHONES_PLAN.md](docs/PLAYER_PHONES_PLAN.md).
 
 ## Requirements
