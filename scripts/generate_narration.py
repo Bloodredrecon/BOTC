@@ -35,8 +35,35 @@ FFMPEG = None
 FFPROBE = None
 
 SKIP = {"intro.mp3"}  # skip in full batch unless --force / explicit cue
-# rules_full is stitched from modular rules_* at the end
+# rules_full / rules_quick are stitched from modular rules_* at the end (no TTS)
 STITCH_RULES_FULL = True
+RULES_STITCHES = {
+    "rules_full.mp3": [
+        "rules_overview.mp3",
+        "rules_teams.mp3",
+        "rules_setup.mp3",
+        "rules_night.mp3",
+        "rules_day.mp3",
+        "rules_execution.mp3",
+        "rules_death.mp3",
+        "rules_abilities.mp3",
+        "rules_win.mp3",
+        "rules_travellers.mp3",
+        "rules_etiquette.mp3",
+    ],
+    # ~8 min: no Abilities (the character sheet covers it) and no Travellers (play it when one arrives)
+    "rules_quick.mp3": [
+        "rules_overview.mp3",
+        "rules_teams.mp3",
+        "rules_setup.mp3",
+        "rules_night.mp3",
+        "rules_day.mp3",
+        "rules_execution.mp3",
+        "rules_death.mp3",
+        "rules_win.mp3",
+        "rules_etiquette.mp3",
+    ],
+}
 
 # Default layer gains (relative; final loudnorm still applied)
 VOICE_VOL = 1.22  # was 1.05 — keep narration clear over beds
@@ -508,7 +535,7 @@ def process_cue(
         return f"skip {cue.filename} (kept)"
     if skip_existing and out_path.exists() and out_path.stat().st_size > 1000 and not force and not remix_only:
         return f"skip {cue.filename} (exists)"
-    if cue.filename == "rules_full.mp3":
+    if cue.filename in RULES_STITCHES:
         return f"defer {cue.filename}"
 
     stem_dir = WORK / cue.filename.replace(".mp3", "")
@@ -619,32 +646,20 @@ def process_cue(
     return f"mixed{mode_note} {cue.filename}"
 
 
-def stitch_rules_full() -> None:
-    order = [
-        "rules_overview.mp3",
-        "rules_teams.mp3",
-        "rules_setup.mp3",
-        "rules_night.mp3",
-        "rules_day.mp3",
-        "rules_execution.mp3",
-        "rules_death.mp3",
-        "rules_abilities.mp3",
-        "rules_win.mp3",
-        "rules_travellers.mp3",
-        "rules_etiquette.mp3",
-    ]
+def stitch_rules(name: str) -> None:
+    order = RULES_STITCHES[name]
     missing = [f for f in order if not (OUT_DIR / f).exists()]
     if missing:
-        print("rules_full skipped, missing:", missing)
+        print(f"{name} skipped, missing:", missing)
         return
-    list_path = WORK / "rules_concat.txt"
+    list_path = WORK / f"{name.replace('.mp3', '')}_concat.txt"
     lines = []
     for f in order:
         # ffmpeg concat needs forward slashes or escaped
         p = (OUT_DIR / f).as_posix().replace("'", r"'\''")
         lines.append(f"file '{p}'")
     list_path.write_text("\n".join(lines), encoding="utf-8")
-    out = OUT_DIR / "rules_full.mp3"
+    out = OUT_DIR / name
     cmd = [FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(list_path), "-c", "copy", str(out)]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
@@ -653,19 +668,29 @@ def stitch_rules_full() -> None:
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError(r.stderr[-600:])
-    print(f"stitched rules_full.mp3 ({out.stat().st_size} bytes)")
+    print(f"stitched {name} ({out.stat().st_size} bytes, {duration(out):.1f}s)")
 
 
 def main() -> None:
     global FFMPEG, FFPROBE
     FFMPEG, FFPROBE = find_ffmpeg()
-    key = api_key()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     WORK.mkdir(parents=True, exist_ok=True)
 
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = {a for a in sys.argv[1:] if a.startswith("--")}
+
+    # --stitch-only [rules_quick.mp3 ...]: re-join the recorded chapters with ffmpeg; no API key, no TTS.
+    if "--stitch-only" in flags:
+        names = [a if a.endswith(".mp3") else f"{a}.mp3" for a in args] or list(RULES_STITCHES)
+        for name in names:
+            if name not in RULES_STITCHES:
+                raise SystemExit(f"not a stitch target: {name} (one of {', '.join(RULES_STITCHES)})")
+            stitch_rules(name)
+        return
+
+    key = api_key()
     force = "--force" in flags
     skip_existing = "--skip-existing" in flags or "--only-missing" in flags
     variants_only = "--variants" in flags
@@ -714,18 +739,19 @@ def main() -> None:
             # continue batch
             time.sleep(1)
 
-    want_stitch = (
-        STITCH_RULES_FULL
-        and not variants_only
-        and not preview
-        and (not only or "rules_full.mp3" in (only or set()))
-    )
-    if want_stitch:
-        try:
-            stitch_rules_full()
-        except Exception as e:
-            print("rules_full stitch failed:", e)
-            err += 1
+    for name in RULES_STITCHES:
+        want_stitch = (
+            STITCH_RULES_FULL
+            and not variants_only
+            and not preview
+            and (not only or name in only or name.replace(".mp3", "") in only)
+        )
+        if want_stitch:
+            try:
+                stitch_rules(name)
+            except Exception as e:
+                print(f"{name} stitch failed:", e)
+                err += 1
 
     print(f"Done. ok={ok} err={err}")
     # summary

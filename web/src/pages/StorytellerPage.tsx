@@ -2533,8 +2533,10 @@ function RulesTab({
   emit: (e: string, d?: unknown) => void;
 }) {
   const rules = state.audioCues.filter((c) => c.group === "rules");
-  const full = rules.find((c) => c.file.replace(/\.[^.]+$/, "") === "rules_full");
-  const chapters = rules.filter((c) => c.file.replace(/\.[^.]+$/, "") !== "rules_full");
+  const base = (c: (typeof rules)[number]) => c.file.replace(/\.[^.]+$/, "");
+  const full = rules.find((c) => base(c) === "rules_full");
+  const quick = rules.find((c) => base(c) === "rules_quick");
+  const chapters = rules.filter((c) => base(c) !== "rules_full" && base(c) !== "rules_quick");
 
   return (
     <div className="stack">
@@ -2581,7 +2583,8 @@ function RulesTab({
         <h2>Rules teach</h2>
         <p className="muted">
           Play for the town before secrets are dealt. TV must have sound enabled. Use Stop beds if a
-          bed is looping underneath.
+          bed is looping underneath. Quick rules leaves out Abilities (the character sheet covers
+          them) and Travellers (play that chapter when one arrives).
         </p>
         <div className="row">
           {full && (
@@ -2591,6 +2594,11 @@ function RulesTab({
               onClick={() => emit("game:playSound", { cueId: full.id })}
             >
               Play full rules
+            </button>
+          )}
+          {quick && (
+            <button type="button" onClick={() => emit("game:playSound", { cueId: quick.id })}>
+              Play quick rules (~8 min)
             </button>
           )}
           <button type="button" onClick={() => emit("game:playSound", { cueId: "hush" })}>

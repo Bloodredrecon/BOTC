@@ -83,6 +83,7 @@ const CATALOG: Record<string, CatalogEntry> = {
   public_shot_false: { label: "Shot misses", group: "guests" },
 
   rules_full: { label: "Full rules (all)", group: "rules", subgroup: "Play all" },
+  rules_quick: { label: "Quick rules (~8 min)", group: "rules", subgroup: "Play all" },
   rules_overview: { label: "1. Overview", group: "rules", subgroup: "Chapters" },
   rules_teams: { label: "2. Teams", group: "rules", subgroup: "Chapters" },
   rules_setup: { label: "3. Setup", group: "rules", subgroup: "Chapters" },

@@ -575,6 +575,11 @@ When the game ends… leave the blood on the cobblestones — not on each other.
 [Record by reading, in order: overview → teams → setup → night → day → execution → death → abilities → win → travellers → etiquette.  
 Or stitch the modular files. Do not invent new rules mid-take.]
 
+### `rules_quick.mp3` *(stitched — ~8 min, no new recording)*
+[Stitched from the recorded chapters, same join as `rules_full`: overview → teams → setup → night → day → execution → death → win → etiquette (474.7 s).]  
+[Leaves out abilities (the character sheet covers them) and travellers (play `rules_travellers` when one arrives).]  
+[Rebuild: `python scripts/generate_narration.py --stitch-only rules_quick.mp3` (ffmpeg only, no API key).]
+
 ---
 
 ## D. Delivery tips for AI voice + sound tools

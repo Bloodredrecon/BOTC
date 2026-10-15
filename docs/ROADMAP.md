@@ -197,7 +197,13 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 7. Rules narration length
 
-- [x] Status: proposal written (Oct 15). No audio was changed; the user picks an option below.
+- [x] Status: done (Oct 15) with **option A** (the user's choice). No new recording; `rules_full.mp3` unchanged.
+
+**Done.**
+- `data/audio/rules_quick.mp3`: 474.7 s (7:55), 192 kbps, made with the same ffmpeg stream-copy join as `rules_full.mp3` (no gaps or loudness change) from Overview, Teams, Setup, Night, Day, Execution, The dead, Winning, Etiquette. Like all audio it is gitignored, so it stays on this PC.
+- `scripts/generate_narration.py`: `RULES_STITCHES` lists both stitched tracks; `python scripts/generate_narration.py --stitch-only rules_quick.mp3` rebuilds it with ffmpeg only (no API key, no TTS). A full batch run now re-stitches both.
+- Cue `rules_quick` "Quick rules (~8 min)" in `server/src/audio-library.ts` (Rules teach group, "Play all"); Storyteller **Rules** tab has a **Play quick rules (~8 min)** button under Play full rules, and the quick track is kept out of the chapter list. Entry added to `docs/NARRATION_SCRIPT.md` section C (parsed as a stitch, never sent to TTS).
+- Live check (port 3920, temp session): `/custom-audio/rules_quick.mp3` 200 `audio/mpeg` 11,393,324 bytes, range requests 206; the button made the TV play `rules_quick.mp3`; no console errors. Screenshot: `docs/tv-design/_verify/item7-quick-rules/`. 193/193 tests pass.
 
 **Measured** (exact MP3 frame count, all 48 kHz 192 kbps; words and pauses counted from `docs/NARRATION_SCRIPT.md` section C):
 
@@ -233,7 +239,7 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 **Option C - Only drop Travellers from `rules_full.mp3`.** Change the stitch order and re-stitch: **606 s (10.1 min)**. No new voice, but still over the target.
 
-**Recommendation.** A first (free, keeps the current recordings), with Travellers played only when needed; B later if the full teach must hit 8-9 min. **Decision needed:** which option, and permission to create audio (A or C: an ffmpeg join of existing files; B: new voice recordings).
+**Recommendation.** A first (free, keeps the current recordings), with Travellers played only when needed; B later if the full teach must hit 8-9 min. **Decision (Oct 15):** option A.
 
 **Goal.** A rules explanation that fits the target (8-9 min) or a short "quick rules" option.
 
@@ -268,5 +274,5 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 - **Storyteller PIN is still the default `1234`.** The launcher, the pre-game check and the Storyteller page now warn. Change it with `BOTC.bat` → Settings (or `BOTC.bat set -Pin ...`).
 - **More scripts (item 8):** the 10 questions at the end of `docs/SCRIPTS_PLAN.md` (first script, automation level, custom imports, icons, official text in the public repo, repo visibility, Travellers, madness, narration, jinxes).
 - **Player phones (item 9):** the 12 questions in section 6 of `docs/PLAYER_PHONES_PLAN.md`.
-- **Rules narration length (item 7):** pick option A, B or C, and allow creating audio (A/C: join existing files with ffmpeg; B: new ElevenLabs voice for 6 chapters).
-- **Port 3847 is held by another program.** `BOTC.bat check` (Oct 15) found 127.0.0.1:3847 owned by `Cursor.exe` (a utility process started 14:32 that day) answering "BeatLock WLED bridge". I did not test whether BOTC can still bind `0.0.0.0:3847` alongside it (to avoid disturbing it), but at best `localhost:3847` on this PC would reach BeatLock instead of BOTC. Either move BeatLock to another port or change BOTC's port (`BOTC.bat set -Port 3900`). Left untouched.
+- ~~Rules narration length (item 7)~~: decided Oct 15, option A (done).
+- **Port 3847 is held by another program.** `BOTC.bat check` (Oct 15) found 127.0.0.1:3847 owned by `Cursor.exe` (a utility process started 14:32 that day) answering "BeatLock WLED bridge". I did not test whether BOTC can still bind `0.0.0.0:3847` alongside it (to avoid disturbing it), but at best `localhost:3847` on this PC would reach BeatLock instead of BOTC. Either move BeatLock to another port or change BOTC's port (`BOTC.bat set -Port 3900`). **Decided Oct 15:** BOTC keeps 3847; the user will move or close BeatLock.
