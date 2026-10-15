@@ -1,6 +1,6 @@
 ﻿# Plan: player phones (private character reveal, night info, notes, optional phone voting)
 
-Status: **plan only, not built.** Waiting for answers to the 12 questions in section 6.
+Status: **decided Oct 15, being built phase by phase** (see section 6 for the decisions and the revised phases; progress is ticked in `docs/ROADMAP.md` item 9).
 
 Copied unchanged from the completed planning session of Oct 12. Since then:
 - **Line references are from the Oct 12 code** (before roadmap items 1-6) and many have moved; re-check them before building.
@@ -327,7 +327,38 @@ type PlayerPrivate = {
   - Simulate drops with `context.setOffline()`.
 - **Real devices:** at least one iPhone (Safari) and one Android. Emulation won't reproduce iOS suspending sockets in the background or the screen auto-locking. Also do a table noise and brightness check at night.
 
-## 6. Questions to answer before building
+## 6. Decisions (Oct 15) and the original questions
+
+The user answered the questions on Oct 15. These decisions override anything above that disagrees with them.
+
+| # | Question | Decision | Effect on the plan |
+|---|---|---|---|
+| 0 | (added) Can we fall back to the old way? | **Player phones are one opt-in setting, off by default**, stored in the session and switched on the Storyteller's Setup tab (default for new games: `playerPhones` in `config/local.json`, also in `BOTC.bat` Settings). | When off, the app behaves exactly as before: no join QR/code on the TV, `/play` says phones are off, player sockets get nothing private and claims are refused, no device panel, physical tokens, manual voting. Switching off mid-game sends phones a "phones turned off" screen and unbinds them from private data; claims are kept (switching back on re-links them) unless the Storyteller clears them; a running phone-vote sweep stops and hands already locked stay counted. Switching on mid-game works too. Finer fallbacks stay: seats without a connected phone vote manually, and a voting-only "Phones off" switch. |
+| 1 | Phones at night? | **No.** Night stays hold-up. | Phones show a dark "eyes closed" screen at night and nothing else. Night cards, night choices, `buildNightCard` and the night-card tests are dropped. Questions 3, 8, 9 and 12 become moot. |
+| 2 | Re-peeking your character | **Always viewable**, behind hold-to-reveal. | The user accepts the "show your phone as proof" trade-off. The card hides on release or after 5 seconds. |
+| 3 | Night journal | Hide at dawn. | Moot while there are no night cards; recorded for later. |
+| 4 | Seat claims | **Storyteller approves** each claim. | No auto-approve mode. |
+| 5 | New game, same group | **Keep phone bindings by seat** when the Storyteller ticks "same table"; otherwise claims clear. | Same-table also keeps the seat names. |
+| 6 | Notes | **Device only** (`localStorage`, keyed by game id and seat), with export/import. | Nothing about notes reaches the server. |
+| 7 | Phone voting | **Yes, and people still raise real hands too.** | Phone hands feed a server-timed clockwise sweep matching the TV studs; Storyteller can pause, go back and override; seats without a connected phone are manual; a "Phones off" switch returns voting to fully manual. |
+| 8 | Hold-up fallback at night | Moot (night is hold-up only). | |
+| 9 | Spy grimoire on the phone | Moot (hold-up only). | |
+| 10 | HTTPS | **Optional self-signed HTTPS mode**, plain HTTP stays the default. | Launcher option enables it and generates the certificate; join URLs and QR codes follow the active scheme; phones use Wake Lock when it is available. Each device shows the certificate warning once. |
+| 11 | Messaging | **Players → Storyteller only** (questions, "request a word"); the Storyteller can reply. | No player-to-player chat. Phones can't send at night (night screen only). |
+| 12 | Sound and vibration at night | Moot (no night cards). | Phones stay silent. |
+
+**Revised phases** (each one: tests, typecheck, build, live multi-client check, commit and push before the next):
+1. Plumbing and security, including the on/off setting.
+2. Join, claim with approval, device panel, character reveal, spectator view, dead view, same-table re-binding.
+3. Device-only notes and player → Storyteller messaging.
+4. Phone voting with the clockwise sweep.
+5. Optional HTTPS.
+
+**Rules decided while building** (recorded here so later phases keep them):
+- **Undo never touches phone data.** Claims, revealed characters and messages are kept as they are when the Storyteller undoes a game action (`KEEP_ON_UNDO` in `server/src/undo.ts`), because a phone can't un-see what it was shown. Phone actions are not undoable themselves.
+- **The claim token is issued when the claim is made** (still pending), not on approval, so a phone that refreshes while waiting stays in the queue. A pending token gives no private data.
+
+### Original questions
 
 1. **Phones at night at all?** Or keep the night as hold-up only, with phones just for the reveal, notes and messages?
 2. **Re-peeking your character:** always, until the first dawn, or once only? (This is the proof-by-phone issue.)
@@ -341,3 +372,16 @@ type PlayerPrivate = {
 10. **Plain HTTP:** is no Wake Lock (screens will lock) acceptable, or do you want a self-signed HTTPS option with its certificate warning?
 11. **Messaging:** only player → Storyteller (recommended), or nothing?
 12. **Sound and vibration:** confirm silent by default, with no per-player override at night.
+
+## 7. Build progress
+
+### Phase 1: plumbing and security (done Oct 15)
+
+- **Setting:** `GameSession.phones.enabled` (off by default; `playerPhones` in config or `BOTC_PHONES` sets the default for a session that has none). Toggle: Storyteller Setup tab, `game:setPhones`. Off: `phoneJoin` is null in the public state, phones only receive `player:status {status:"off"}`, `player:lookup` / `player:claim` / `player:handover` are refused, and nothing is stored.
+- **Server:** `server/src/phones.ts` (pure: tokens, claims, `toPhonePublic` / `toPlayerState` allowlists, Storyteller panel, same-table re-binding) and `server/src/phone-hub.ts` (sockets: `join {role:"player", token}` / `{role:"spectator"}`, the `player:*` handler map, per-player rooms `player:<id>`, a reconcile step that re-checks every phone after each change, the Storyteller's `game:phone*` actions).
+- **Identity:** the server takes the player from the socket's verified token (`socket.data.tokenHash` → claim); `player:*` payloads never name the player. Tokens are 24 random bytes; only the SHA-256 is saved. Claims wait for the Storyteller's approval; a pending phone gets its status but no state.
+- **Private emits:** `engine.mutatePrivate` / `emitPrivate` send only to the Storyteller and the listed players' rooms with the current `seq` (no bump, nothing to the TV).
+- **Undo** keeps `phones` and `gameId` as they are (`KEEP_ON_UNDO`); `game:phone*` and `game:setPhones` are never undoable.
+- **New game:** `game:reset {sameTable}` keeps names and re-binds claims by seat position; otherwise claims clear. Phones whose claim went away are told why (`denied` / `revoked` / `replaced` / `cleared`).
+- **Tests:** `server/test/phones.ts` (12, including the canary leak test across lobby → first night → dawn → day → dusk → nomination → vote → night, and a self-check that the canary catches injected leaks) and `server/test/phones-socket.ts` (11: Storyteller + TV + 5 phones + spectator against the real server: off-by-default, isolation, no seq bump on private changes, impersonation, reconnect, revoke, off mid-game and back on, hand-over, new game re-binding, join-code throttling). Total 216/216.
+- **Headless check:** `node scripts/phones_drive.mjs 1` (own server on a spare port, temp session, system Edge via `playwright-core`).

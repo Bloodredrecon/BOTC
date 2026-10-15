@@ -1,0 +1,50 @@
+/* /play — players' phones. Mobile-first; same palette and fonts as the Storyteller page and TV. */
+.play {
+  min-height: 100dvh;
+  padding: max(0.9rem, env(safe-area-inset-top)) 0.9rem max(1.2rem, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(ellipse at 50% -10%, rgba(139, 21, 24, 0.28), transparent 60%),
+    var(--bg-void);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 1.12rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.play-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem 1.05rem;
+  box-shadow: var(--shadow);
+}
+
+.play-center {
+  margin: auto 0;
+  text-align: center;
+}
+
+.play-brand {
+  font-family: var(--font-brand);
+  color: var(--blood-bright);
+  font-size: 1.45rem;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+.play-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  letter-spacing: 0.06em;
+  margin: 0.4rem 0 0.6rem;
+  color: var(--bone);
+}
+
+.play-muted {
+  color: var(--ink-dim);
+  margin: 0.4rem 0;
+  line-height: 1.35;
+}

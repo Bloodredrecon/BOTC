@@ -261,11 +261,17 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ---
 
-## 9. Player phones - plan only
+## 9. Player phones
 
-- [x] Status: plan copied (Oct 15) to `docs/PLAYER_PHONES_PLAN.md` with a note of what changed since (PIN hardening done, line references moved, undo to account for). Not built. Its 12 design questions (section 6) must be answered first: phones at night at all; re-peeking your character (the proof-by-phone problem); night-info journal after dawn; seat-claim approval; re-binding phones on a new game; where notes are stored; phone voting; hold-up fallback; Spy grimoire on the phone; plain HTTP without Wake Lock vs self-signed HTTPS; messaging; silent by default.
+- [x] Status: plan copied (Oct 15) to `docs/PLAYER_PHONES_PLAN.md` with a note of what changed since (PIN hardening done, line references moved, undo to account for).
+- [x] Decisions recorded (Oct 15) in section 6 of the plan: an opt-in "Player phones" setting (off by default, so the old way is the fallback); no phones at night; character always viewable behind hold-to-reveal; Storyteller approves claims; same-table re-binding; device-only notes; phone voting with real hands too; optional self-signed HTTPS; player → Storyteller messages only.
+- [x] Phase 1: plumbing and security (on/off setting, `player` role, token claims, `toPlayerState`, private emits, leak and socket tests). Done Oct 15; 216/216 tests.
+- [ ] Phase 2: join, claim, device panel, character reveal, spectator and dead views, same-table re-binding.
+- [ ] Phase 3: device-only notes, player → Storyteller messages.
+- [ ] Phase 4: phone voting with the clockwise sweep.
+- [ ] Phase 5: optional HTTPS.
 
-**Goal.** Copy the completed plan into `docs/PLAYER_PHONES_PLAN.md`. Do not build. List the design questions that must be answered first.
+**Goal.** Private character reveal, notes, messages and phone voting on players' own phones, without weakening what the TV and the town can see, and with the existing physical/manual way as the default.
 
 ---
 
@@ -273,6 +279,6 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 - **Storyteller PIN is still the default `1234`.** The launcher, the pre-game check and the Storyteller page now warn. Change it with `BOTC.bat` → Settings (or `BOTC.bat set -Pin ...`).
 - **More scripts (item 8):** the 10 questions at the end of `docs/SCRIPTS_PLAN.md` (first script, automation level, custom imports, icons, official text in the public repo, repo visibility, Travellers, madness, narration, jinxes).
-- **Player phones (item 9):** the 12 questions in section 6 of `docs/PLAYER_PHONES_PLAN.md`.
+- ~~Player phones (item 9)~~: decided Oct 15 (section 6 of `docs/PLAYER_PHONES_PLAN.md`); being built.
 - ~~Rules narration length (item 7)~~: decided Oct 15, option A (done).
 - **Port 3847 is held by another program.** `BOTC.bat check` (Oct 15) found 127.0.0.1:3847 owned by `Cursor.exe` (a utility process started 14:32 that day) answering "BeatLock WLED bridge". I did not test whether BOTC can still bind `0.0.0.0:3847` alongside it (to avoid disturbing it), but at best `localhost:3847` on this PC would reach BeatLock instead of BOTC. Either move BeatLock to another port or change BOTC's port (`BOTC.bat set -Port 3900`). **Decided Oct 15:** BOTC keeps 3847; the user will move or close BeatLock.

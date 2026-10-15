@@ -14,8 +14,16 @@ export const NOT_UNDOABLE = new Set([
   "game:clearStNotices",
 ]);
 
-/** Session fields an undo keeps as they are now (connection flags, the sound mix). */
-const KEEP_ON_UNDO = ["ambiance", "tvConnected", "storytellerConnected"] as const;
+/** Player-phone actions: devices and what phones were shown are never rolled back. */
+export function isPhoneAction(action: string): boolean {
+  return /^game:phone[A-Z]/.test(action) || action === "game:setPhones";
+}
+
+/**
+ * Session fields an undo keeps as they are now (connection flags, the sound mix, player phones:
+ * claims, what a phone was shown and messages can't be taken back).
+ */
+const KEEP_ON_UNDO = ["ambiance", "tvConnected", "storytellerConnected", "gameId", "phones"] as const;
 
 export type UndoEntry = {
   action: string;

@@ -26,6 +26,16 @@ TV:
 - Short full-screen moments for a Slayer shot (aim, then hit or miss in time with the sound), a Virgin execution and the Demon slain. While the shot sound plays, the town board and Gazette are hidden so they don't give the result away. A TV that joins late does not replay old moments.
 - At game end the characters are revealed seat by seat.
 
+## Player phones (optional, off by default)
+
+Players can use their own phones for private things, but the game never depends on it. **Player phones** is one setting on the Storyteller's **Setup** tab, off by default. While it's off the app works exactly as before: no join code on the TV, `/play` just says phones are off, phones get nothing, characters go out as physical tokens and the Storyteller taps the votes.
+
+- **Switching off mid-game is safe.** Connected phones show "phones turned off" and stop getting anything private. Their seats are remembered, so switching back on re-links them (the Storyteller can also clear them).
+- **Switching on mid-game works too.**
+- **Default for new sessions:** `"playerPhones": true` in `config/local.json` (or `BOTC_PHONES=1`). A saved game keeps its own setting.
+
+The design, the security model and what is built so far are in [docs/PLAYER_PHONES_PLAN.md](docs/PLAYER_PHONES_PLAN.md).
+
 ## Requirements
 
 - Node.js 20+
@@ -63,7 +73,7 @@ See also [docs/HUE.md](docs/HUE.md) and [docs/AUDIO.md](docs/AUDIO.md).
 
 Settings are layered. The highest one wins:
 
-1. Environment variables: `BOTC_PORT` or `PORT`, `BOTC_HOST` or `HOST`, `BOTC_PIN`
+1. Environment variables: `BOTC_PORT` or `PORT`, `BOTC_HOST` or `HOST`, `BOTC_PIN`, `BOTC_PHONES`
 2. `config/local.json`: your machine's overrides, written by the launcher's Settings menu (gitignored)
 3. `config/default.json`: shipped defaults (port `3847`, host `0.0.0.0`, PIN `1234`)
 
@@ -117,6 +127,7 @@ Trouble Brewing ships in `data/scripts/trouble-brewing.json`. Folders are ready 
 ## Privacy
 
 - `/tv` is public on your LAN (alive/dead, votes, log — no characters)
+- `/play` (only while player phones are on) gives each approved phone the public view plus its own private data, nothing about other players. A seat token is stored on the phone; the server keeps only its SHA-256 hash. Wrong join codes are throttled per device
 - `/storyteller` requires the PIN; keep it off guest devices
 - Wrong PINs are throttled per device: after 5 misses it locks for 5 s, doubling per further miss (max 5 min)
 

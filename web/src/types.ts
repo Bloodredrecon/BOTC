@@ -298,6 +298,8 @@ export type PublicState = {
     threshold: number;
   } | null;
   sheet: PublicSheet | null;
+  /** Null unless player phones are on and claims are open. */
+  phoneJoin: { code: string } | null;
 };
 
 export type DayAbilityTip = {
@@ -386,7 +388,91 @@ export type StorytellerState = Omit<PublicState, "players"> & {
   stNotices: { id: string; message: string; at: number }[];
   audioCues: AudioCueInfo[];
   ambianceCatalog: AmbianceLayerDef[];
+  phones: PhonePanel;
 };
+
+export type PhoneMessage = {
+  id: string;
+  from: "player" | "storyteller";
+  kind: "question" | "word" | "reply";
+  text: string;
+  at: number;
+};
+
+export type PhonePrivate = {
+  revealedCharacterId: string | null;
+  revealedAlignment: Alignment | null;
+  revealedAt: number | null;
+  messages: PhoneMessage[];
+  unreadByStoryteller: number;
+};
+
+export type PhoneClaimInfo = {
+  id: string;
+  playerId: string;
+  deviceLabel: string;
+  status: "pending" | "active";
+  claimedAt: number;
+  lastSeenAt: number;
+  connected: number;
+};
+
+export type PhonePanel = {
+  enabled: boolean;
+  joinCode: string;
+  claimsOpen: boolean;
+  voting: "phones" | "manual";
+  sweepMsPerSeat: number;
+  claims: PhoneClaimInfo[];
+  private: Record<string, PhonePrivate>;
+  spectators: number;
+};
+
+/** What a phone or spectator sees of the town (an allowlist of PublicState). */
+export type PhonePublic = Pick<
+  PublicState,
+  | "scriptName"
+  | "phase"
+  | "dayNumber"
+  | "seq"
+  | "players"
+  | "fabled"
+  | "publicLog"
+  | "timer"
+  | "nomination"
+  | "dawnDeathIds"
+  | "dawnDeathsAnnounced"
+  | "executionPendingId"
+  | "nominationsToday"
+  | "block"
+  | "nominationsOpen"
+  | "winner"
+  | "winReason"
+  | "reveal"
+  | "exile"
+> & { gameId: string; sheet: PublicSheet };
+
+export type PhoneMe = {
+  playerId: string;
+  seat: number;
+  name: string;
+  alive: boolean;
+  usedGhostVote: boolean;
+  isTraveller: boolean;
+  character: { id: string; name: string; team: Team; ability: string } | null;
+  alignment: Alignment | null;
+  revealedAt: number | null;
+  messages: PhoneMessage[];
+};
+
+export type PlayerState = PhonePublic & { me: PhoneMe };
+
+export type PhoneStatus =
+  | { status: "off" }
+  | { status: "watching" }
+  | { status: "unclaimed"; reason: "unknown" | "denied" | "revoked" | "replaced" | "cleared" | null }
+  | { status: "pending"; playerId: string; seat: number; name: string }
+  | { status: "active"; playerId: string };
 
 /** A proposed deal from the setup wizard (server/src/setup-wizard.ts). */
 export type Deal = {

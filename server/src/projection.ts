@@ -3,6 +3,7 @@ import { listAudioCues } from "./audio-library.js";
 import { dayAbilityTips } from "./night.js";
 import { nominationRules } from "./nominations.js";
 import type { ScriptData } from "./persistence.js";
+import { toPhonePanel } from "./phones.js";
 import { exileThreshold } from "./nominations.js";
 import {
   adjustSetupForBaron,
@@ -247,6 +248,7 @@ export function toPublicState(
         }
       : null,
     sheet: session.tvSheet && SHEET_PHASES.has(session.phase) ? buildPublicSheet(session, script) : null,
+    phoneJoin: session.phones?.enabled && session.phones.claimsOpen ? { code: session.phones.joinCode } : null,
   };
 }
 
@@ -257,6 +259,7 @@ export function toStorytellerState(
     soundCue?: PublicState["soundCue"];
     hueScene?: PublicState["hueScene"];
     seq?: number;
+    phoneLive?: { connected: Record<string, number>; spectators: number };
   },
 ): StorytellerState {
   const pub = toPublicState(session, script, extras);
@@ -291,6 +294,7 @@ export function toStorytellerState(
     stNotices: session.stNotices ?? [],
     audioCues: listAudioCues(),
     ambianceCatalog: listAmbianceCatalog(),
+    phones: toPhonePanel(session, extras?.phoneLive ?? { connected: {}, spectators: 0 }),
   };
 }
 

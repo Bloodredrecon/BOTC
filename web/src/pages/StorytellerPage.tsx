@@ -4,6 +4,7 @@ import type { AudioCueInfo, NightShowSpec, Player, StorytellerState, Team } from
 import { ConnectionBanners, ConnectionPills } from "./storyteller/ConnectionStatus";
 import { GrimoireCircle } from "./storyteller/GrimoireCircle";
 import { LogPanel } from "./storyteller/LogPanel";
+import { PhonesPanel } from "./storyteller/PhonesPanel";
 import { RecapPanel } from "./storyteller/RecapPanel";
 import { SetupWizard } from "./storyteller/SetupWizard";
 import { UndoBar } from "./storyteller/UndoBar";
@@ -734,6 +735,8 @@ function SetupTab({
       </div>
 
       <SetupWizard state={state} emit={emit} />
+
+      <PhonesPanel state={state} emit={emit} />
 
       <div className="panel">
         <h2>TV character sheet</h2>

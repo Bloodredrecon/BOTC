@@ -1,6 +1,6 @@
 import { io, Socket } from "socket.io-client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PublicState, StorytellerState } from "./types";
+import type { PhonePublic, PhoneStatus, PlayerState, PublicState, StorytellerState } from "./types";
 
 export const NOT_CONNECTED = "Not connected to the server, so that was not sent. Try again once reconnected.";
 
@@ -46,6 +46,55 @@ export function useSocket() {
   }, []);
 
   return { socketRef, connected, emit, droppedAt };
+}
+
+export const PHONE_TOKEN_KEY = "botc.phone.token";
+
+/**
+ * A player's phone (or a spectator). The seat token lives in localStorage and is sent on every
+ * (re)connect, so refresh, sleep and Wi-Fi drops recover without the Storyteller.
+ */
+export function usePhone(socketRef: React.MutableRefObject<Socket | null>, mode: "player" | "spectator") {
+  const [status, setStatus] = useState<PhoneStatus | null>(null);
+  const [state, setState] = useState<PlayerState | null>(null);
+  const [watch, setWatch] = useState<PhonePublic | null>(null);
+  const [joinTick, setJoinTick] = useState(0);
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    const join = () => {
+      const token = mode === "player" ? localStorage.getItem(PHONE_TOKEN_KEY) : null;
+      socket.emit("join", { role: mode, ...(token ? { token } : {}) });
+    };
+    const onStatus = (s: PhoneStatus) => {
+      setStatus(s);
+      if (s.status !== "active") setState(null);
+      if (s.status !== "watching") setWatch(null);
+      // The server forgot this token (revoked, denied, new game): don't send it again.
+      if (s.status === "unclaimed" && s.reason) localStorage.removeItem(PHONE_TOKEN_KEY);
+    };
+    socket.on("player:status", onStatus);
+    socket.on("state:player", setState);
+    socket.on("state:watch", setWatch);
+    socket.on("connect", join);
+    if (socket.connected) join();
+    return () => {
+      socket.off("player:status", onStatus);
+      socket.off("state:player", setState);
+      socket.off("state:watch", setWatch);
+      socket.off("connect", join);
+    };
+  }, [socketRef, mode, joinTick]);
+
+  /** Re-send join (after a claim stored a new token, or after "join again"). */
+  const rejoin = useCallback(() => {
+    const socket = socketRef.current;
+    if (socket && !socket.connected) socket.connect();
+    setJoinTick((n) => n + 1);
+  }, [socketRef]);
+
+  return { status, state, watch, rejoin };
 }
 
 export type Presence = { tv: number; tvChangedAt: number; storytellers: number };

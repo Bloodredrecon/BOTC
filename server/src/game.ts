@@ -4,6 +4,7 @@ import { expandFirstAvailableVariants, expandSoundVariants, resolveSoundCueId } 
 import { buildNightSteps } from "./night.js";
 import type { ScriptData } from "./persistence.js";
 import { createEmptySession, normalizePlayer, saveSession } from "./persistence.js";
+import { phonesForNewGame, randomCode } from "./phones.js";
 import {
   canPlayerVote,
   majorityNeeded,
@@ -401,8 +402,47 @@ export class GameEngine {
         soundCue: this.lastSound,
         hueScene: this.lastHue,
         seq: this.seq,
+        phoneLive: this.phoneLive(),
       }),
     });
+  }
+
+  /** Live phone connections for the Storyteller's panel (set by the server; none in engine tests). */
+  phoneLive: () => { connected: Record<string, number>; spectators: number } = () => ({ connected: {}, spectators: 0 });
+  /** Delivers a private update: the Storyteller plus the listed players' phones, nobody else. */
+  privateBroadcast: ((storyteller: StorytellerState, playerIds: string[]) => void) | null = null;
+
+  /**
+   * A change only the Storyteller and the listed players may see. Does not bump `seq` or send
+   * anything to the TV, so the public stream doesn't reveal that something private happened.
+   */
+  mutatePrivate<T>(fn: (s: GameSession) => T, playerIds: string[] = []): T {
+    const result = fn(this.session);
+    saveSession(this.session);
+    this.emitPrivate(playerIds);
+    return result;
+  }
+
+  get currentSeq(): number {
+    return this.seq;
+  }
+
+  /**
+   * The "Player phones" setting. Off: phones are unbound from private data at once (claims are kept,
+   * so switching back on re-links them). Public because the TV's join QR follows it.
+   */
+  setPhonesEnabled(on: boolean) {
+    this.mutate((s) => {
+      s.phones.enabled = on;
+      if (on && !s.phones.joinCode) s.phones.joinCode = randomCode(4);
+    });
+  }
+
+  emitPrivate(playerIds: string[] = []) {
+    this.privateBroadcast?.(
+      toStorytellerState(this.session, this.script, { seq: this.seq, phoneLive: this.phoneLive() }),
+      playerIds,
+    );
   }
 
   setConnected(role: "tv" | "storyteller", connected: boolean) {
@@ -424,15 +464,28 @@ export class GameEngine {
     });
   }
 
-  resetGame() {
+  /**
+   * New game. The player-phones setting carries over. `sameTable`: the same people sit in the same
+   * order, so names stay and each resident's phone stays bound to their seat; otherwise claims clear.
+   */
+  resetGame(opts: { sameTable?: boolean } = {}) {
     this.clearDawnThenDayTimer();
     this.clearShotTimer();
     this.clearNightTimer();
     this.cancelPendingWin();
-    const townsfolk = this.session.players.filter((p) => !p.isTraveller).length || 8;
-    const tvConnected = this.session.tvConnected;
-    const storytellerConnected = this.session.storytellerConnected;
+    const old = this.session;
+    const residents = old.players.filter((p) => !p.isTraveller && !p.leftGame).sort(bySeat);
+    const townsfolk = old.players.filter((p) => !p.isTraveller).length || 8;
+    const tvConnected = old.tvConnected;
+    const storytellerConnected = old.storytellerConnected;
     this.session = createEmptySession(Math.max(5, Math.min(20, townsfolk)));
+    if (opts.sameTable) {
+      this.session.players.forEach((p, i) => {
+        const was = residents[i];
+        if (was) p.name = was.name;
+      });
+    }
+    this.session.phones = phonesForNewGame(old, this.session, Boolean(opts.sameTable));
     this.session.tvConnected = tvConnected;
     this.session.storytellerConnected = storytellerConnected;
     this.lastSound = "hush";

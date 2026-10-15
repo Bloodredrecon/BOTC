@@ -340,6 +340,54 @@ export type GameSession = {
   ambiance: AmbianceState;
   tvConnected: boolean;
   storytellerConnected: boolean;
+  /** Random per game; scopes what phones keep in local storage (notes). */
+  gameId: string;
+  /** Player phones (opt-in). Kept as-is by undo: a phone can't un-see what it was shown. */
+  phones: PhonesState;
+};
+
+/** A phone's claim on a seat. Only the SHA-256 of the token is stored; the token itself goes back once. */
+export type PhoneClaim = {
+  id: string;
+  playerId: string;
+  tokenHash: string;
+  /** From the user agent, e.g. "iPhone Safari". */
+  deviceLabel: string;
+  status: "pending" | "active";
+  claimedAt: number;
+  lastSeenAt: number;
+};
+
+export type PhoneMessage = {
+  id: string;
+  from: "player" | "storyteller";
+  /** question / word (a request to talk) from the player; reply from the Storyteller. */
+  kind: "question" | "word" | "reply";
+  text: string;
+  at: number;
+};
+
+/** What one player has been told on their phone — separate from the grimoire truth. */
+export type PhonePrivate = {
+  /** Set only by Distribute / Re-send / the new-Demon step, never derived live from characterId. */
+  revealedCharacterId: string | null;
+  revealedAlignment: Alignment | null;
+  revealedAt: number | null;
+  messages: PhoneMessage[];
+  /** Player messages the Storyteller hasn't opened yet. */
+  unreadByStoryteller: number;
+};
+
+export type PhonesState = {
+  enabled: boolean;
+  /** Short code on the TV; needed to ask for a seat. */
+  joinCode: string;
+  claimsOpen: boolean;
+  claims: PhoneClaim[];
+  private: Record<string, PhonePrivate>;
+  /** Voting only: "manual" is the Storyteller-tap flow even while phones are on. */
+  voting: "phones" | "manual";
+  sweepMsPerSeat: number;
 };
 
 export type NewDemon = {
@@ -427,6 +475,8 @@ export type PublicState = {
   } | null;
   /** Non-null while the Storyteller shows the character sheet (lobby / day / dusk). */
   sheet: PublicSheet | null;
+  /** Null unless player phones are on and claims are open (the TV shows the join QR). */
+  phoneJoin: { code: string } | null;
 };
 
 export type DayAbilityTip = {
@@ -485,7 +535,71 @@ export type StorytellerState = PublicState & {
     subgroup?: string;
   }[];
   ambianceCatalog: AmbianceLayerDef[];
+  phones: PhonePanel;
 };
+
+/** The Storyteller's view of player phones (never the token hashes). */
+export type PhonePanel = {
+  enabled: boolean;
+  joinCode: string;
+  claimsOpen: boolean;
+  voting: "phones" | "manual";
+  sweepMsPerSeat: number;
+  claims: (Omit<PhoneClaim, "tokenHash"> & { connected: number })[];
+  private: Record<string, PhonePrivate>;
+  spectators: number;
+};
+
+/** Public fields a phone may see: an allowlist over PublicState (no sound, lights or ambiance). */
+export type PhonePublic = Pick<
+  PublicState,
+  | "scriptName"
+  | "phase"
+  | "dayNumber"
+  | "seq"
+  | "players"
+  | "fabled"
+  | "publicLog"
+  | "timer"
+  | "nomination"
+  | "dawnDeathIds"
+  | "dawnDeathsAnnounced"
+  | "executionPendingId"
+  | "nominationsToday"
+  | "block"
+  | "nominationsOpen"
+  | "winner"
+  | "winReason"
+  | "reveal"
+  | "exile"
+> & {
+  gameId: string;
+  /** The script's character sheet is always available on a phone. */
+  sheet: PublicSheet;
+};
+
+/** One player's own private data, built from an allowlist (never a spread Player). */
+export type PhoneMe = {
+  playerId: string;
+  seat: number;
+  name: string;
+  /** Public alive bit: an overnight death shows only after the dawn announcement. */
+  alive: boolean;
+  usedGhostVote: boolean;
+  isTraveller: boolean;
+  character: { id: string; name: string; team: Team; ability: string } | null;
+  alignment: Alignment | null;
+  revealedAt: number | null;
+  messages: PhoneMessage[];
+};
+
+export type PlayerState = PhonePublic & { me: PhoneMe };
+
+export type PhoneStatus =
+  | { status: "off" }
+  | { status: "unclaimed"; reason: "unknown" | "denied" | "revoked" | "replaced" | "cleared" | null }
+  | { status: "pending"; playerId: string; seat: number; name: string }
+  | { status: "active"; playerId: string };
 
 export type HueScene =
   | "day"
@@ -499,4 +613,4 @@ export type HueScene =
   | "hush"
   | null;
 
-export type ClientRole = "storyteller" | "tv";
+export type ClientRole = "storyteller" | "tv" | "player" | "spectator";

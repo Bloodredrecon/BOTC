@@ -25,10 +25,19 @@ import {
   type SessionSnapshot,
 } from "./action-log.js";
 import { GAME_LOG_DIR, loadConfig, loadScript, loadSession, ROOT, saveSession } from "./persistence.js";
+import { PhoneHub } from "./phone-hub.js";
 import { PinGuard } from "./pin-guard.js";
 import { pushStNotice } from "./rules.js";
 import { proposeDeal, validateDeal } from "./setup-wizard.js";
-import { comparable, mergeKeyFor, NOT_UNDOABLE, restoredSession, undoLabel, UndoStack } from "./undo.js";
+import {
+  comparable,
+  isPhoneAction,
+  mergeKeyFor,
+  NOT_UNDOABLE,
+  restoredSession,
+  undoLabel,
+  UndoStack,
+} from "./undo.js";
 import type { AmbianceState, Phase } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -170,12 +179,22 @@ let engineReady = false;
 let inAction = false;
 let broadcasts = 0;
 
-const engine = new GameEngine(loadSession(), script, hue, ({ public: pub, storyteller }) => {
+let phoneHub: PhoneHub | null = null;
+const engine = new GameEngine(loadSession(config.playerPhones), script, hue, ({ public: pub, storyteller }) => {
   broadcasts += 1;
   io.to("tv").emit("state:public", pub);
   io.to("storyteller").emit("state:storyteller", storyteller);
+  phoneHub?.afterBroadcast(pub);
   if (engineReady && !inAction) logSystemChanges();
 });
+const phones = new PhoneHub(io, engine, script, actionLog);
+phoneHub = phones;
+engine.phoneLive = () => phones.live();
+engine.privateBroadcast = (storyteller, playerIds) => {
+  broadcasts += 1;
+  io.to("storyteller").emit("state:storyteller", storyteller);
+  phones.afterPrivate(playerIds);
+};
 let lastSnap: SessionSnapshot = snapshotSession(engine.session);
 engineReady = true;
 
@@ -275,8 +294,15 @@ function clientAddress(raw: string): string {
 io.on("connection", (socket) => {
   const client = clientAddress(socket.handshake.address);
 
-  socket.on("join", (payload: { role: "tv" | "storyteller"; pin?: string } | null) => {
+  socket.on("join", (payload: { role: string; pin?: string; token?: unknown } | null) => {
     if (!payload || typeof payload !== "object") return;
+    if (payload.role === "player" || payload.role === "spectator") {
+      // A phone never shares a room with the TV or the Storyteller.
+      if (socket.data.role === "tv" || socket.data.role === "storyteller") return;
+      phones.join(socket, payload, client);
+      return;
+    }
+    if (socket.data.role === "player" || socket.data.role === "spectator") return;
     if (payload.role === "tv") {
       if (roomSize("tv") === 0) tvChangedAt = Date.now();
       socket.join("tv");
@@ -328,7 +354,11 @@ io.on("connection", (socket) => {
   type Handler = (data: Record<string, unknown>) => unknown;
 
   const actions: Record<string, Handler> = {
-    "game:reset": () => engine.resetGame(),
+    "game:reset": (d) => {
+      phones.rememberCleared(engine.session.phones.claims);
+      engine.resetGame({ sameTable: Boolean(d.sameTable) });
+    },
+    ...phones.storytellerActions(),
     "game:setPlayerCount": (d) =>
       engine.setPlayerCount(Number(d.count), {
         allowOver15: typeof d.allowOver15 === "boolean" ? d.allowOver15 : undefined,
@@ -459,7 +489,7 @@ io.on("connection", (socket) => {
         if (typeof ack === "function") ack(result ?? { ok: true });
         return;
       }
-      const undoable = !NOT_UNDOABLE.has(event);
+      const undoable = !NOT_UNDOABLE.has(event) && !isPhoneAction(event);
       const full = undoable ? structuredClone(engine.session) : null;
       const fullCmp = full ? comparable(full) : null;
       const before = snapshotSession(engine.session);
@@ -515,7 +545,23 @@ io.on("connection", (socket) => {
     });
   }
 
+  for (const [event, handler] of Object.entries(phones.playerHandlers(socket, client))) {
+    socket.on(event, (data, ack?: (result: unknown) => void) => {
+      if (typeof ack !== "function") return;
+      if (socket.data.role !== "player") return ack({ ok: false, error: "Open /play to join as a player." });
+      let result: unknown;
+      try {
+        result = handler(data && typeof data === "object" ? (data as Record<string, unknown>) : {});
+      } catch (err) {
+        app.log.error(err);
+        result = { ok: false, error: "Something went wrong on the server." };
+      }
+      ack(result ?? { ok: true });
+    });
+  }
+
   socket.on("disconnect", () => {
+    phones.onDisconnect(socket);
     if (socket.data.role === "tv" || socket.data.role === "storyteller") {
       actionLog.record({
         t: Date.now(),

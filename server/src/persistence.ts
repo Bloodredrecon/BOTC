@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeAmbiance } from "./ambiance.js";
+import { emptyPhones, newGameId, normalizePhones } from "./phones.js";
 import type {
   CharacterDef,
   FabledDef,
@@ -25,6 +26,8 @@ export type AppConfig = {
   port: number;
   host: string;
   storytellerPin: string;
+  /** Default for the per-game "Player phones" setting (new sessions only). */
+  playerPhones: boolean;
   hue: {
     enabled: boolean;
     bridgeIp: string;
@@ -63,7 +66,7 @@ function parsePort(raw: unknown): number | null {
 /**
  * Precedence (highest wins): env vars > config/local.json > config/default.json.
  * config/hue.json is merged into `hue` after local.json.
- * Env: BOTC_PORT or PORT, BOTC_HOST or HOST, BOTC_PIN.
+ * Env: BOTC_PORT or PORT, BOTC_HOST or HOST, BOTC_PIN, BOTC_PHONES (1/0).
  */
 export function loadConfig(): AppConfig {
   const base = readJson(CONFIG_PATH) as unknown as AppConfig;
@@ -80,6 +83,7 @@ export function loadConfig(): AppConfig {
       if (local.storytellerPin !== undefined && String(local.storytellerPin).trim()) {
         base.storytellerPin = String(local.storytellerPin).trim();
       }
+      if (typeof local.playerPhones === "boolean") base.playerPhones = local.playerPhones;
       base.hue = mergeHue(base.hue, local.hue);
     } catch (err) {
       console.warn(`config/local.json could not be read (${String(err)}); using defaults`);
@@ -103,6 +107,8 @@ export function loadConfig(): AppConfig {
   const envHost = (process.env.BOTC_HOST ?? process.env.HOST)?.trim();
   if (envHost) base.host = envHost;
   if (process.env.BOTC_PIN) base.storytellerPin = process.env.BOTC_PIN;
+  base.playerPhones = Boolean(base.playerPhones);
+  if (process.env.BOTC_PHONES) base.playerPhones = /^(1|true|on|yes)$/i.test(process.env.BOTC_PHONES);
   return base;
 }
 
@@ -190,13 +196,16 @@ export function createEmptySession(playerCount = 8): GameSession {
     ambiance: normalizeAmbiance(null),
     tvConnected: false,
     storytellerConnected: false,
+    gameId: newGameId(),
+    phones: emptyPhones(),
   };
 }
 
-export function loadSession(): GameSession {
+/** `phonesDefault` (config `playerPhones`) applies only to a session that has no phones setting yet. */
+export function loadSession(phonesDefault = false): GameSession {
   mkdirSync(DATA_DIR, { recursive: true });
   if (!existsSync(SESSION_PATH)) {
-    const session = createEmptySession();
+    const session = withPhonesDefault(createEmptySession(), phonesDefault);
     saveSession(session);
     return session;
   }
@@ -246,10 +255,17 @@ export function loadSession(): GameSession {
       ambiance: normalizeAmbiance(raw.ambiance),
       tvConnected: false,
       storytellerConnected: false,
+      gameId: typeof raw.gameId === "string" && raw.gameId ? raw.gameId : base.gameId,
+      phones: normalizePhones(raw.phones, phonesDefault),
     };
   } catch {
-    return createEmptySession();
+    return withPhonesDefault(createEmptySession(), phonesDefault);
   }
+}
+
+function withPhonesDefault(s: GameSession, enabled: boolean): GameSession {
+  s.phones.enabled = enabled;
+  return s;
 }
 
 export function saveSession(session: GameSession): void {
