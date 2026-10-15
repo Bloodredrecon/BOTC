@@ -3,7 +3,8 @@
 
   python scripts/design_voice.py            # generate previews into data/audio/_voice_design/
   python scripts/design_voice.py merge [preview.mp3]   # blend a preview with the current voice (v3 reference audio)
-  python scripts/design_voice.py save <generated_voice_id> "Name"   # add a preview to your voice library
+  python scripts/design_voice.py save <generated_voice_id> "Name" ["description"]   # add a preview to your voice library
+  python scripts/design_voice.py concepts <concepts.json> [key ...]   # design previews per concept (results written back)
   python scripts/design_voice.py speed <voice_id> [1.0 1.08 1.15]  # sample line at several TTS speeds
 """
 
@@ -163,11 +164,39 @@ def merge(key: str, base_file: str = "eleven_ttv_v3_1.mp3") -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
-def save(key: str, generated_voice_id: str, name: str) -> str:
+def design_concepts(key: str, concepts_path: Path, only: list[str]) -> None:
+    """Design previews for each {"key", "description"} in a concepts JSON; previews saved next to it."""
+    data = json.loads(concepts_path.read_text(encoding="utf-8-sig"))
+    model = data.get("model", "eleven_ttv_v3")
+    for c in data["concepts"]:
+        if c.get("previews") or (only and c["key"] not in only):
+            continue
+        print(f"Designing {c['key']} with {model}...")
+        body = json.loads(
+            post(
+                "https://api.elevenlabs.io/v1/text-to-voice/design?output_format=mp3_44100_128",
+                {"voice_description": c["description"], "text": data["text"], "model_id": model,
+                 "guidance_scale": data.get("guidance_scale", 4)},
+                key,
+            )
+        )
+        c["model"] = model
+        c["previews"] = []
+        for i, p in enumerate(body["previews"], 1):
+            name = f"{c['key']}_{i}.mp3"
+            (concepts_path.parent / name).write_bytes(base64.b64decode(p["audio_base_64"]))
+            c["previews"].append(
+                {"file": name, "generated_voice_id": p["generated_voice_id"], "duration_secs": p.get("duration_secs")}
+            )
+            print(f"  {name}  {p.get('duration_secs', 0):.1f}s  id={p['generated_voice_id']}")
+        concepts_path.write_text(json.dumps(data, indent=2, ensure_ascii=True), encoding="utf-8")
+
+
+def save(key: str, generated_voice_id: str, name: str, description: str = VOICE_DESCRIPTION) -> str:
     body = json.loads(
         post(
             "https://api.elevenlabs.io/v1/text-to-voice",
-            {"voice_name": name, "voice_description": VOICE_DESCRIPTION, "generated_voice_id": generated_voice_id},
+            {"voice_name": name, "voice_description": description, "generated_voice_id": generated_voice_id},
             key,
         )
     )
@@ -238,6 +267,8 @@ if __name__ == "__main__":
             "eleven_v3" if "--v3" in sys.argv else "eleven_multilingual_v2",
         )
     elif len(sys.argv) >= 3 and sys.argv[1] == "save":
-        save(k, sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "Ravenswood Storyteller")
+        save(k, sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "Ravenswood Storyteller", *sys.argv[4:5])
+    elif len(sys.argv) >= 3 and sys.argv[1] == "concepts":
+        design_concepts(k, Path(sys.argv[2]), sys.argv[3:])
     else:
         design(k)

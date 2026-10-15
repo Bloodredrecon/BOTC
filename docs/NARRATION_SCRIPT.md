@@ -75,7 +75,7 @@ ElevenLabs can do **both**, but they are **two separate tools** — TTS does not
 During a hellish thunderstorm... a scream echoes through the rain-soaked streets of Ravenswood Bluff.  
 [Pause 1.0s]  
 [SFX | ~3.5s | after-pause:1 | vol:0.28]: "Distant horror-movie scream far across a rain-soaked gothic town, muffled by storm and empty streets, atmospheric and chilling, soft echo, not close, not loud, not cartoonish"  
-[SFX | ~4s | after-pause:1 | +1.3s]: "Large old clocktower bell striking midnight, deep resonant bronze, long decay"  
+[SFX | ~4s | after-pause:1 | +1.3s | vol:0.28]: "Large old clocktower bell striking midnight, deep resonant bronze, long decay"  
 The town clock tower strikes midnight...  
 [Pause 1.5s]  
 [SFX | ~3s | after-pause:2 | +0.2s]: "Low ominous drone under rain, faint wet drip of blood-like liquid on stone"  
@@ -163,7 +163,7 @@ Lamps gutter. The streets empty.
 [Pause 0.8s]  
 Night claims Ravenswood Bluff once more.  
 [Pause 1.0s]  
-Close your eyes… and listen only if you are woken.
+Close your eyes… and open them only if you are woken.
 
 ### `day_1.mp3`
 [Tone: Cautious daylight — first morning after]  
@@ -230,7 +230,7 @@ Someone is gone from the square.
 ### `multiple_deaths.mp3`
 [Tone: Heavier shock — slower]  
 [Ambience | ~12s]: "Emptier streets, colder wind, sparse crow calls"  
-[SFX | ~3s]: "Two deep bell tolls, spaced apart"  
+[SFX | ~3s | vol:0.33]: "Two deep bell tolls, spaced apart"  
 The streets are emptier than they should be.  
 [Pause 1.0s]  
 More than one soul was taken before dawn.
@@ -269,13 +269,12 @@ This soul remains among you… while daylight still holds.
 [Tone: Tense, unresolved]  
 The square is split. The count will not decide.  
 [Pause 0.8s]  
-The Storyteller must weigh what the town cannot.
+Equal hands. No one stands beneath the square’s judgment.
 
 ### `about_to_die.mp3`
 [Tone: Intimate dread — almost a whisper]  
-[Ambience | ~10s]: "Very close quiet: wind, heartbeat-like low pulse, stone square hush"  
-[SFX | ~2s]: "Thin high tension string-like drone swell"  
-The town draws close.  
+[Ambience | ~10s]: "Very close quiet: wind, heartbeat-like low pulse, stone square hush"
+The town draws close.
 [Pause 1.0s]  
 This life hangs by a thread.
 
@@ -291,7 +290,7 @@ This soul walks back into the crowd… for now.
 [Ambience | ~15s]: "Morning clearing after storm: soft birds, clean wind, distant hopeful bell"  
 The shadow breaks. Morning feels clean for the first time.  
 [Pause 1.0s]  
-Evil is gone from Ravenswood Bluff.  
+The Demon is dead. Ravenswood Bluff is free.  
 [Pause 0.8s]  
 Breathe the clean air. The town endures.  
 [Fade out gently]
@@ -334,22 +333,22 @@ One less face in the square… one less unknown.
 ### `public_shot.mp3`
 [Tone: Sudden crack — sharp intake before the line]  
 [Pause 0.3s]  
-[SFX | ~2s]: "Loud gunshot crack echoing in a stone town square"  
+[SFX | ~2s | vol:0.36]: "Loud gunshot crack echoing in a stone town square"  
 A shot cracks across the square —  
 [Pause 0.6s]  
-[SFX | ~2.5s]: "Flock of ravens exploding off a clocktower in a black cloud of wingbeats"  
+[SFX | ~2.5s | vol:0.28]: "Flock of ravens exploding off a clocktower in a black cloud of wingbeats"  
 birds lift from the clocktower in a black cloud.
 
 ### `public_shot_true.mp3`
 [Tone: Shock, then grim confirmation]  
-[SFX | ~2s]: "Impact thud, shocked crowd gasp"  
+[SFX | ~2s | vol:0.18]: "Impact thud, shocked crowd gasp"  
 The shot finds what it sought.  
 [Pause 0.8s]  
 Evil falls… and the town gasps as one.
 
 ### `public_shot_false.mp3`
 [Tone: Hollow echo — fear returns]  
-[SFX | ~2.5s]: "Gunshot echo dying into empty streets, fearful crowd murmur rising"  
+[SFX | ~2.5s | vol:0.28]: "Gunshot echo dying into empty streets, fearful crowd murmur rising"  
 Echoes only. No evil falls.  
 [Pause 0.8s]  
 Fear rushes back into the square twice as deep.
@@ -357,7 +356,7 @@ Fear rushes back into the square twice as deep.
 ### `sacred_blood.mp3`
 [Tone: Horror, doom — slow and final]  
 [Ambience | ~12s]: "Horror stillness, cold wind, distant thunder"  
-[SFX | ~3s]: "Wet blood drip on stone, then deep doom hit"  
+[SFX | ~3s | vol:0.2]: "Wet blood drip on stone, then deep doom hit"  
 Innocent blood — sacred blood — stains the cobblestones.  
 [Pause 1.2s]  
 The town has damned itself. Evil claims the night… and the win.  
@@ -369,7 +368,7 @@ The town has damned itself. Evil claims the night… and the win.
 [SFX | ~2s]: "Quiet hopeful swell, soft far bell"  
 Only three still stand in the square. No execution comes.  
 [Pause 1.0s]  
-Survive the night — or lose everything at dawn.
+What happens next may end it all.
 
 ---
 
@@ -422,7 +421,7 @@ Keep it secret. Do not show it to anyone… and never look into the Grimoire.
 [Pause 1.0s]  
 Once the first night is over, you may say whatever you like — the truth, half of it, or a lie.  
 [Pause 0.6s]  
-Evil must lie. The best of them choose a good character… and wear it like a mask.  
+Evil should lie. The best of them choose a good character… and wear it like a mask.  
 [Pause 0.6s]  
 Good players usually share what they know — though some have reason to be careful.  
 [Pause 0.8s]  
@@ -511,13 +510,13 @@ Often… it is the dead who decide the fate of the town.
 [Ambience | loop | ~25s]: "Attentive square, soft wind, distant tower — long teach bed"  
 Every ability in this town is printed on the character sheet. Glance there as I speak.  
 [Pause 1.0s]  
-Townsfolk who learn — the Washerwoman, Librarian and Investigator each learn that one of two players is a particular character. The Chef learns how many pairs of evil players sit together. The Empath learns how many living neighbours are evil. The Fortune Teller hunts for the Demon — but one good player will seem a Demon to them. The Undertaker learns who was truly executed. And the Ravenkeeper, if killed at night, learns one player's character.  
+Townsfolk who learn — the Washerwoman, Librarian and Investigator each learn that one of two players is a particular character. The Chef learns how many pairs of evil players sit together. The Empath learns how many living neighbours are evil. The Fortune Teller hunts for the Demon — but one good player will seem a Demon to them. The Undertaker learns what the executed truly were. And the Ravenkeeper, if killed at night, learns one player's character.  
 [Pause 1.0s]  
 Townsfolk who protect and strike — the Monk shields a player from the Demon each night. The Soldier is safe from the Demon. The Virgin — the first time she is nominated, if a Townsfolk nominated her, they are executed at once. The Slayer, once per game, may publicly choose a player: if they are the Demon, they die. And the Mayor — if only three players live and no one is executed, good wins… and if the Demon comes for the Mayor, someone else might die instead.  
 [Pause 1.0s]  
 Outsiders — the Butler may only vote when their chosen master votes too. The Drunk thinks they are a Townsfolk… but is not, and does not know it. The Recluse might register as evil. And the Saint — if executed, good loses.  
 [Pause 1.0s]  
-Minions — the Poisoner poisons a player each night. The Spy sees the Grimoire each night, and might register as good. The Scarlet Woman becomes the Demon if the Demon dies while five or more live. The Baron brings two extra Outsiders into town.  
+Minions — the Poisoner poisons a player each night. The Spy sees the Grimoire each night, and might register as good. The Scarlet Woman becomes the Demon if the Demon dies while five or more live — Travellers not counted. The Baron brings two extra Outsiders into town.  
 [Pause 1.0s]  
 The Imp — the Demon. Each night after the first, it chooses who dies. If it kills itself… a Minion becomes the new Imp.  
 [Pause 1.0s]  
@@ -549,7 +548,7 @@ A Traveller may arrive late, or leave early. They choose their own character. I 
 [Pause 0.8s]  
 Travellers may nominate and vote like anyone else. But they are never nominated. Instead, any player — even the dead — may call for a Traveller's exile.  
 [Pause 0.8s]  
-If at least half of all players, living and dead, support it, the Traveller is exiled and dies. Supporting an exile does not spend a ghost vote. No ability can change an exile — and an exile is not an execution.  
+If at least half of all players, living and dead, support it, the Traveller is exiled and dies. Supporting an exile does not spend a ghost vote. No ability can change an exile. An exile is not an execution — the day's execution still waits.  
 [Pause 0.8s]  
 Travellers are never counted among the final two.  
 [Pause 0.6s]  
@@ -671,7 +670,7 @@ On these cobblestones, that is often how the dark begins.
 
 ### `atm_day_lies.mp3`
 [Tone: Knowing, dry]  
-[SFX | ~2s]: "Subtle dissonant tone under daylight"  
+[SFX | ~2s | vol:0.23]: "Subtle dissonant tone under daylight"  
 Lies walk this square in broad daylight.  
 [Pause 0.8s]  
 Listen for the tremor… not the smile.
@@ -685,7 +684,7 @@ Ravenswood Bluff does not pause for certainty.
 
 ### `atm_day_quiet.mp3`
 [Tone: Near-whisper]  
-[SFX | ~2s]: "Sudden hush, birds going silent"  
+[SFX | ~2s | vol:0.23]: "Sudden hush, birds going silent"  
 A hush falls over the square.  
 [Pause 0.8s]  
 Even the birds refuse to sing too loudly here.
@@ -810,7 +809,7 @@ A raised palm may end a life on these stones.
 [Tone: Rising dread — slightly faster]  
 Hands rise like a dark tide in the square.  
 [Pause 0.6s]  
-Majority gathers… sharp as a blade.
+The count climbs toward the mark… sharp as a blade.
 
 ### `atm_count_falling.mp3`
 [Tone: Falling short — ambiguous]  
@@ -852,7 +851,7 @@ The clocktower is listening.
 
 ### `atm_after_death.mp3`
 [Tone: Mourning, unflinching]  
-[SFX | ~3s]: "Life ending thud softened, mourning wind, stone memory drone"  
+[SFX | ~3s | vol:0.23]: "Life ending thud softened, mourning wind, stone memory drone"  
 A life ends where you stand.  
 [Pause 1.0s]  
 Do not look away. The stones will remember even if you will not.
@@ -876,7 +875,7 @@ It has watched this play before… and it never looks away.
 
 ### `atm_ravens.mp3`
 [Tone: Dark amusement]  
-[SFX | ~3s]: "Ravens circling a spire, wingbeats and harsh caws"  
+[SFX | ~3s | vol:0.27]: "Ravens circling a spire, wingbeats and harsh caws"  
 Ravens circle the spire.  
 [Pause 0.8s]  
 They already know how these streets end. You do not.
@@ -1008,7 +1007,7 @@ Open your eyes. Count who still stands in the square.
 ### `dawn_c.mp3`
 [Tone: Soft as mist — then firmer]  
 [Ambience | loop | ~12s]: "Dawn mist lifting, faint far bell, quiet cobblestones"  
-[SFX | ~1.5s]: "Soft wooden shutters opening"  
+[SFX | ~1.5s | vol:0.24]: "Soft wooden shutters opening"  
 The mist thins. The tower’s face catches the first pale gold.  
 [Pause 0.8s]  
 Townsfolk — wake. See what the night left behind.
@@ -1021,7 +1020,7 @@ The last lamps die in the lanes.
 [Pause 0.8s]  
 Night folds over the town again.  
 [Pause 0.8s]  
-Close your eyes. Speak only if you are called.
+Close your eyes. Stir only if you are woken.
 
 ### `night_c.mp3`
 [Tone: Hushed command]  
@@ -1118,7 +1117,7 @@ This soul stands beneath the square’s judgment.
 [Tone: Cold certainty]  
 [Mix: no-sfx]  
 [Ambience | ~8s]: "Crowd hush after a decisive count"  
-Majority. The town has spoken with one hard voice.  
+The mark is met. The town has spoken with one hard voice.  
 [Pause 0.8s]  
 Bring them forward. Judgment waits on the stones.
 
@@ -1133,24 +1132,24 @@ They walk free… for now. Daylight still burns.
 [Tone: Measured denial]  
 The count falls short.  
 [Pause 0.8s]  
-No judgment falls. Return to the square’s arguments.
+Nothing changes. Return to the square’s arguments.
 
 ### `tie_b.mp3`
 [Tone: Tense, unresolved]  
 The hands divide the town.  
 [Pause 0.8s]  
-Neither path wins. The Storyteller must break what the count cannot.
+Neither soul is condemned. The next must draw more hands than this.
 
 ### `tie_c.mp3`
 [Tone: Tight, unsettled]  
 Equal will. Equal weight.  
 [Pause 0.8s]  
-The square is split — and someone must decide.
+The block stands empty… until a greater count is raised.
 
 ### `about_to_die_b.mp3`
 [Tone: Intimate dread]  
 [Ambience | ~8s]: "Close quiet wind, stone square hush"  
-[SFX | ~2s]: "Thin high tension drone"  
+[SFX | ~2s | vol:0.13]: "Thin high tension drone"  
 Breath holds in every throat.  
 [Pause 0.8s]  
 This life hangs by a thread.
@@ -1173,7 +1172,7 @@ They rejoin the crowd… alive, for another hour.
 [Tone: Quiet reprieve]  
 Mercy — or hesitation — holds.  
 [Pause 0.8s]  
-This soul remains among you. Do not waste the daylight.
+This soul remains among you. The judgment passes them by.
 
 ### `execution_b.mp3`
 [Tone: Solemn, final]  
@@ -1194,7 +1193,7 @@ What follows cannot be taken back.
 ### `death_b.mp3`
 [Tone: Low, mournful]  
 [Ambience | ~8s]: "Cold empty streets, light wind"  
-[SFX | ~2s]: "Slow deep bell toll"  
+[SFX | ~2s | vol:0.23]: "Slow deep bell toll"  
 Another life leaves the square.  
 [Pause 0.8s]  
 Ravenswood Bluff grows quieter.
@@ -1220,7 +1219,7 @@ That is not the same as safety.
 ### `no_deaths_c.mp3`
 [Tone: Soft doubt]  
 [Ambience | ~10s]: "Soft wind, empty dawn square"  
-[SFX | ~2s]: "Subtle uneasy low tone"  
+[SFX | ~2s | vol:0.31]: "Subtle uneasy low tone"  
 Dawn finds every face still here.  
 [Pause 0.8s]  
 Strange mercy. Do not trust it.
@@ -1228,7 +1227,7 @@ Strange mercy. Do not trust it.
 ### `someone_died_b.mp3`
 [Tone: Grave announcement]  
 [Ambience | ~8s]: "Mournful morning wind"  
-[SFX | ~2s]: "Single deep funeral bell toll"  
+[SFX | ~2s | vol:0.24]: "Single deep funeral bell toll"  
 The night took someone from you.  
 [Pause 0.8s]  
 One less soul stands in the square.
@@ -1244,7 +1243,7 @@ Someone did not survive the dark.
 ### `multiple_deaths_b.mp3`
 [Tone: Heavier shock]  
 [Ambience | ~10s]: "Emptier streets, colder wind"  
-[SFX | ~3s]: "Two deep bell tolls, spaced apart"  
+[SFX | ~3s | vol:0.28]: "Two deep bell tolls, spaced apart"  
 The night was greedy.  
 [Pause 0.8s]  
 More than one life was stolen before the mist lifted.
@@ -1252,7 +1251,7 @@ More than one life was stolen before the mist lifted.
 ### `multiple_deaths_c.mp3`
 [Tone: Slow horror]  
 [Ambience | ~10s]: "Sparse crow calls, empty cobblestones"  
-[SFX | ~3s]: "Two spaced bell tolls"  
+[SFX | ~3s | vol:0.26]: "Two spaced bell tolls"  
 Look around. The square is too empty.  
 [Pause 0.8s]  
 Several souls are gone with the night.

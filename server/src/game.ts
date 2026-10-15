@@ -1,6 +1,6 @@
 import type { HueDriver } from "./hue.js";
 import { normalizeAmbiance, type AmbianceState } from "./ambiance.js";
-import { expandSoundVariants, resolveSoundCueId } from "./audio-library.js";
+import { expandFirstAvailableVariants, expandSoundVariants, resolveSoundCueId } from "./audio-library.js";
 import { buildNightSteps } from "./night.js";
 import type { ScriptData } from "./persistence.js";
 import { createEmptySession, normalizePlayer, saveSession } from "./persistence.js";
@@ -258,7 +258,15 @@ const SHOT_RESULT_HOLD_MS = 7800;
  * Also expands lettered siblings on disk (`nomination` + `nomination_b` + `nomination_c`).
  */
 function pickSound(...cues: string[]): string {
-  const expanded = expandSoundVariants(...cues);
+  return pickFrom(expandSoundVariants(...cues));
+}
+
+/** Like pickSound, but later cues are fallbacks used only when no earlier family has a file. */
+function pickSoundOrFallback(...cues: string[]): string {
+  return pickFrom(expandFirstAvailableVariants(...cues));
+}
+
+function pickFrom(expanded: string[]): string {
   if (expanded.length === 0) return "hush";
   if (expanded.length === 1) return expanded[0];
   return expanded[Math.floor(Math.random() * expanded.length)];
@@ -880,7 +888,7 @@ export class GameEngine {
           isFirstNight: true,
         };
       },
-      { hue: "night", sound: pickSound("first_night", "dusk") },
+      { hue: "night", sound: pickSoundOrFallback("first_night", "night") },
     );
   }
 
@@ -1746,7 +1754,7 @@ export class GameEngine {
       },
       {
         hue: died && !alreadyDead ? "execution" : toNight ? "dawn" : "day",
-        sound: died && !alreadyDead ? pickSound("execution", "death") : pickSound("lives", "no_majority"),
+        sound: died && !alreadyDead ? pickSound("execution", "death") : pickSoundOrFallback("lives", "atm_survived"),
       },
     );
     if (killed) {

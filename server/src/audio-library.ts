@@ -232,6 +232,20 @@ export function expandSoundVariants(...bases: string[]): string[] {
   return out.length > 0 ? out : bases.map((b) => b.replace(/^custom:/, "").replace(/\.[^.]+$/, ""));
 }
 
+/**
+ * Takes of the first cue family that has a file on disk — later bases are fallbacks only,
+ * never pooled with earlier ones. If none exist, behaves like `expandSoundVariants(first)`.
+ */
+export function expandFirstAvailableVariants(...bases: string[]): string[] {
+  if (bases.length === 0) return [];
+  const available = availableCueBases();
+  for (const raw of bases) {
+    const found = expandSoundVariants(raw).filter((id) => available.has(id));
+    if (found.length > 0) return found;
+  }
+  return expandSoundVariants(bases[0]);
+}
+
 function labelFromFilename(name: string): string {
   return name
     .replace(/\.[^.]+$/, "")

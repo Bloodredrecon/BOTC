@@ -18,7 +18,19 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "docs" / "NARRATION_SCRIPT.md"
 OUT_DIR = ROOT / "data" / "audio"
 WORK = OUT_DIR / "_batch_build"
-VOICE_ID = "bGaEqnGM5jPt52TO9tMX"
+VOICE_ID = os.environ.get("BOTC_TTS_VOICE", "bGaEqnGM5jPt52TO9tMX")
+TTS_MODEL = os.environ.get("BOTC_TTS_MODEL", "eleven_multilingual_v2")
+PREVIEW_DIR = OUT_DIR / "_voice_design" / "preview"
+PREVIEW_TAG = os.environ.get("BOTC_PREVIEW_TAG") or TTS_MODEL
+PREVIEW_TEXT = os.environ.get("BOTC_PREVIEW_TEXT")  # JSON file: {"cue.mp3": "spoken text"}
+SETTING_ENV = {
+    "stability": "BOTC_TTS_STABILITY",
+    "similarity_boost": "BOTC_TTS_SIMILARITY",
+    "style": "BOTC_TTS_STYLE",
+    "speed": "BOTC_TTS_SPEED",
+}
+TEMPO = float(os.environ.get("BOTC_TTS_TEMPO") or 1.0)  # v4 ignores speed; stretch the voice stem instead
+NO_WHISPER = os.environ.get("BOTC_NO_WHISPER") == "1"
 FFMPEG = None
 FFPROBE = None
 
@@ -30,8 +42,9 @@ STITCH_RULES_FULL = True
 VOICE_VOL = 1.22  # was 1.05 — keep narration clear over beds
 AMB_VOL = 0.14  # default bed under voice (non-intro)
 INTRO_AMB_VOL = 0.08  # intro rain only — was 0.14 (still masked voice); keep scream/SFX untouched
-SFX_VOL_PRIMARY = 0.58  # was 0.62
-SFX_VOL_SECONDARY = 0.50  # was 0.55
+SFX_VOL_PRIMARY = 0.42  # was 0.58 — stings sat level with the v4 voice
+SFX_VOL_SECONDARY = 0.36  # was 0.50
+DUCK = "threshold=0.04:ratio=5:attack=20:release=400"  # sidechaincompress: bed + SFX dip under the voice
 
 
 @dataclass
@@ -125,16 +138,41 @@ def http_post_json(url: str, payload: dict, headers: dict, out_path: Path, retri
 def tts(text: str, out: Path, whisper: bool, key: str) -> None:
     settings = (
         {"stability": 0.7, "similarity_boost": 0.85}
-        if whisper
+        if whisper and not NO_WHISPER
         else {"stability": 0.45, "similarity_boost": 0.75}
     )
+    for name, env in SETTING_ENV.items():
+        if os.environ.get(env):
+            settings[name] = float(os.environ[env])
+    if TTS_MODEL.startswith(("eleven_v3", "eleven_v4")):
+        # v3/v4 shrink SSML breaks to ~0.6s; audio tags keep the pause length
+        text = re.sub(
+            r'<break time="([\d.]+)s"\s*/>',
+            lambda m: "[long pause]" if float(m.group(1)) >= 1.0 else "[pause]",
+            text,
+        )
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}?output_format=mp3_44100_128"
     http_post_json(
         url,
-        {"text": text, "model_id": "eleven_multilingual_v2", "voice_settings": settings},
+        {"text": text, "model_id": TTS_MODEL, "voice_settings": settings},
         {"xi-api-key": key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
         out,
     )
+    if TEMPO != 1.0:
+        apply_tempo(out, TEMPO)
+
+
+def apply_tempo(path: Path, tempo: float) -> None:
+    """Pitch-preserving time-stretch of a voice stem, in place."""
+    tmp = path.with_name(path.stem + ".tempo.mp3")
+    r = subprocess.run(
+        [FFMPEG, "-y", "-i", str(path), "-af", f"atempo={tempo}", "-c:a", "libmp3lame", "-b:a", "192k", str(tmp)],
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"atempo failed for {path.name}:\n{r.stderr[-500:]}")
+    tmp.replace(path)
 
 
 def sfx(text: str, out: Path, duration: float, loop: bool, key: str) -> None:
@@ -237,6 +275,8 @@ def parse_script(md: str) -> list[Cue]:
                 continue
             if line.startswith("##"):
                 break
+            if re.fullmatch(r"-{3,}", line):
+                continue
             tone = re.match(r"^\[Tone:\s*(.+?)\]\s*$", line, re.I)
             if tone:
                 if re.search(r"whisper", tone.group(1), re.I):
@@ -408,6 +448,15 @@ def mix_cue(cue: Cue, stem_dir: Path, out_path: Path) -> None:
     if len(labels) == 1:
         # single stream — still normalize
         filters.append(f"{labels[0]}loudnorm=I=-16:TP=-1.5:LRA=11[out]")
+    elif labels[0] == "[v]" and DUCK:
+        bed = labels[1:]
+        if len(bed) > 1:
+            filters.append(f"{''.join(bed)}amix=inputs={len(bed)}:duration=longest:normalize=0[bed]")
+            bed = ["[bed]"]
+        filters.append("[v]asplit=2[vm][vsc0]")
+        filters.append("[vsc0]apad[vsc]")
+        filters.append(f"{bed[0]}[vsc]sidechaincompress={DUCK}[bedd]")
+        filters.append("[vm][bedd]amix=inputs=2:duration=longest:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[out]")
     else:
         n = len(labels)
         filters.append(
@@ -431,9 +480,31 @@ def process_cue(
     force: bool = False,
     skip_existing: bool = False,
     remix_only: bool = False,
+    voice_only: bool = False,
+    preview: bool = False,
 ) -> str:
     out_path = OUT_DIR / cue.filename
-    if cue.filename in SKIP and out_path.exists() and not force and not remix_only:
+    if preview:
+        if not re.sub(r"<break[^>]*>", "", cue.spoken).strip():
+            return f"skip {cue.filename} (no speech)"
+        dest = PREVIEW_DIR / PREVIEW_TAG / cue.filename
+        pv_stems = dest.parent / cue.filename.replace(".mp3", "")
+        pv_stems.mkdir(parents=True, exist_ok=True)
+        live_stems = WORK / cue.filename.replace(".mp3", "")
+        reused = []
+        for stem in sorted(live_stems.glob("amb0.mp3")) + sorted(live_stems.glob("sfx*.mp3")):
+            (pv_stems / stem.name).write_bytes(stem.read_bytes())
+            reused.append(stem.name)
+        spoken = cue.spoken
+        if PREVIEW_TEXT:
+            spoken = json.loads(Path(PREVIEW_TEXT).read_text(encoding="utf-8-sig")).get(cue.filename, spoken)
+        tts(spoken, pv_stems / "voice.mp3", cue.whisper, key)
+        if reused:
+            mix_cue(cue, pv_stems, dest)
+        else:
+            dest.write_bytes((pv_stems / "voice.mp3").read_bytes())
+        return f"preview {dest.relative_to(OUT_DIR).as_posix()} ({duration(dest):.1f}s, reused {reused or 'none'})"
+    if cue.filename in SKIP and out_path.exists() and not force and not remix_only and not voice_only:
         return f"skip {cue.filename} (kept)"
     if skip_existing and out_path.exists() and out_path.stat().st_size > 1000 and not force and not remix_only:
         return f"skip {cue.filename} (exists)"
@@ -453,6 +524,18 @@ def process_cue(
         amb_stale = stem_dir / "amb0.mp3"
         if amb_stale.exists():
             amb_stale.unlink(missing_ok=True)
+
+    # Re-record narration only; ambience / SFX stems are reused (voice.prev.mp3 keeps the first original)
+    if voice_only and has_speech:
+        voice_path = stem_dir / "voice.mp3"
+        backup = stem_dir / "voice.prev.mp3"
+        if voice_path.exists() and not backup.exists():
+            backup.write_bytes(voice_path.read_bytes())
+        tts(cue.spoken, voice_path, cue.whisper, key)
+        time.sleep(0.15)
+        remix_only = True
+    elif voice_only:
+        return f"skip {cue.filename} (no speech)"
 
     # Remix existing stems only (no TTS / no new SFX downloads unless a stem is missing)
     if remix_only:
@@ -587,6 +670,8 @@ def main() -> None:
     skip_existing = "--skip-existing" in flags or "--only-missing" in flags
     variants_only = "--variants" in flags
     remix_only = "--remix" in flags
+    voice_only = "--voice-only" in flags
+    preview = "--preview" in flags
 
     md = SCRIPT.read_text(encoding="utf-8")
     cues = parse_script(md)
@@ -601,13 +686,25 @@ def main() -> None:
     if only:
         cues = [c for c in cues if c.filename in only or c.filename.replace(".mp3", "") in only]
 
-    print(f"Parsed {len(cues)} cues (force={force} skip_existing={skip_existing} remix_only={remix_only})")
+    print(
+        f"Parsed {len(cues)} cues (force={force} skip_existing={skip_existing} remix_only={remix_only} "
+        f"voice_only={voice_only} preview={preview} voice={VOICE_ID} model={TTS_MODEL} tempo={TEMPO} no_whisper={NO_WHISPER})"
+    )
+    overrides = {name: os.environ[env] for name, env in SETTING_ENV.items() if os.environ.get(env)}
+    if preview:
+        print(f"preview tag={PREVIEW_TAG} settings={overrides or 'default'} text={PREVIEW_TEXT or 'script'}")
     ok = 0
     err = 0
     for i, cue in enumerate(cues, 1):
         try:
             msg = process_cue(
-                cue, key, force=force, skip_existing=skip_existing, remix_only=remix_only
+                cue,
+                key,
+                force=force,
+                skip_existing=skip_existing,
+                remix_only=remix_only,
+                voice_only=voice_only,
+                preview=preview,
             )
             print(f"[{i}/{len(cues)}] {msg}")
             ok += 1
@@ -617,7 +714,12 @@ def main() -> None:
             # continue batch
             time.sleep(1)
 
-    want_stitch = STITCH_RULES_FULL and not variants_only and (not only or "rules_full.mp3" in (only or set()))
+    want_stitch = (
+        STITCH_RULES_FULL
+        and not variants_only
+        and not preview
+        and (not only or "rules_full.mp3" in (only or set()))
+    )
     if want_stitch:
         try:
             stitch_rules_full()
