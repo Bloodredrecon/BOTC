@@ -206,8 +206,28 @@
 
 .play-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.4rem;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem;
+}
+
+.play-tabs button {
+  position: relative;
+  padding: 0.4rem 0.2rem;
+  font-size: 0.92rem;
+}
+
+.play-tab-badge {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.25rem;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--blood-bright);
+  color: var(--bone);
+  font-size: 0.75rem;
+  line-height: 1.2rem;
 }
 
 .play-tabs button.on {
@@ -450,6 +470,153 @@
   margin: 0;
   padding-left: 1.1rem;
   line-height: 1.45;
+}
+
+/* Notes */
+.play-note-intro {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.play-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.play-note {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.play-note.good {
+  border-color: rgba(109, 155, 120, 0.55);
+}
+
+.play-note.evil {
+  border-color: var(--line-blood);
+}
+
+.play-note.dead .play-seat-name {
+  color: var(--muted);
+}
+
+.play-note-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.play-note-head em {
+  color: var(--brass);
+  font-style: normal;
+  font-size: 0.85rem;
+}
+
+.play-note-head small {
+  color: var(--muted);
+}
+
+.play-note select,
+.play-note input,
+.play-pad textarea {
+  font-size: 1rem;
+}
+
+.play .play-align {
+  margin-left: auto;
+  min-height: 2.2rem;
+  min-width: 4.2rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.play .play-align.good {
+  border-color: rgba(109, 155, 120, 0.8);
+  color: var(--good);
+}
+
+.play .play-align.evil {
+  border-color: var(--line-blood);
+  color: var(--blood-bright);
+}
+
+.play-facts {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.88rem;
+  color: var(--ink-dim);
+  line-height: 1.3;
+}
+
+.play-pad {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.play-count {
+  justify-self: end;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.play-note-msg {
+  text-align: center;
+}
+
+/* Messages */
+.play .play-word {
+  width: 100%;
+}
+
+.play-thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.play-thread li {
+  max-width: 85%;
+  padding: 0.5rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.15rem;
+}
+
+.play-thread li.from-me {
+  justify-self: end;
+  background: rgba(139, 21, 24, 0.28);
+  border-color: var(--line-blood);
+}
+
+.play-thread li.from-st {
+  justify-self: start;
+  background: rgba(196, 163, 90, 0.1);
+}
+
+.play-thread-who {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+.play-thread-text {
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.play-thread time {
+  justify-self: end;
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 /* Script sheet */

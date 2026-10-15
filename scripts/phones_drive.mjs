@@ -3,7 +3,7 @@
 // port 3847 are never touched), drives Storyteller / TV / phones in system Edge via playwright-core,
 // saves screenshots to docs/tv-design/_verify/phones/phase-<n>/ (gitignored) and stops the server.
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -186,13 +186,13 @@ async function phase2({ base, browser, st }) {
   await banner.getByText("Ada").waitFor();
   await shot(stPage, "05-storyteller-pending-banner");
   await banner.locator("li", { hasText: "Ada" }).getByRole("button", { name: "Approve" }).click();
-  await ada.page.getByRole("button", { name: "Character" }).waitFor();
+  await ada.page.getByRole("button", { name: "Card", exact: true }).waitFor();
   for (const pid of ["p4", "p6"]) {
     const c = st.st().phones.claims.find((x) => x.playerId === pid && x.status === "pending");
     await st.act("game:phoneApprove", { claimId: c.id });
   }
-  await dmitri.page.getByRole("button", { name: "Character" }).waitFor();
-  await fen.page.getByRole("button", { name: "Character" }).waitFor();
+  await dmitri.page.getByRole("button", { name: "Card", exact: true }).waitFor();
+  await fen.page.getByRole("button", { name: "Card", exact: true }).waitFor();
   await ada.page.getByText("hasn't sent characters").waitFor();
   await shot(ada.page, "06-iphone-before-distribute");
 
@@ -302,7 +302,122 @@ async function phase1({ base, browser, st }) {
   await Promise.all([iphone.close(), pixel.close(), tablet.close()]);
 }
 
-const PHASES = { 1: phase1, 2: phase2 };
+/** A phone joins by the QR link and the Storyteller approves it over the socket. */
+async function joinAndApprove(browser, device, base, st, name, playerId) {
+  const p = await phonePage(browser, device);
+  await p.page.goto(`${base}/play?c=${st.st().phones.joinCode}`);
+  await p.page.getByRole("button", { name: new RegExp(name) }).click();
+  await p.page.getByRole("button", { name: "Yes, that's me" }).click();
+  await p.page.getByText("Waiting for the Storyteller").waitFor();
+  await until(() => st.st().phones.claims.some((c) => c.playerId === playerId && c.status === "pending"), `${name} pending`);
+  const c = st.st().phones.claims.find((x) => x.playerId === playerId && x.status === "pending");
+  await st.act("game:phoneApprove", { claimId: c.id });
+  await p.page.getByRole("button", { name: "Card", exact: true }).waitFor();
+  return p;
+}
+
+async function phase3({ base, browser, st }) {
+  await st.act("game:setPhones", { on: true });
+  const ctxs = [];
+  const ada = await joinAndApprove(browser, "iPhone 13", base, st, "Ada", "p1");
+  const fen = await joinAndApprove(browser, "Pixel 7", base, st, "Fenwick", "p6");
+  ctxs.push(ada.ctx, fen.ctx);
+  const dist = await st.act("game:phoneDistribute");
+  if (!dist.ok) throw new Error(`distribute ${JSON.stringify(dist)}`);
+  await st.act("game:startFirstNight");
+  await st.act("game:goDawn");
+  await st.act("game:finishDawn");
+  await until(() => st.st().phase === "day", "day 1");
+
+  // Ada's notes: a claim, an alignment guess, a line of text and the free pad.
+  const a = ada.page;
+  await a.getByRole("button", { name: "Notes", exact: true }).click();
+  await a.getByLabel("Bram claims").selectOption({ label: "Chef" });
+  const bramAlign = a.getByRole("button", { name: /Alignment guess for Bram/ });
+  await bramAlign.click();
+  await bramAlign.click();
+  await a.getByLabel("Notes on Bram").fill("Claimed Chef with a 1, a bit quick");
+  await a.getByLabel("Cora claims").selectOption({ label: "Fortune Teller" });
+  await a.getByRole("button", { name: /Alignment guess for Cora/ }).click();
+  await a.locator(".play-pad textarea").fill("Fenwick and Gwen sat together all night. Ask Cora about her pings.");
+
+  // A public nomination and vote: the notes pick up who nominated and who raised a hand.
+  await st.act("game:goDusk");
+  await st.act("game:openNominations");
+  const nom = await st.act("game:startNomination", { nominatorId: "p1", nomineeId: "p2" });
+  if (!nom.ok) throw new Error(`nomination ${JSON.stringify(nom)}`);
+  await st.act("game:startVote", { seconds: 30 });
+  for (const v of ["p1", "p3", "p6", "p7"]) await st.act("game:toggleVote", { playerId: v });
+  await st.act("game:resolveVote");
+  await a.getByText("D1: nominated by Ada").waitFor();
+  await a.getByText("D1: voted for Bram").first().waitFor();
+  await a.locator(".play-note", { hasText: "Bram" }).first().scrollIntoViewIfNeeded();
+  await a.evaluate(() => window.scrollTo(0, 0));
+  await shot(a, "01-iphone-notes-grid");
+  await a.locator(".play-pad").scrollIntoViewIfNeeded();
+  await shot(a, "02-iphone-notes-pad");
+
+  // Reload: notes come back from this phone's storage.
+  await a.reload();
+  await a.getByRole("button", { name: "Notes", exact: true }).click();
+  const kept = await a.getByLabel("Notes on Bram").inputValue();
+  if (kept !== "Claimed Chef with a 1, a bit quick") throw new Error(`notes after reload: ${kept}`);
+  if ((await a.getByLabel("Bram claims").inputValue()) !== "chef") throw new Error("claim lost on reload");
+  log("notes survive a reload; facts: nominated / voted");
+
+  // Export from Ada, import on another phone.
+  const [download] = await Promise.all([a.waitForEvent("download"), a.getByRole("button", { name: "Save a copy" }).click()]);
+  const file = join(OUT, "ada-notes-export.json");
+  await download.saveAs(file);
+  const exported = JSON.parse(readFileSync(file, "utf8"));
+  if (exported.kind !== "botc-notes" || exported.seats.p2?.claim !== "chef") throw new Error("export content");
+  const f = fen.page;
+  await f.getByRole("button", { name: "Notes", exact: true }).click();
+  await f.locator('input[type="file"]').setInputFiles(file);
+  await f.getByText("Notes loaded.").waitFor();
+  if ((await f.getByLabel("Notes on Bram").inputValue()) !== "Claimed Chef with a 1, a bit quick") throw new Error("import did not load");
+  log("export from one phone, import on another");
+
+  // Messages: Ada asks a question, Fenwick asks for a word.
+  await a.getByRole("button", { name: /^Ask/ }).click();
+  await a.getByPlaceholder(/Monk/).fill("If the Monk protects me, does the Slayer still kill me?");
+  await a.getByRole("button", { name: "Send", exact: true }).click();
+  await a.getByText("Sent to the Storyteller.").waitFor();
+  await f.getByRole("button", { name: /^Ask/ }).click();
+  await f.getByRole("button", { name: "Request a word with the Storyteller" }).click();
+  await f.getByText("The Storyteller knows you'd like a word.").waitFor();
+  await shot(f, "03-pixel-request-word");
+
+  const tablet = await browser.newContext({ viewport: { width: 820, height: 1180 }, deviceScaleFactor: 1 });
+  ctxs.push(tablet);
+  const stPage = await tablet.newPage();
+  await stPage.goto(`${base}/storyteller`);
+  await stPage.getByPlaceholder("PIN").fill(PIN);
+  await stPage.getByRole("button", { name: "Unlock grimoire" }).click();
+  const inbox = stPage.locator(".inbox-banner");
+  await inbox.getByText("would like a word").waitFor();
+  await shot(stPage, "04-storyteller-inbox");
+  await a.getByRole("button", { name: "Card", exact: true }).click();
+  const adaThread = inbox.locator(".inbox-thread", { hasText: "Slayer" });
+  await adaThread.getByLabel(/Reply to Ada/).fill("No: the Monk only protects from the Demon at night.");
+  await adaThread.getByRole("button", { name: "Reply" }).click();
+  await inbox.locator(".inbox-thread", { hasText: "Fenwick" }).getByRole("button", { name: "Mark read" }).click();
+  await inbox.waitFor({ state: "detached" });
+  await a.locator(".play-tab-badge").waitFor();
+  await shot(a, "05-iphone-reply-badge");
+  await a.getByRole("button", { name: /^Ask/ }).click();
+  await a.getByText("No: the Monk only protects").waitFor();
+  const bubble = await a.locator(".play-thread li.from-st").last().evaluate((li) => li.getBoundingClientRect().height);
+  if (bubble > 160) throw new Error(`reply bubble is ${bubble}px tall`);
+  await a.locator(".play-thread li.from-st").last().scrollIntoViewIfNeeded();
+  await shot(a, "06-iphone-thread");
+  if (await a.locator(".play-tab-badge").count()) throw new Error("badge stayed after reading");
+  log("question + word request → Storyteller inbox → reply on the phone with a badge; inbox clears");
+
+  await Promise.all(ctxs.map((c) => c.close()));
+}
+
+const PHASES = { 1: phase1, 2: phase2, 3: phase3 };
 
 const port = await freePort();
 const dir = mkdtempSync(join(tmpdir(), "botc-phones-drive-"));

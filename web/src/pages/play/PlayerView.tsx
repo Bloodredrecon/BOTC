@@ -1,9 +1,19 @@
 import { useState } from "react";
 import type { PlayerState } from "../../types";
 import { CharacterCard } from "./CharacterCard";
+import { MessagesView, unreadReplies } from "./MessagesView";
+import { NotesView } from "./NotesView";
 import { SheetView, TownView, isNight, phaseLine } from "./TownView";
 
 type Emit = (event: string, data?: unknown, ack?: (r: unknown) => void) => void;
+type Tab = "character" | "town" | "notes" | "ask";
+
+const TABS: [Tab, string][] = [
+  ["character", "Card"],
+  ["town", "Town"],
+  ["notes", "Notes"],
+  ["ask", "Ask"],
+];
 
 export function PlayHeader({ title, sub }: { title: string; sub: string }) {
   return (
@@ -16,9 +26,10 @@ export function PlayHeader({ title, sub }: { title: string; sub: string }) {
 }
 
 /** An approved phone: character (hold to reveal), the town, and the script sheet. Night is a dark screen. */
-export function PlayerView({ state, onLeave }: { state: PlayerState; emit: Emit; onLeave: () => void }) {
-  const [tab, setTab] = useState<"character" | "town">("character");
+export function PlayerView({ state, emit, onLeave }: { state: PlayerState; emit: Emit; onLeave: () => void }) {
+  const [tab, setTab] = useState<Tab>("character");
   const me = state.me;
+  const unread = tab === "ask" ? 0 : unreadReplies(state);
   const title = `${me.name || `Seat ${me.seat}`} · seat ${me.seat}`;
 
   if (isNight(state.phase)) {
@@ -45,14 +56,18 @@ export function PlayerView({ state, onLeave }: { state: PlayerState; emit: Emit;
         </div>
       )}
       <nav className="play-tabs" aria-label="Sections">
-        <button type="button" className={tab === "character" ? "on" : ""} onClick={() => setTab("character")}>
-          Character
-        </button>
-        <button type="button" className={tab === "town" ? "on" : ""} onClick={() => setTab("town")}>
-          Town
-        </button>
+        {TABS.map(([id, label]) => (
+          <button key={id} type="button" className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
+            {label}
+            {id === "ask" && unread > 0 && <span className="play-tab-badge">{unread}</span>}
+          </button>
+        ))}
       </nav>
-      {tab === "character" ? (
+      {tab === "notes" ? (
+        <NotesView state={state} />
+      ) : tab === "ask" ? (
+        <MessagesView state={state} emit={emit} />
+      ) : tab === "character" ? (
         <div className="play-stack">
           <CharacterCard me={me} gameId={state.gameId} />
           <details className="play-card play-details">

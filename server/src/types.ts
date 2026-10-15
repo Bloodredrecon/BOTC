@@ -189,6 +189,8 @@ export type PublicEvent =
       votesFor: number;
       majority: number;
       outcome: VoteOutcome;
+      /** Hands that were up (public at the table); missing on games saved before this was kept. */
+      voterIds?: string[];
       at: number;
     }
   | { type: "dusk"; dayNumber: number; at: number }

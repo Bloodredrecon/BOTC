@@ -4,6 +4,7 @@ import type { AudioCueInfo, NightShowSpec, Player, StorytellerState, Team } from
 import { ConnectionBanners, ConnectionPills } from "./storyteller/ConnectionStatus";
 import { GrimoireCircle } from "./storyteller/GrimoireCircle";
 import { LogPanel } from "./storyteller/LogPanel";
+import { PhoneInbox } from "./storyteller/PhoneInbox";
 import { PendingClaimsBanner, PhonesPanel } from "./storyteller/PhonesPanel";
 import { RecapPanel } from "./storyteller/RecapPanel";
 import { SetupWizard } from "./storyteller/SetupWizard";
@@ -402,6 +403,7 @@ export function StorytellerPage() {
       <ConnectionBanners connected={connected} presence={presence} phase={state.phase} droppedAt={droppedAt} />
       <UndoBar undo={undo} emit={emit} />
       <PendingClaimsBanner state={state} emit={emit} />
+      <PhoneInbox state={state} emit={emit} unreadOnly />
 
       {pinIsDefault && (
         <div className="panel pin-default-warning" role="alert">
@@ -751,6 +753,7 @@ function SetupTab({
       <SetupWizard state={state} emit={emit} />
 
       <PhonesPanel state={state} emit={emit} />
+      <PhoneInbox state={state} emit={emit} unreadOnly={false} />
 
       <div className="panel">
         <h2>TV character sheet</h2>

@@ -308,6 +308,42 @@ const cases: AsyncCase[] = [
     },
   },
   {
+    name: "Messages: refused at night and from unlinked phones; reach only the Storyteller; replies reach only that phone; rate-limited",
+    run: async () => {
+      type Msgs = PlayerSt & { me: { messages: { from: string; text: string }[] } };
+      type StPriv = StState & { phase: string; phones: { private: Record<string, { messages: { text: string }[]; unreadByStoryteller: number }> } };
+      const p1 = phonesBySeat.get("p1")!.rec;
+      const p2 = phonesBySeat.get("p2")!.rec;
+      const night = await ask(p1, "player:message", { kind: "question", text: "CANARY-Q at night" });
+      if (night.ok !== false || !/night/.test(String(night.error))) return `night: ${JSON.stringify(night)}`;
+      await act("game:goDawn");
+      await act("game:finishDawn");
+      await until(() => (stState(st) as StPriv).phase === "day", "day");
+      const stranger = await phone("msg-stranger");
+      const s = await ask(stranger, "player:message", { kind: "question", text: "CANARY-Q stranger" });
+      if (s.ok !== false) return "unlinked phone sent a message";
+      const tvBefore = count(tv, "state:public");
+      const p2Before = count(p2, "state:player");
+      const ok = await ask(p1, "player:message", { kind: "question", text: "CANARY-Q does the Monk stop the Slayer?" });
+      if (!ok.ok) return `send ${JSON.stringify(ok)}`;
+      await until(() => (stState(st) as StPriv).phones.private.p1?.unreadByStoryteller === 1, "Storyteller unread");
+      await until(() => !!last<Msgs>(p1, "state:player")?.me.messages.some((m) => m.text.startsWith("CANARY-Q")), "own copy");
+      await act("game:phoneReply", { playerId: "p1", text: "CANARY-R yes" });
+      await until(() => last<Msgs>(p1, "state:player")?.me.messages.at(-1)?.text === "CANARY-R yes", "reply on the phone");
+      if ((stState(st) as StPriv).phones.private.p1?.unreadByStoryteller !== 0) return "reply did not mark read";
+      await sleep(200);
+      if (count(tv, "state:public") !== tvBefore) return "TV got a state for a message";
+      if (count(p2, "state:player") !== p2Before) return "another phone got a state for p1's message";
+      for (const r of [tv, p2, stranger]) if (JSON.stringify(r.events).includes("CANARY-")) return `${r.label} saw message text`;
+      let refused: Record<string, unknown> | null = null;
+      for (let i = 0; i < 8 && !refused; i++) {
+        const r = await ask(p2, "player:message", { kind: "word" });
+        if (r.ok === false) refused = r;
+      }
+      return refused && /minute/.test(String(refused.error)) ? null : `no rate limit: ${JSON.stringify(refused)}`;
+    },
+  },
+  {
     name: "New game: 'same table' keeps phones bound by seat; a plain new game clears them",
     run: async () => {
       await act("game:reset", { sameTable: true });

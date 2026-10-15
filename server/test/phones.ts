@@ -369,6 +369,41 @@ const cases: Case[] = [
     },
   },
   {
+    name: "Messages: limits, never at night, word requests, reply marks read; only that phone and the Storyteller see them",
+    run: () => {
+      const e = canaryGame();
+      e.session.phase = "day";
+      e.session.dayNumber = 1;
+      const s = e.session;
+      const q = phones.addPlayerMessage(s, "p1", "question", "  CANARY-MSG   does the Monk stop the Slayer? ");
+      if (!q.ok || q.message.text !== "CANARY-MSG does the Monk stop the Slayer?") return `question ${JSON.stringify(q)}`;
+      if (phones.privateFor(s, "p1").unreadByStoryteller !== 1) return "unread not counted";
+      const empty = phones.addPlayerMessage(s, "p1", "question", "   ");
+      const long = phones.addPlayerMessage(s, "p1", "question", "x".repeat(phones.MESSAGE_MAX_CHARS + 1));
+      if (empty.ok || long.ok) return "empty or over-long question accepted";
+      const word = phones.addPlayerMessage(s, "p1", "word", "");
+      if (!word.ok || word.message.text !== phones.WORD_TEXT || word.message.kind !== "word") return `word ${JSON.stringify(word)}`;
+      s.phase = "night";
+      if (phones.addPlayerMessage(s, "p1", "question", "at night?").ok) return "sent at night";
+      s.phase = "day";
+      if (playerState(e, "p1")!.me.messages.length !== 2) return "own messages missing";
+      for (const id of ["p2", "p7"]) if (JSON.stringify(playerState(e, id)).includes("CANARY-MSG")) return `${id} saw p1's message`;
+      if (JSON.stringify(projection.toPublicState(s, script, { seq: 1 })).includes("CANARY-MSG")) return "public state has a message";
+      if (!phones.toPhonePanel(s, { connected: {}, spectators: 0 }).private.p1?.messages.some((m) => m.text.includes("CANARY-MSG"))) {
+        return "Storyteller panel lacks the message";
+      }
+      if (phones.addStorytellerReply(s, "p1", "  ").ok) return "empty reply accepted";
+      if (!phones.addStorytellerReply(s, "p1", "Yes, it does.").ok) return "reply refused";
+      if (phones.privateFor(s, "p1").unreadByStoryteller !== 0) return "reply did not mark read";
+      const mine = playerState(e, "p1")!.me.messages;
+      if (mine.at(-1)?.from !== "storyteller" || mine.at(-1)?.text !== "Yes, it does.") return "reply not on the phone";
+      for (let i = 0; i < 210; i++) phones.addPlayerMessage(s, "p2", "question", `q${i}`);
+      if (phones.privateFor(s, "p2").messages.length !== 200) return `kept ${phones.privateFor(s, "p2").messages.length}`;
+      s.phones.enabled = false;
+      return phones.addPlayerMessage(s, "p1", "question", "off?").ok ? "sent while phones are off" : null;
+    },
+  },
+  {
     name: "Config default applies only to a session without a phones setting",
     run: () => {
       const path = process.env.BOTC_SESSION_PATH!;

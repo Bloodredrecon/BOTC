@@ -43,6 +43,8 @@ Players can use their own phones for private things, but the game never depends 
 5. At night phones go to a dark "eyes closed" screen. A dead player's phone says so only after the dawn announcement, with their ghost vote.
 6. The device panel can also move a phone to another seat, unlink it, give a one-time **hand-over code** for a new phone, close seat claims, show a new code and unlink everyone. Friends who just want to follow along tap **Just watch** on `/play`.
 7. **New game** with **Same table** ticked (Control tab) keeps names in their seats and every linked phone stays linked.
+8. **Notes** (phone, Notes tab) stay on that phone only: a claim, a Good / Evil guess and a line per seat, a free pad, and public facts filled in for them (nominations, vote counts, who voted, deaths). **Save a copy** / **Load a copy** moves them to another phone.
+9. **Ask** (phone) sends a question or "Request a word" to the Storyteller only, by day. They appear in a "Messages from players" banner on the Storyteller page; **Reply** goes to that one phone.
 
 The design, the security model and what is built so far are in [docs/PLAYER_PHONES_PLAN.md](docs/PLAYER_PHONES_PLAN.md).
 

@@ -1784,6 +1784,7 @@ export class GameEngine {
           votesFor: votes,
           majority: maj,
           outcome: result,
+          voterIds: [...s.nomination.votesFor],
           at: Date.now(),
         });
         s.block = block;

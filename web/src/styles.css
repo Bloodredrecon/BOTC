@@ -1216,3 +1216,14 @@ code {
 .phone-dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--muted); margin-right: 0.4rem; vertical-align: middle; }
 .phone-dot.on { background: var(--good); box-shadow: 0 0 6px var(--good); }
 .phone-handover { margin: 0.4rem 0 0; }
+.inbox-banner { border-color: var(--brass); }
+.inbox-count { display: inline-block; margin-left: 0.5rem; min-width: 1.4rem; padding: 0 0.35rem; border-radius: 999px; background: var(--blood-bright); color: var(--bone); font-size: 0.8rem; text-align: center; vertical-align: middle; }
+.inbox-list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.6rem; }
+.inbox-thread { border: 1px solid rgba(196, 163, 90, 0.18); border-radius: 4px; padding: 0.5rem 0.6rem; }
+.inbox-thread.unread { border-color: var(--brass); }
+.inbox-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.inbox-head .chip { margin-left: auto; }
+.inbox-word { color: var(--blood-bright); font-family: var(--font-display); font-size: 0.85rem; letter-spacing: 0.06em; }
+.inbox-msgs { list-style: none; margin: 0.35rem 0; padding: 0; display: grid; gap: 0.2rem; }
+.inbox-msgs li.from-st { color: var(--ink-dim); }
+.inbox-reply input { flex: 1 1 12rem; }

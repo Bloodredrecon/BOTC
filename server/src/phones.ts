@@ -5,6 +5,7 @@ import type {
   GameSession,
   PhoneClaim,
   PhoneMe,
+  PhoneMessage,
   PhonePanel,
   PhonePrivate,
   PhonePublic,
@@ -314,6 +315,62 @@ export function revealNewDemon(s: GameSession, script: ScriptData, playerId: str
   if (!p) return;
   const r = revealFor(script, p);
   if (!("error" in r)) storeReveal(s, playerId, r, now);
+}
+
+export const MESSAGE_MAX_CHARS = 280;
+export const REPLY_MAX_CHARS = 500;
+const MESSAGES_KEPT = 200;
+export const WORD_TEXT = "Can I have a word?";
+
+function pushMessage(s: GameSession, playerId: string, m: Omit<PhoneMessage, "id">): PhoneMessage {
+  const priv = privateFor(s, playerId);
+  const msg: PhoneMessage = { id: randomBytes(6).toString("base64url"), ...m };
+  priv.messages.push(msg);
+  if (priv.messages.length > MESSAGES_KEPT) priv.messages.splice(0, priv.messages.length - MESSAGES_KEPT);
+  return msg;
+}
+
+/** A player's question or "request a word" to the Storyteller. Never at night: the phone is face down. */
+export function addPlayerMessage(
+  s: GameSession,
+  playerId: string,
+  kind: unknown,
+  text: unknown,
+  now = Date.now(),
+): { ok: true; message: PhoneMessage } | { ok: false; error: string } {
+  if (!s.phones.enabled) return { ok: false, error: "Player phones are off for this game." };
+  if (s.phase === "firstNight" || s.phase === "night") return { ok: false, error: "Phones can't send at night. Wait for the morning." };
+  if (!s.players.some((p) => p.id === playerId && !p.leftGame)) return { ok: false, error: "That seat is not in the game." };
+  const k = kind === "word" ? "word" : "question";
+  const body = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (k === "question" && !body) return { ok: false, error: "Type your question first." };
+  if (body.length > MESSAGE_MAX_CHARS) return { ok: false, error: `Keep it under ${MESSAGE_MAX_CHARS} characters.` };
+  const message = pushMessage(s, playerId, { from: "player", kind: k, text: body || WORD_TEXT, at: now });
+  privateFor(s, playerId).unreadByStoryteller += 1;
+  return { ok: true, message };
+}
+
+/** The Storyteller's reply. Replying also counts as having read the thread. */
+export function addStorytellerReply(
+  s: GameSession,
+  playerId: string,
+  text: unknown,
+  now = Date.now(),
+): { ok: true } | { ok: false; message: string } {
+  if (!s.phones.enabled) return { ok: false, message: "Player phones are off." };
+  if (!s.players.some((p) => p.id === playerId && !p.leftGame)) return { ok: false, message: "Pick a seat." };
+  const body = String(text ?? "").trim();
+  if (!body) return { ok: false, message: "Type a reply first." };
+  if (body.length > REPLY_MAX_CHARS) return { ok: false, message: `Keep it under ${REPLY_MAX_CHARS} characters.` };
+  pushMessage(s, playerId, { from: "storyteller", kind: "reply", text: body, at: now });
+  privateFor(s, playerId).unreadByStoryteller = 0;
+  return { ok: true };
+}
+
+export function markMessagesRead(s: GameSession, playerId: string): { ok: true } {
+  const priv = s.phones.private[playerId];
+  if (priv) priv.unreadByStoryteller = 0;
+  return { ok: true };
 }
 
 export type ClaimResult =

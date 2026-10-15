@@ -3,6 +3,8 @@ import type { ActionLog } from "./action-log.js";
 import type { GameEngine } from "./game.js";
 import type { ScriptData } from "./persistence.js";
 import {
+  addPlayerMessage,
+  addStorytellerReply,
   approveClaim,
   clearClaims,
   createClaim,
@@ -11,6 +13,7 @@ import {
   dropOrphanClaims,
   findClaimByToken,
   hashToken,
+  markMessagesRead,
   randomCode,
   reassignClaim,
   removeClaim,
@@ -27,6 +30,8 @@ const PHONES_ROOM = "phones";
 const SPECTATOR_ROOM = "spectator";
 const playerRoom = (id: string) => `player:${id}`;
 const HANDOVER_TTL_MS = 10 * 60_000;
+const MESSAGE_WINDOW_MS = 60_000;
+const MESSAGES_PER_WINDOW = 6;
 const MAX_REMEMBERED_REASONS = 500;
 
 type RemovedReason = "denied" | "revoked" | "replaced" | "cleared";
@@ -70,6 +75,7 @@ export class PhoneHub {
   private removedReasons = new Map<string, RemovedReason>();
   /** One-time hand-over codes (memory only: they expire in minutes). */
   private handovers = new Map<string, { playerId: string; expiresAt: number }>();
+  private messageTimes = new Map<string, number[]>();
   private throttle = new CodeThrottle();
 
   constructor(
@@ -356,6 +362,29 @@ export class PhoneHub {
         });
         return { ok: true, token: result.token };
       },
+      "player:message": (d) => {
+        const mine = own();
+        if (!mine || mine.status !== "active" || socket.data.boundPlayerId !== mine.playerId) {
+          return { ok: false, error: "Only an approved phone can message the Storyteller." };
+        }
+        const now = Date.now();
+        const recent = (this.messageTimes.get(mine.playerId) ?? []).filter((t) => now - t < MESSAGE_WINDOW_MS);
+        if (recent.length >= MESSAGES_PER_WINDOW) return { ok: false, error: "That's a lot of messages. Give the Storyteller a minute." };
+        const r = this.engine.mutatePrivate((s) => addPlayerMessage(s, mine.playerId, d.kind, d.text, now), [mine.playerId]);
+        if (!r.ok) return r;
+        recent.push(now);
+        this.messageTimes.set(mine.playerId, recent);
+        this.actionLog.record({
+          t: now,
+          kind: "action",
+          action: "player:message",
+          outcome: "info",
+          reason: `${this.seatLabel(mine.playerId)} ${r.message.kind === "word" ? "asks for a word" : "sent a question"}`,
+          client,
+          ...this.here(),
+        });
+        return { ok: true };
+      },
       "player:leave": () => {
         const mine = own();
         if (!mine) return { ok: true };
@@ -437,6 +466,12 @@ export class PhoneHub {
         if (r.ok) this.afterPrivate([playerId]);
         return r;
       },
+      "game:phoneReply": (d) => {
+        const playerId = String(d.playerId ?? "");
+        const r = this.engine.mutatePrivate((s) => addStorytellerReply(s, playerId, d.text), [playerId]);
+        return r;
+      },
+      "game:phoneMarkRead": (d) => this.engine.mutatePrivate((s) => markMessagesRead(s, String(d.playerId ?? ""))),
       "game:phoneRotateCode": () => {
         this.engine.mutate((s) => {
           s.phones.joinCode = randomCode(4);

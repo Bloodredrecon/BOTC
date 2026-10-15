@@ -164,6 +164,7 @@ export type PublicEvent =
       votesFor: number;
       majority: number;
       outcome: VoteOutcome;
+      voterIds?: string[];
       at: number;
     }
   | { type: "dusk"; dayNumber: number; at: number }

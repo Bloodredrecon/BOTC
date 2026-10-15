@@ -225,6 +225,17 @@ const cases: Case[] = [
     },
   },
   {
+    name: "The public vote result lists the hands that were up (for phone notes)",
+    run: () => {
+      const { e } = setup(TOWN);
+      vote(e, "p1", "p3", ["p2", "p5", "p4"]);
+      const log = e.session.publicLog.at(-1);
+      assert(log?.type === "vote_result", "no vote_result");
+      if (log?.type !== "vote_result") return;
+      assert(JSON.stringify(log.voterIds) === JSON.stringify(["p2", "p5", "p4"]), `voterIds ${JSON.stringify(log.voterIds)}`);
+    },
+  },
+  {
     name: "Majority but fewer votes than the block holder → outvoted, block unchanged",
     run: () => {
       const { e } = setup(TOWN);
