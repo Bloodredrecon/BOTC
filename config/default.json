@@ -3,6 +3,7 @@
   "host": "0.0.0.0",
   "storytellerPin": "1234",
   "playerPhones": false,
+  "https": false,
   "hue": {
     "enabled": false,
     "bridgeIp": "",

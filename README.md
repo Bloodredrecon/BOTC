@@ -32,7 +32,7 @@ Players can use their own phones for private things, but the game never depends 
 
 - **Switching off mid-game is safe.** Connected phones show "phones turned off" and stop getting anything private. Their seats are remembered, so switching back on re-links them (the Storyteller can also clear them).
 - **Switching on mid-game works too.**
-- **Default for new sessions:** `"playerPhones": true` in `config/local.json` (or `BOTC_PHONES=1`). A saved game keeps its own setting.
+- **Default for new sessions:** `BOTC.bat` > **Settings** > **5) Player phones** (or `BOTC.bat set -Phones on`, which writes `"playerPhones": true` to `config/local.json`; `BOTC_PHONES=1` also works). A saved game keeps its own setting.
 
 **At the table, with phones on:**
 
@@ -46,6 +46,20 @@ Players can use their own phones for private things, but the game never depends 
 8. **Notes** (phone, Notes tab) stay on that phone only: a claim, a Good / Evil guess and a line per seat, a free pad, and public facts filled in for them (nominations, vote counts, who voted, deaths). **Save a copy** / **Load a copy** moves them to another phone.
 9. **Ask** (phone) sends a question or "Request a word" to the Storyteller only, by day. They appear in a "Messages from players" banner on the Storyteller page; **Reply** goes to that one phone.
 10. **Voting:** when you start the vote clock, players with a connected phone get a big **Raise my hand** button (they raise their real hand too). On the Votes tab press **Start the count**: a clock hand goes round from the seat after the nominee, on the TV too, and locks each seat as it passes. Seats without a phone are yours to tap on the chips, and tapping any chip overrides that seat. **Pause**, **Back one seat** and **Resume** if someone needs a moment. **Phones off for voting** (Votes tab or Setup) goes back to counting every hand yourself; hands already counted stay.
+
+### Optional HTTPS (keeps phone screens on)
+
+Browsers only let a page keep the screen awake (the Wake Lock API) over HTTPS. Plain HTTP stays the default and everything else works without it; phone screens just lock on their normal timer.
+
+- **Turn it on:** `BOTC.bat` > **9) Settings** > **4) HTTPS**, or `BOTC.bat set -Https on` (`set -Https off` to go back). Restart the server. The first HTTPS start makes a self-signed certificate in `config/tls/` (gitignored; never share `botc.key`). Join addresses and the TV QR code switch to `https://`, so phones that saved the old address must scan again.
+- **Each device warns once.** The certificate is not from a public authority, so every phone, tablet and the TV shows a warning the first time:
+  - iPhone / iPad (Safari): **Show Details** > **visit this website** > **Visit Website**.
+  - Android (Chrome): **Advanced** > **Proceed to … (unsafe)**.
+  - Desktop browsers: **Advanced** > **Continue / Proceed**.
+- **By day, with HTTPS, a linked phone keeps its screen on** (the Character tab says so). At night it is released so the phone can sleep face down.
+- **Smart TVs:** some TV browsers refuse self-signed certificates with no way past the warning. If yours does, turn HTTPS off, or show the TV page from a laptop or a casting device instead.
+- **New certificate:** it lasts about 13 months and is remade automatically when it is near expiry or this PC gets a new LAN address (devices then warn once more). **Settings > 6) Make a new HTTPS certificate** forces one. `BOTC.bat check` shows the certificate's addresses and expiry.
+- Developer mode (`npm run dev`) always runs plain HTTP.
 
 The design, the security model and what is built so far are in [docs/PLAYER_PHONES_PLAN.md](docs/PLAYER_PHONES_PLAN.md).
 
@@ -73,7 +87,7 @@ Before guests arrive, run **C) Pre-game check** (or `BOTC.bat check`). It checks
 
 While a game is running, the Storyteller page shows **Server** and **TV** pills at the top and a banner if either drops out. Taps made while the server is unreachable are not sent (you are told), so nothing fires late after the connection comes back. The TV shows a small "Reconnecting…" badge and resyncs on its own.
 
-The launcher also works from a terminal: `BOTC.bat start | stop | restart | rebuild | status | addresses | check | log`, or `BOTC.bat set -Port 3900 -BindHost 0.0.0.0 -Pin 4321` / `BOTC.bat reset-settings`.
+The launcher also works from a terminal: `BOTC.bat start | stop | restart | rebuild | status | addresses | check | log`, or `BOTC.bat set -Port 3900 -BindHost 0.0.0.0 -Pin 4321` (also `-Https on|off`, `-Phones on|off`) / `BOTC.bat reset-settings`.
 
 Files the launcher uses (all gitignored):
 
@@ -86,9 +100,9 @@ See also [docs/HUE.md](docs/HUE.md) and [docs/AUDIO.md](docs/AUDIO.md).
 
 Settings are layered. The highest one wins:
 
-1. Environment variables: `BOTC_PORT` or `PORT`, `BOTC_HOST` or `HOST`, `BOTC_PIN`, `BOTC_PHONES`
+1. Environment variables: `BOTC_PORT` or `PORT`, `BOTC_HOST` or `HOST`, `BOTC_PIN`, `BOTC_PHONES`, `BOTC_HTTPS` (`1` / `0`)
 2. `config/local.json`: your machine's overrides, written by the launcher's Settings menu (gitignored)
-3. `config/default.json`: shipped defaults (port `3847`, host `0.0.0.0`, PIN `1234`)
+3. `config/default.json`: shipped defaults (port `3847`, host `0.0.0.0`, PIN `1234`, `playerPhones` and `https` off)
 
 `config/local.json` only needs the keys you want to change, for example:
 

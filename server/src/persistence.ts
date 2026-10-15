@@ -28,6 +28,8 @@ export type AppConfig = {
   storytellerPin: string;
   /** Default for the per-game "Player phones" setting (new sessions only). */
   playerPhones: boolean;
+  /** Serve HTTPS with a self-signed certificate (config/tls) so phones can keep their screens on. */
+  https: boolean;
   hue: {
     enabled: boolean;
     bridgeIp: string;
@@ -66,7 +68,7 @@ function parsePort(raw: unknown): number | null {
 /**
  * Precedence (highest wins): env vars > config/local.json > config/default.json.
  * config/hue.json is merged into `hue` after local.json.
- * Env: BOTC_PORT or PORT, BOTC_HOST or HOST, BOTC_PIN, BOTC_PHONES (1/0).
+ * Env: BOTC_PORT or PORT, BOTC_HOST or HOST, BOTC_PIN, BOTC_PHONES (1/0), BOTC_HTTPS (1/0).
  */
 export function loadConfig(): AppConfig {
   const base = readJson(CONFIG_PATH) as unknown as AppConfig;
@@ -84,6 +86,7 @@ export function loadConfig(): AppConfig {
         base.storytellerPin = String(local.storytellerPin).trim();
       }
       if (typeof local.playerPhones === "boolean") base.playerPhones = local.playerPhones;
+      if (typeof local.https === "boolean") base.https = local.https;
       base.hue = mergeHue(base.hue, local.hue);
     } catch (err) {
       console.warn(`config/local.json could not be read (${String(err)}); using defaults`);
@@ -109,6 +112,8 @@ export function loadConfig(): AppConfig {
   if (process.env.BOTC_PIN) base.storytellerPin = process.env.BOTC_PIN;
   base.playerPhones = Boolean(base.playerPhones);
   if (process.env.BOTC_PHONES) base.playerPhones = /^(1|true|on|yes)$/i.test(process.env.BOTC_PHONES);
+  base.https = Boolean(base.https);
+  if (process.env.BOTC_HTTPS) base.https = /^(1|true|on|yes)$/i.test(process.env.BOTC_HTTPS);
   return base;
 }
 

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import { Server } from "socket.io";
 import {
   CUSTOM_AUDIO_DIR,
@@ -14,7 +14,8 @@ import {
 } from "./audio-library.js";
 import { GameEngine } from "./game.js";
 import { createHueDriver } from "./hue.js";
-import { formatJoinInfo, joinBaseUrls } from "./join-info.js";
+import { formatJoinInfo, joinBaseUrls, type Scheme } from "./join-info.js";
+import { ensureCertificate, TLS_DIR, type TlsMaterial } from "./tls.js";
 import {
   ActionLog,
   describeArgs,
@@ -48,7 +49,21 @@ const hue = createHueDriver(config.hue);
 ensureAudioDirs();
 ensureIntroPlaceholder();
 
-const app = Fastify({ logger: true });
+let tls: TlsMaterial | null = null;
+if (config.https) {
+  try {
+    tls = await ensureCertificate(config.host);
+    if (tls.created) console.log(`HTTPS: made a new self-signed certificate in ${TLS_DIR} (${tls.reason}).`);
+  } catch (err) {
+    console.error(`HTTPS is on but the certificate could not be made (${String(err)}). Turn HTTPS off in BOTC.bat > Settings.`);
+    process.exit(1);
+  }
+}
+const scheme: Scheme = tls ? "https" : "http";
+
+const app = (
+  tls ? Fastify({ logger: true, https: { key: tls.key, cert: tls.cert } }) : Fastify({ logger: true })
+) as unknown as FastifyInstance;
 await app.register(cors, { origin: true });
 
 app.get("/api/health", async () => ({
@@ -57,6 +72,7 @@ app.get("/api/health", async () => ({
   pid: process.pid,
   hueLive: hue.isLive(),
   script: script.name,
+  scheme,
 }));
 
 // Set by scripts/botc.ps1 so its Stop can shut down cleanly; route is disabled otherwise.
@@ -77,7 +93,7 @@ app.get("/api/config/public", async () => ({
   scriptName: script.name,
   port: config.port,
   // Where phones should go (the TV may itself be on localhost); null while player phones are off.
-  joinBase: engine.session.phones.enabled ? (joinBaseUrls(config.host, config.port).main[0] ?? null) : null,
+  joinBase: engine.session.phones.enabled ? (joinBaseUrls(config.host, config.port, scheme).main[0] ?? null) : null,
 }));
 
 app.get("/api/audio/cues", async () => ({ cues: listAudioCues() }));
@@ -624,5 +640,5 @@ async function shutdown(reason: string): Promise<void> {
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
-console.log(formatJoinInfo({ host: config.host, port: config.port, pin: config.storytellerPin }));
+console.log(formatJoinInfo({ host: config.host, port: config.port, pin: config.storytellerPin, scheme }));
 console.log(`Hue: ${hue.isLive() ? "live" : "stub mode"}`);

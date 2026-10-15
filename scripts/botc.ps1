@@ -13,6 +13,8 @@
     BOTC.bat log -Server           raw server output (data\logs\server.log)
     BOTC.bat check [-Full]         pre-game check (-Full also runs every server test)
     BOTC.bat set -Port 3900 -BindHost 0.0.0.0 -Pin 1234
+    BOTC.bat set -Https on|off      self-signed HTTPS (phones can keep their screens on)
+    BOTC.bat set -Phones on|off     "Player phones" default for new games
     BOTC.bat reset-settings
   Add -Yes to auto-confirm stopping another BOTC server that holds the port.
 #>
@@ -24,6 +26,8 @@ param(
   [int]$Port = 0,
   [string]$BindHost = '',
   [string]$Pin = '',
+  [string]$Https = '',
+  [string]$Phones = '',
   [switch]$Yes,
   [switch]$Server,
   [int]$Lines = 60,
@@ -45,6 +49,8 @@ $PrevLogFile = Join-Path $LogDir 'server.prev.log'
 $ServerEntry = Join-Path $Root 'server\dist\index.js'
 $AddressesEntry = Join-Path $Root 'server\dist\show-addresses.js'
 $WebIndex = Join-Path $Root 'web\dist\index.html'
+$TlsDir = if ($env:BOTC_TLS_DIR) { $env:BOTC_TLS_DIR } else { Join-Path $Root 'config\tls' }
+$TlsCertPath = Join-Path $TlsDir 'botc.crt'
 $Interactive = ($Action -eq 'menu')
 $VirtualIfacePattern = 'vEthernet|WSL|Hyper-V|VirtualBox|VMware|VMnet|Docker|Loopback|Tailscale|ZeroTier|Hamachi|VPN|TAP-|Npcap|Bluetooth'
 
@@ -84,6 +90,16 @@ function Write-JsonFile([string]$path, $obj) {
   [System.IO.File]::WriteAllText($path, $json + "`r`n", (New-Object System.Text.UTF8Encoding $false))
 }
 
+function ConvertTo-OnOff([string]$value) {
+  switch -Regex ($value.Trim().ToLower()) {
+    '^(1|on|true|yes)$' { return $true }
+    '^(0|off|false|no)$' { return $false }
+  }
+  return $null
+}
+
+function Format-OnOff($value) { if ($value) { 'on' } else { 'off' } }
+
 function ConvertTo-PortNumber($value) {
   if ($null -eq $value) { return $null }
   $n = 0
@@ -97,6 +113,9 @@ function Get-BotcConfig {
     Port = 3847; Host = '0.0.0.0'; Pin = '1234'
     PortSource = 'built-in'; HostSource = 'built-in'; PinSource = 'built-in'
     DefaultPort = 3847; DefaultHost = '0.0.0.0'; DefaultPin = '1234'
+    Https = $false; HttpsSource = 'built-in'; DefaultHttps = $false
+    Phones = $false; PhonesSource = 'built-in'; DefaultPhones = $false
+    Scheme = 'http'
   }
   $def = Read-JsonFile $DefaultConfigPath
   if ($def) {
@@ -104,6 +123,8 @@ function Get-BotcConfig {
     if ($p) { $cfg.Port = $p; $cfg.DefaultPort = $p; $cfg.PortSource = 'default.json' }
     if ($def.host) { $cfg.Host = [string]$def.host; $cfg.DefaultHost = $cfg.Host; $cfg.HostSource = 'default.json' }
     if ($def.storytellerPin) { $cfg.Pin = [string]$def.storytellerPin; $cfg.DefaultPin = $cfg.Pin; $cfg.PinSource = 'default.json' }
+    if ($def.https -is [bool]) { $cfg.Https = $def.https; $cfg.DefaultHttps = $def.https; $cfg.HttpsSource = 'default.json' }
+    if ($def.playerPhones -is [bool]) { $cfg.Phones = $def.playerPhones; $cfg.DefaultPhones = $def.playerPhones; $cfg.PhonesSource = 'default.json' }
   }
   $local = Read-JsonFile $LocalConfigPath
   if ($local) {
@@ -111,7 +132,12 @@ function Get-BotcConfig {
     if ($p) { $cfg.Port = $p; $cfg.PortSource = 'local.json' }
     if ($local.host -and ([string]$local.host).Trim()) { $cfg.Host = ([string]$local.host).Trim(); $cfg.HostSource = 'local.json' }
     if ($null -ne $local.storytellerPin -and ([string]$local.storytellerPin).Trim()) { $cfg.Pin = ([string]$local.storytellerPin).Trim(); $cfg.PinSource = 'local.json' }
+    if ($local.https -is [bool]) { $cfg.Https = $local.https; $cfg.HttpsSource = 'local.json' }
+    if ($local.playerPhones -is [bool]) { $cfg.Phones = $local.playerPhones; $cfg.PhonesSource = 'local.json' }
   }
+  if ($env:BOTC_HTTPS) { $cfg.Https = ($env:BOTC_HTTPS -match '^(1|true|on|yes)$'); $cfg.HttpsSource = 'env BOTC_HTTPS' }
+  if ($env:BOTC_PHONES) { $cfg.Phones = ($env:BOTC_PHONES -match '^(1|true|on|yes)$'); $cfg.PhonesSource = 'env BOTC_PHONES' }
+  if ($cfg.Https) { $cfg.Scheme = 'https' }
   $envPortName = if ($env:BOTC_PORT) { 'BOTC_PORT' } elseif ($env:PORT) { 'PORT' } else { $null }
   if ($envPortName) {
     $p = ConvertTo-PortNumber ([Environment]::GetEnvironmentVariable($envPortName))
@@ -171,12 +197,42 @@ function Get-LanIPv4 {
 
 function Get-MainUrl($cfg) {
   $h = $cfg.Host
+  $s = if ($cfg.Scheme) { $cfg.Scheme } else { 'http' }
   if ($h -eq '0.0.0.0' -or $h -eq '::' -or $h -eq '') {
     $lan = Get-LanIPv4
-    if ($lan.Primary.Count -gt 0) { return "http://$($lan.Primary[0].Address):$($cfg.Port)" }
-    return "http://localhost:$($cfg.Port)"
+    if ($lan.Primary.Count -gt 0) { return "${s}://$($lan.Primary[0].Address):$($cfg.Port)" }
+    return "${s}://localhost:$($cfg.Port)"
   }
-  return "http://$(Get-BrowserHost $h):$($cfg.Port)"
+  return "${s}://$(Get-BrowserHost $h):$($cfg.Port)"
+}
+
+# HTTPS mode uses the server's own self-signed certificate (config\tls\botc.crt). Windows PowerShell
+# would reject it, so this launcher accepts exactly that certificate (by thumbprint), nothing else.
+function Get-TlsArgs([string]$scheme) {
+  if ($scheme -ne 'https') { return @{} }
+  if ($PSVersionTable.PSVersion.Major -ge 6) { return @{ SkipCertificateCheck = $true } }
+  if (-not ('BotcLocalCertPolicy' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class BotcLocalCertPolicy : ICertificatePolicy {
+  public static string Thumbprint = "";
+  public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) {
+    if (problem == 0) return true;
+    return Thumbprint.Length > 0 && cert != null && string.Equals(cert.GetCertHashString(), Thumbprint, StringComparison.OrdinalIgnoreCase);
+  }
+}
+'@
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object BotcLocalCertPolicy
+  }
+  $thumb = ''
+  if (Test-Path -LiteralPath $TlsCertPath) {
+    try { $thumb = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $TlsCertPath).Thumbprint } catch { }
+  }
+  [BotcLocalCertPolicy]::Thumbprint = $thumb
+  return @{}
 }
 
 # ---------------------------------------------------------------- processes
@@ -223,11 +279,20 @@ function Get-PortOwners([int]$port) {
   return @($found | Sort-Object -Unique)
 }
 
+# Tries the configured scheme first, then the other (a running server may predate a settings change).
+# The result's .scheme says which one answered.
 function Get-BotcHealth([string]$connectHost, [int]$port) {
-  try {
-    $r = Invoke-RestMethod -Uri "http://${connectHost}:$port/api/health" -TimeoutSec 2 -UseBasicParsing
-    if ($r.app -eq 'botc-companion' -or ($r.ok -and $r.PSObject.Properties['hueLive'])) { return $r }
-  } catch { }
+  $order = if ((Get-BotcConfig).Https) { @('https', 'http') } else { @('http', 'https') }
+  foreach ($scheme in $order) {
+    try {
+      $tlsArgs = Get-TlsArgs $scheme
+      $r = Invoke-RestMethod -Uri "${scheme}://${connectHost}:$port/api/health" -TimeoutSec 2 -UseBasicParsing @tlsArgs
+      if ($r.app -eq 'botc-companion' -or ($r.ok -and $r.PSObject.Properties['hueLive'])) {
+        $r | Add-Member -NotePropertyName scheme -NotePropertyValue $scheme -Force
+        return $r
+      }
+    } catch { }
+  }
   return $null
 }
 
@@ -412,7 +477,7 @@ function Show-Addresses {
   $cfg = Get-BotcConfig
   if (-not $state.Running) {
     Write-Warn 'The server is not running right now; start it before joining.'
-  } elseif ([int]$state.Info.port -ne $cfg.Port -or [string]$state.Info.host -ne $cfg.Host) {
+  } elseif ([int]$state.Info.port -ne $cfg.Port -or [string]$state.Info.host -ne $cfg.Host -or $(if ($state.Info.scheme) { [string]$state.Info.scheme } else { 'http' }) -ne $cfg.Scheme) {
     Write-Warn "The running server still uses host $($state.Info.host) port $($state.Info.port). Restart to apply your new settings."
   }
   return $true
@@ -467,7 +532,7 @@ function Start-BotcServer([bool]$forceBuild = $false) {
   $serverPid = [int]$nodeProc.ProcessId
 
   Write-JsonFile $PidFile ([pscustomobject]@{
-      pid = $serverPid; wrapperPid = $wrapper.Id; port = $cfg.Port; host = $cfg.Host
+      pid = $serverPid; wrapperPid = $wrapper.Id; port = $cfg.Port; host = $cfg.Host; scheme = $cfg.Scheme
       token = $token; startedAt = (Get-Date).ToString('o'); log = $LogFile
     })
 
@@ -489,7 +554,7 @@ function Start-BotcServer([bool]$forceBuild = $false) {
     }
     Start-Sleep -Milliseconds 400
   }
-  Write-Warn "Server process $serverPid is running but did not answer on http://${connectHost}:$($cfg.Port) within 30s. Log:"
+  Write-Warn "Server process $serverPid is running but did not answer on $($cfg.Scheme)://${connectHost}:$($cfg.Port) within 30s. Log:"
   Show-LogTail 30
   return $false
 }
@@ -530,10 +595,12 @@ function Stop-BotcServer {
   $serverPid = [int]$info.pid
   Write-Step "Stopping BOTC server (PID $serverPid)..."
   $connectHost = Get-ConnectHost ([string]$info.host)
+  $scheme = if ($info.scheme) { [string]$info.scheme } else { 'http' }
   try {
-    Invoke-RestMethod -Method Post -Uri "http://${connectHost}:$($info.port)/api/control/shutdown" `
+    $tlsArgs = Get-TlsArgs $scheme
+    Invoke-RestMethod -Method Post -Uri "${scheme}://${connectHost}:$($info.port)/api/control/shutdown" `
       -Headers @{ 'x-botc-control-token' = [string]$info.token } -ContentType 'application/json' -Body '{}' `
-      -TimeoutSec 3 -UseBasicParsing | Out-Null
+      -TimeoutSec 3 -UseBasicParsing @tlsArgs | Out-Null
   } catch {
     Write-Warn "Clean shutdown request failed ($($_.Exception.Message)); will force-stop."
   }
@@ -564,12 +631,13 @@ function Show-Status {
     $up = (Get-Date) - $started
     $health = Get-BotcHealth (Get-ConnectHost ([string]$info.host)) ([int]$info.port)
     Write-Ok ("Server: RUNNING  PID {0}, host {1}, port {2}, up {3:%d}d {3:hh}h {3:mm}m" -f $info.pid, $info.host, $info.port, $up)
-    if ($health) { Write-Info 'Health check: OK' } else { Write-Warn 'Health check: not answering' }
+    if ($health) { Write-Info "Health check: OK ($($health.scheme))" } else { Write-Warn 'Health check: not answering' }
   } else {
     Write-Info 'Server: STOPPED'
     if ($state.Stale) { Write-Info "(stale PID file for PID $($state.Info.pid) - will be cleared on next start/stop)" }
   }
   Write-Info ("Settings: port {0} ({1}), host {2} ({3}), PIN {4} ({5})" -f $cfg.Port, $cfg.PortSource, $cfg.Host, $cfg.HostSource, $cfg.Pin, $cfg.PinSource)
+  Write-Info ("          HTTPS {0} ({1}), player phones default {2} ({3})" -f (Format-OnOff $cfg.Https), $cfg.HttpsSource, (Format-OnOff $cfg.Phones), $cfg.PhonesSource)
   if (Test-DefaultPin $cfg) { Write-Warn "The Storyteller PIN is still the default ($($cfg.Pin)); anyone on the network could open the grimoire. Change it: BOTC.bat set -Pin <4-12 digits>" }
   return $true
 }
@@ -577,10 +645,14 @@ function Show-Status {
 function Open-Page([string]$path) {
   $state = Get-ServerState
   $cfg = Get-BotcConfig
-  $h = $cfg.Host; $p = $cfg.Port
-  if ($state.Running) { $h = [string]$state.Info.host; $p = [int]$state.Info.port }
+  $h = $cfg.Host; $p = $cfg.Port; $s = $cfg.Scheme
+  if ($state.Running) {
+    $h = [string]$state.Info.host; $p = [int]$state.Info.port
+    $s = if ($state.Info.scheme) { [string]$state.Info.scheme } else { 'http' }
+  }
   else { Write-Warn 'The server is not running; the page will not load until you start it.' }
-  $url = "http://$(Get-BrowserHost $h):$p$path"
+  $url = "${s}://$(Get-BrowserHost $h):$p$path"
+  if ($s -eq 'https') { Write-Info 'HTTPS: the browser warns about the certificate once; choose Advanced > Continue.' }
   Write-Info "Opening $url"
   Start-Process $url
 }
@@ -597,7 +669,8 @@ function Start-DevMode {
   $cfg = Get-BotcConfig
   if (-not (Confirm-PortFree $cfg)) { return $false }
   if (-not (Confirm-Dependencies)) { return $false }
-  Start-Process -FilePath $env:ComSpec -ArgumentList '/d /s /k "title BOTC dev mode - close this window to stop && npm run dev"' -WorkingDirectory $Root
+  # Vite's proxy talks plain HTTP to the API, so dev mode always runs the server without HTTPS.
+  Start-Process -FilePath $env:ComSpec -ArgumentList '/d /s /k "title BOTC dev mode - close this window to stop && set BOTC_HTTPS=0&& npm run dev"' -WorkingDirectory $Root
   Write-Ok 'Dev mode opened in a new window (hot reload). Close that window to stop it.'
   $lan = Get-LanIPv4
   $ip = if ($lan.Primary.Count -gt 0) { $lan.Primary[0].Address } else { 'localhost' }
@@ -694,12 +767,29 @@ function Invoke-PreGameCheck([bool]$full) {
     Write-Check 'ok' 'Network' ("LAN address " + (($lan.Primary | ForEach-Object { "$($_.Address) ($($_.Name))" }) -join ', '))
     if ($state.Running) {
       foreach ($a in $lan.Primary) {
-        if (Get-BotcHealth $a.Address ([int]$state.Info.port)) { Write-Check 'ok' 'Reachable' "http://$($a.Address):$($state.Info.port) answers (tested from this PC; open it on a phone to be sure)" }
-        else { Write-Check 'fail' 'Reachable' "http://$($a.Address):$($state.Info.port) does not answer" }
+        $h = Get-BotcHealth $a.Address ([int]$state.Info.port)
+        if ($h) { Write-Check 'ok' 'Reachable' "$($h.scheme)://$($a.Address):$($state.Info.port) answers (tested from this PC; open it on a phone to be sure)" }
+        else { Write-Check 'fail' 'Reachable' "$($cfg.Scheme)://$($a.Address):$($state.Info.port) does not answer" }
       }
     } else {
       Write-Check 'ok' 'Reachable' 'server not running; start it and run check again to test the LAN address'
     }
+  }
+
+  if ($cfg.Https) {
+    $meta = Read-JsonFile (Join-Path $TlsDir 'botc-tls.json')
+    if (-not $meta -or -not (Test-Path -LiteralPath $TlsCertPath)) {
+      Write-Check 'ok' 'HTTPS' 'on; the certificate is made at the next start (each device accepts the warning once)'
+    } else {
+      $missing = @(@($lan.Primary) | Where-Object { $meta.ips -notcontains $_.Address } | ForEach-Object { $_.Address })
+      $until = [datetime]::Parse([string]$meta.notAfter)
+      if ($missing.Count) { Write-Check 'warn' 'HTTPS' "the certificate does not cover $($missing -join ', ') yet; restart the server to renew it (devices accept the warning again)" }
+      elseif (($until - (Get-Date)).TotalDays -lt 30) { Write-Check 'warn' 'HTTPS' "the certificate expires $($until.ToString('d MMM yyyy')); the next start renews it" }
+      else { Write-Check 'ok' 'HTTPS' "on; self-signed certificate valid until $($until.ToString('d MMM yyyy')) for $(@($meta.ips) -join ', ')" }
+    }
+    if ($state.Running -and [string]$state.Info.scheme -ne 'https') { Write-Check 'warn' 'HTTPS' 'the running server still uses plain HTTP; restart it to apply' }
+  } else {
+    Write-Check 'ok' 'HTTPS' 'off (plain HTTP: phone screens may lock). Settings > 4 turns it on'
   }
 
   $preflightArgs = if (Test-Path (Join-Path $Root 'server\dist\preflight.js')) { "`"$(Join-Path $Root 'server\dist\preflight.js')`" --json" }
@@ -721,7 +811,10 @@ function Invoke-PreGameCheck([bool]$full) {
       $code = Invoke-Console $env:ComSpec '/d /c npm test --silent'
       if ($code -eq 0) { Write-Check 'ok' 'Tests' 'all server tests pass' } else { Write-Check 'fail' 'Tests' 'some server tests failed (see above)' }
     } else {
-      $out = & $env:ComSpec /d /c "cd /d `"$(Join-Path $Root 'server')`" && `"$($nodeCmd.Source)`" `"$tsx`" test/server-security.ts" 2>&1 | Out-String
+      # Windows PowerShell turns the test's stderr into a terminating error under 'Stop'.
+      $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+      try { $out = & $env:ComSpec /d /c "cd /d `"$(Join-Path $Root 'server')`" && `"$($nodeCmd.Source)`" `"$tsx`" test/server-security.ts" 2>&1 | Out-String }
+      finally { $ErrorActionPreference = $eap }
       if ($LASTEXITCODE -eq 0) { Write-Check 'ok' 'Smoke test' 'a throwaway server started, served the UI and handled sign-in (BOTC.bat check -Full runs every test)' }
       else { Write-Check 'fail' 'Smoke test' ("failed:`n" + $out.Trim()) }
     }
@@ -749,7 +842,7 @@ function Test-HostValue([string]$value) {
 }
 
 function Show-EnvOverrideWarning($cfg) {
-  foreach ($pair in @(@('Port', $cfg.PortSource), @('Host', $cfg.HostSource), @('PIN', $cfg.PinSource))) {
+  foreach ($pair in @(@('Port', $cfg.PortSource), @('Host', $cfg.HostSource), @('PIN', $cfg.PinSource), @('HTTPS', $cfg.HttpsSource), @('Player phones', $cfg.PhonesSource))) {
     if ($pair[1] -like 'env *') {
       Write-Warn "$($pair[0]) is forced by environment variable $($pair[1].Substring(4)); config\local.json is ignored for it."
     }
@@ -771,9 +864,20 @@ function Invoke-SetAction {
     if (-not (Test-PinValue $Pin)) { Write-Err 'PIN must be 4-12 digits.'; return $false }
     Set-LocalSetting 'storytellerPin' $Pin $cfg.DefaultPin; $changed = $true
   }
-  if (-not $changed) { Write-Err 'Nothing to set. Use -Port, -BindHost and/or -Pin.'; return $false }
+  if ($Https) {
+    $v = ConvertTo-OnOff $Https
+    if ($null -eq $v) { Write-Err 'Use -Https on or -Https off.'; return $false }
+    Set-LocalSetting 'https' $v $cfg.DefaultHttps; $changed = $true
+  }
+  if ($Phones) {
+    $v = ConvertTo-OnOff $Phones
+    if ($null -eq $v) { Write-Err 'Use -Phones on or -Phones off.'; return $false }
+    Set-LocalSetting 'playerPhones' $v $cfg.DefaultPhones; $changed = $true
+  }
+  if (-not $changed) { Write-Err 'Nothing to set. Use -Port, -BindHost, -Pin, -Https and/or -Phones.'; return $false }
   $cfg = Get-BotcConfig
   Write-Ok ("Saved. Port {0} ({1}), host {2} ({3}), PIN {4} ({5})" -f $cfg.Port, $cfg.PortSource, $cfg.Host, $cfg.HostSource, $cfg.Pin, $cfg.PinSource)
+  Write-Ok ("       HTTPS {0} ({1}), player phones default {2} ({3})" -f (Format-OnOff $cfg.Https), $cfg.HttpsSource, (Format-OnOff $cfg.Phones), $cfg.PhonesSource)
   Show-EnvOverrideWarning $cfg
   if ((Get-ServerState).Running) { Write-Warn 'Restart the server to apply.' }
   return $true
@@ -782,13 +886,44 @@ function Invoke-SetAction {
 function Reset-Settings {
   $obj = Read-JsonFile $LocalConfigPath
   if ($obj) {
-    foreach ($k in @('port', 'host', 'storytellerPin')) { $obj.PSObject.Properties.Remove($k) }
+    foreach ($k in @('port', 'host', 'storytellerPin', 'https', 'playerPhones')) { $obj.PSObject.Properties.Remove($k) }
     if (@($obj.PSObject.Properties).Count -eq 0) { Remove-Item -LiteralPath $LocalConfigPath -Force }
     else { Write-JsonFile $LocalConfigPath $obj }
   } elseif (Test-Path -LiteralPath $LocalConfigPath) {
     Remove-Item -LiteralPath $LocalConfigPath -Force
   }
-  Write-Ok 'Port, host and PIN reset to defaults.'
+  Write-Ok 'Port, host, PIN, HTTPS and the player phones default reset to defaults.'
+  return $true
+}
+
+function Read-HttpsSetting($cfg) {
+  if ($cfg.Https) {
+    Write-Info 'HTTPS is on. Turning it off goes back to plain http:// addresses (phone screens may lock again).'
+    if (Confirm-Choice 'Turn HTTPS off?' $false) { Set-LocalSetting 'https' $false $cfg.DefaultHttps; Write-Ok 'HTTPS off.' }
+    return
+  }
+  Write-Info 'HTTPS lets phones keep their screens on during the day (the browser only allows that on https).'
+  Write-Info 'The server makes its own certificate (config\tls). It is not from a public authority, so each'
+  Write-Info 'phone, tablet and the TV shows a warning the first time: Advanced / Show details > continue.'
+  Write-Info 'Some smart-TV browsers refuse such certificates; if yours does, turn HTTPS off again.'
+  Write-Info 'Addresses and QR codes change to https:// - phones that saved the old address must rescan.'
+  if (Confirm-Choice 'Turn HTTPS on?' $true) { Set-LocalSetting 'https' $true $cfg.DefaultHttps; Write-Ok 'HTTPS on.' }
+}
+
+function Read-PhonesSetting($cfg) {
+  $next = -not $cfg.Phones
+  Write-Info 'Player phones (character reveal, notes, messages, voting) are switched per game on the Storyteller'
+  Write-Info "Setup tab. This sets the default for a new saved game: $(Format-OnOff $next)."
+  Set-LocalSetting 'playerPhones' $next $cfg.DefaultPhones
+  Write-Ok "Player phones default: $(Format-OnOff $next)."
+}
+
+function Reset-Certificate {
+  if (-not (Test-Path -LiteralPath $TlsDir)) { Write-Info 'There is no certificate yet; the next HTTPS start makes one.'; return $false }
+  Write-Info 'A new certificate means every device shows the warning once more.'
+  if (-not (Confirm-Choice 'Delete the HTTPS certificate (a new one is made at the next start)?' $false)) { return $false }
+  Remove-Item -LiteralPath $TlsDir -Recurse -Force
+  Write-Ok 'Deleted. Restart the server to make a new one.'
   return $true
 }
 
@@ -853,15 +988,22 @@ function Show-SettingsMenu {
     Write-Info ("1) Port             {0,-16} [{1}]" -f $cfg.Port, $cfg.PortSource)
     Write-Info ("2) Host (bind)      {0,-16} [{1}]" -f $cfg.Host, $cfg.HostSource)
     Write-Info ("3) Storyteller PIN  {0,-16} [{1}]" -f $cfg.Pin, $cfg.PinSource)
-    Write-Info '4) Reset all three to defaults'
+    Write-Info ("4) HTTPS            {0,-16} [{1}]  phones keep their screens on; a certificate warning once per device" -f (Format-OnOff $cfg.Https), $cfg.HttpsSource)
+    Write-Info ("5) Player phones    {0,-16} [{1}]  default for a new saved game (switch per game on the Setup tab)" -f (Format-OnOff $cfg.Phones), $cfg.PhonesSource)
+    Write-Info '6) Make a new HTTPS certificate'
+    Write-Info '7) Reset all to defaults'
     Write-Info 'B) Back'
     Show-EnvOverrideWarning $cfg
     $choice = (Read-Host '  Choose').Trim().ToLower()
+    $newCert = $false
     switch ($choice) {
       '1' { Read-PortSetting $cfg }
       '2' { Read-HostSetting $cfg }
       '3' { Read-PinSetting $cfg }
-      '4' { if (Confirm-Choice 'Reset port, host and PIN to defaults?' $false) { [void](Reset-Settings) } }
+      '4' { Read-HttpsSetting $cfg }
+      '5' { Read-PhonesSetting $cfg }
+      '6' { $newCert = Reset-Certificate }
+      '7' { if (Confirm-Choice 'Reset port, host, PIN, HTTPS and the player phones default?' $false) { [void](Reset-Settings) } }
       'b' { break }
       '' { break }
       default { Write-Warn 'Unknown choice.' }
@@ -869,7 +1011,8 @@ function Show-SettingsMenu {
     if ($choice -eq 'b' -or $choice -eq '') { break }
     $state = Get-ServerState
     $new = Get-BotcConfig
-    if ($state.Running -and ([int]$state.Info.port -ne $new.Port -or [string]$state.Info.host -ne $new.Host -or $new.Pin -ne $cfg.Pin)) {
+    $runningScheme = if ($state.Running -and $state.Info.scheme) { [string]$state.Info.scheme } else { 'http' }
+    if ($state.Running -and ([int]$state.Info.port -ne $new.Port -or [string]$state.Info.host -ne $new.Host -or $new.Pin -ne $cfg.Pin -or $runningScheme -ne $new.Scheme -or ($newCert -and $new.Https))) {
       if (Confirm-Choice 'Restart the server now to apply?' $true) {
         if (Stop-BotcServer) { [void](Start-BotcServer $false) }
       }
@@ -888,7 +1031,8 @@ function Show-Header {
   Write-Host '     BOTC Companion - Launcher' -ForegroundColor Yellow
   Write-Host '  ==========================================================' -ForegroundColor DarkYellow
   if ($state.Running) {
-    $runCfg = [pscustomobject]@{ Host = [string]$state.Info.host; Port = [int]$state.Info.port }
+    $runScheme = if ($state.Info.scheme) { [string]$state.Info.scheme } else { 'http' }
+    $runCfg = [pscustomobject]@{ Host = [string]$state.Info.host; Port = [int]$state.Info.port; Scheme = $runScheme }
     $url = Get-MainUrl $runCfg
     Write-Host ("   Server:  RUNNING  (PID {0}, port {1})" -f $state.Info.pid, $state.Info.port) -ForegroundColor Green
     Write-Host "   TV:          $url/tv"
@@ -896,7 +1040,7 @@ function Show-Header {
   } else {
     Write-Host '   Server:  STOPPED' -ForegroundColor DarkGray
   }
-  Write-Host ("   Settings: port {0} | host {1} | PIN {2}" -f $cfg.Port, $cfg.Host, $cfg.Pin) -ForegroundColor DarkGray
+  Write-Host ("   Settings: port {0} | host {1} | PIN {2} | HTTPS {3} | phones {4}" -f $cfg.Port, $cfg.Host, $cfg.Pin, (Format-OnOff $cfg.Https), (Format-OnOff $cfg.Phones)) -ForegroundColor DarkGray
   if (Test-DefaultPin $cfg) {
     Write-Host "   WARNING: Storyteller PIN is still the default ($($cfg.Pin)). Change it: 9) Settings > 3) PIN" -ForegroundColor Yellow
   }
@@ -914,7 +1058,7 @@ function Show-MainMenu {
     Write-Info '6) Open TV page in browser'
     Write-Info '7) Open Storyteller page in browser'
     Write-Info '8) View game log / server log'
-    Write-Info '9) Settings (port, host, PIN)'
+    Write-Info '9) Settings (port, host, PIN, HTTPS, player phones)'
     Write-Info 'C) Pre-game check (network, firewall, audio, plates, quick test)'
     Write-Info 'D) Dev mode (hot reload, for developers)'
     Write-Info 'Q) Quit'

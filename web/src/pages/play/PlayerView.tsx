@@ -5,6 +5,7 @@ import { MessagesView, unreadReplies } from "./MessagesView";
 import { NotesView } from "./NotesView";
 import { SheetView, TownView, isNight, phaseLine } from "./TownView";
 import { VoteCard } from "./VoteCard";
+import { useWakeLock } from "./wakeLock";
 
 type Emit = (event: string, data?: unknown, ack?: (r: unknown) => void) => void;
 type Tab = "character" | "town" | "notes" | "ask";
@@ -32,10 +33,13 @@ export function PlayerView({ state, emit, onLeave }: { state: PlayerState; emit:
   const me = state.me;
   const unread = tab === "ask" ? 0 : unreadReplies(state);
   const title = `${me.name || `Seat ${me.seat}`} · seat ${me.seat}`;
+  const night = isNight(state.phase);
+  // By day the screen stays on (HTTPS only); at night the phone may sleep face down.
+  const wake = useWakeLock(!night);
 
-  if (isNight(state.phase)) {
+  if (night) {
     return (
-      <div className="play play-night">
+      <div className="play play-night" data-wakelock={wake}>
         <div className="play-night-sky">
           <p className="play-night-moon" aria-hidden>
             ☾
@@ -49,7 +53,7 @@ export function PlayerView({ state, emit, onLeave }: { state: PlayerState; emit:
   }
 
   return (
-    <div className="play">
+    <div className="play" data-wakelock={wake}>
       <PlayHeader title={title} sub={phaseLine(state)} />
       {!me.alive && (
         <div className="play-card play-dead" role="status">
@@ -85,6 +89,7 @@ export function PlayerView({ state, emit, onLeave }: { state: PlayerState; emit:
           >
             Not my seat? Unlink this phone
           </button>
+          {wake === "on" && <p className="play-muted play-wake">Your screen stays on while this page is open by day.</p>}
         </div>
       ) : (
         <TownView state={state} meId={me.playerId} />

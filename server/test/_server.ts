@@ -4,6 +4,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
+import { request as httpsRequest } from "node:https";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -47,19 +48,23 @@ export async function startServer(env: Record<string, string> = {}): Promise<Tes
       BOTC_LOG_DIR: join(dir, "logs"),
       BOTC_CONTROL_TOKEN: "",
       BOTC_PHONES: "",
+      // "0", not "": config/local.json may turn HTTPS on for real games.
+      BOTC_HTTPS: "0",
       ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout!.on("data", (d) => (out += String(d)));
   child.stderr!.on("data", (d) => (out += String(d)));
-  const base = `http://127.0.0.1:${port}`;
+  const secure = env.BOTC_HTTPS === "1";
+  const base = `${secure ? "https" : "http"}://127.0.0.1:${port}`;
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`server exited early:\n${out}`);
     try {
-      const r = await fetch(`${base}/api/health`);
-      if (r.ok) return { port, base, dir, child, output: () => out, stop: () => child.kill() };
+      // Startup only: the HTTPS tests check the certificate itself separately.
+      const ok = secure ? (await httpsGet(`${base}/api/health`, { rejectUnauthorized: false })).status === 200 : (await fetch(`${base}/api/health`)).ok;
+      if (ok) return { port, base, dir, child, output: () => out, stop: () => child.kill() };
     } catch {
       /* not up yet */
     }
@@ -71,16 +76,34 @@ export async function startServer(env: Record<string, string> = {}): Promise<Tes
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** GET over HTTPS with explicit TLS options (`ca` to trust one certificate, or `rejectUnauthorized`). */
+export function httpsGet(
+  url: string,
+  tls: { ca?: string; rejectUnauthorized?: boolean },
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(url, { method: "GET", ...tls, timeout: 4000 }, (res) => {
+      let body = "";
+      res.on("data", (d) => (body += String(d)));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on("error", reject);
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.end();
+  });
+}
+
 /** A client that keeps every event it receives (name + payload) for leak checks. */
 export type Rec = { socket: Socket; events: { event: string; data: unknown }[]; label: string };
 
-export function client(port: number, label: string, opts: { userAgent?: string } = {}): Promise<Rec> {
+export function client(port: number, label: string, opts: { userAgent?: string; ca?: string } = {}): Promise<Rec> {
   return new Promise((resolve, reject) => {
-    const socket = io(`http://127.0.0.1:${port}`, {
+    const socket = io(`${opts.ca ? "https" : "http"}://127.0.0.1:${port}`, {
       reconnection: false,
       forceNew: true,
       transports: ["websocket"],
       extraHeaders: opts.userAgent ? { "user-agent": opts.userAgent } : undefined,
+      ...(opts.ca ? { ca: opts.ca } : {}),
     });
     const rec: Rec = { socket, events: [], label };
     socket.onAny((event, data) => rec.events.push({ event, data }));
@@ -118,8 +141,8 @@ export async function until(pred: () => boolean, what: string, ms = 3000): Promi
   throw new Error(`timed out waiting for ${what}`);
 }
 
-export async function storyteller(port: number, pin: string): Promise<Rec> {
-  const st = await client(port, "storyteller");
+export async function storyteller(port: number, pin: string, opts: { ca?: string } = {}): Promise<Rec> {
+  const st = await client(port, "storyteller", opts);
   st.socket.emit("join", { role: "storyteller", pin });
   await until(() => count(st, "state:storyteller") > 0 || count(st, "auth:error") > 0, "storyteller join");
   if (count(st, "auth:error")) throw new Error(`ST join refused: ${JSON.stringify(last(st, "auth:error"))}`);

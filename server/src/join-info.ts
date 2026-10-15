@@ -41,13 +41,15 @@ function isLoopback(host: string): boolean {
 }
 
 /** Base URLs (no trailing slash) that other devices can use, best first. */
-export function joinBaseUrls(host: string, port: number): { main: string[]; other: string[] } {
+export type Scheme = "http" | "https";
+
+export function joinBaseUrls(host: string, port: number, scheme: Scheme = "http"): { main: string[]; other: string[] } {
   if (isLoopback(host)) return { main: [], other: [] };
-  if (!isWildcard(host)) return { main: [`http://${host}:${port}`], other: [] };
+  if (!isWildcard(host)) return { main: [`${scheme}://${host}:${port}`], other: [] };
   const { primary, other } = lanAddresses();
   return {
-    main: primary.map((a) => `http://${a.address}:${port}`),
-    other: other.map((a) => `http://${a.address}:${port} (${a.iface})`),
+    main: primary.map((a) => `${scheme}://${a.address}:${port}`),
+    other: other.map((a) => `${scheme}://${a.address}:${port} (${a.iface})`),
   };
 }
 
@@ -56,23 +58,25 @@ export function formatJoinInfo(opts: {
   port: number;
   pin: string;
   title?: string;
+  scheme?: Scheme;
 }): string {
   const { host, port, pin } = opts;
+  const scheme = opts.scheme ?? "http";
   const lines: string[] = [];
   const bar = "=".repeat(64);
   lines.push("", bar, `  ${opts.title ?? `BOTC Companion is running on port ${port}`}`, bar);
 
-  const urls = joinBaseUrls(host, port);
+  const urls = joinBaseUrls(host, port, scheme);
   if (isLoopback(host)) {
     lines.push(
       `  Host is ${host}: ONLY this PC can connect.`,
       "  To let the TV and phones join, set host to 0.0.0.0 (launcher > Settings).",
-      `  This PC: http://localhost:${port}/tv   http://localhost:${port}/storyteller`,
+      `  This PC: ${scheme}://localhost:${port}/tv   ${scheme}://localhost:${port}/storyteller`,
     );
   } else if (urls.main.length === 0) {
     lines.push(
       "  No LAN network address found. Is this PC connected to Wi-Fi/Ethernet?",
-      `  This PC: http://localhost:${port}/tv`,
+      `  This PC: ${scheme}://localhost:${port}/tv`,
     );
   } else {
     const best = urls.main[0];
@@ -96,7 +100,13 @@ export function formatJoinInfo(opts: {
     lines.push("  Other (virtual adapters, usually not reachable from the TV/phone):");
     for (const u of urls.other) lines.push(`    ${u}`);
   }
-  if (isWildcard(host) && urls.main.length > 0) lines.push(`  On this PC: http://localhost:${port}`);
+  if (isWildcard(host) && urls.main.length > 0) lines.push(`  On this PC: ${scheme}://localhost:${port}`);
+  if (scheme === "https") {
+    lines.push(
+      "  HTTPS is on (self-signed): each phone, tablet and the TV shows a certificate warning",
+      "  the first time. Choose Advanced / Show details > continue to this site.",
+    );
+  }
 
   if (urls.main.length > 0) {
     let qr = "";

@@ -269,7 +269,7 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 - [x] Phase 2: join, claim, device panel, character reveal, spectator and dead views, same-table re-binding. Done Oct 15; 221/221 tests.
 - [x] Phase 3: device-only notes, player → Storyteller messages. Done Oct 15; 227/227 tests.
 - [x] Phase 4: phone voting with the clockwise sweep (mixed phone / hand-counted seats, pause / back / override, "Phones off for voting"). Done Oct 15; 237/237 tests.
-- [ ] Phase 5: optional HTTPS.
+- [x] Phase 5: optional self-signed HTTPS (off by default) so phones keep their screens on by day; launcher setting, certificate in `config/tls/`, join URLs and QR follow the scheme. Done Oct 15; 241/241 tests.
 
 **Goal.** Private character reveal, notes, messages and phone voting on players' own phones, without weakening what the TV and the town can see, and with the existing physical/manual way as the default.
 

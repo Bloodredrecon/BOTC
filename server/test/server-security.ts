@@ -66,6 +66,8 @@ async function startServer(port: number): Promise<{ child: ChildProcess; output:
       BOTC_SESSION_PATH: join(dir, "session.json"),
       BOTC_LOG_DIR: LOG_DIR,
       BOTC_CONTROL_TOKEN: "",
+      // This test talks plain HTTP even when config/local.json turns HTTPS on.
+      BOTC_HTTPS: "0",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

@@ -4,6 +4,7 @@
 // saves screenshots to docs/tv-design/_verify/phones/phase-<n>/ (gitignored) and stops the server.
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { request as httpsRequest } from "node:https";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -15,6 +16,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PHASE = Number(process.argv[2] ?? 1);
 const OUT = join(ROOT, "docs", "tv-design", "_verify", "phones", `phase-${PHASE}`);
 const PIN = "8642";
+// Phase 5 runs the server over HTTPS with a throwaway certificate in the temp folder.
+const SECURE = PHASE === 5;
 mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -31,6 +34,19 @@ function freePort() {
   });
 }
 
+/** GET over HTTPS that accepts the server's own self-signed certificate (test only). */
+function insecureGet(url) {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(url, { rejectUnauthorized: false }, (res) => {
+      let body = "";
+      res.on("data", (d) => (body += d));
+      res.on("end", () => resolve({ status: res.statusCode, body }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 async function startServer(port, dir) {
   const child = spawn(process.execPath, [join(ROOT, "server", "dist", "index.js")], {
     cwd: join(ROOT, "server"),
@@ -43,6 +59,8 @@ async function startServer(port, dir) {
       BOTC_LOG_DIR: join(dir, "logs"),
       BOTC_CONTROL_TOKEN: "",
       BOTC_PHONES: "",
+      BOTC_HTTPS: SECURE ? "1" : "0",
+      BOTC_TLS_DIR: join(dir, "tls"),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -51,8 +69,10 @@ async function startServer(port, dir) {
   child.stderr.on("data", (d) => (out += d));
   for (let i = 0; i < 120; i++) {
     try {
-      const r = await fetch(`http://127.0.0.1:${port}/api/health`);
-      if (r.ok) return child;
+      const ok = SECURE
+        ? (await insecureGet(`https://127.0.0.1:${port}/api/health`)).status === 200
+        : (await fetch(`http://127.0.0.1:${port}/api/health`)).ok;
+      if (ok) return child;
     } catch {}
     if (child.exitCode !== null) throw new Error(out);
     await sleep(250);
@@ -64,7 +84,7 @@ async function startServer(port, dir) {
 /** Storyteller over a socket: act(event, data) resolves with the ack; st() is the latest state. */
 function storyteller(base) {
   return new Promise((resolve, reject) => {
-    const socket = io(base, { transports: ["websocket"] });
+    const socket = io(base, { transports: ["websocket"], rejectUnauthorized: false });
     let state = null;
     socket.on("state:storyteller", (s) => (state = s));
     socket.on("connect", () => socket.emit("join", { role: "storyteller", pin: PIN }));
@@ -118,7 +138,7 @@ async function holdCard(page, name) {
 }
 
 async function phonePage(browser, device) {
-  const ctx = await browser.newContext({ ...devices[device] });
+  const ctx = await browser.newContext({ ...devices[device], ignoreHTTPSErrors: SECURE });
   const page = await ctx.newPage();
   return { ctx, page };
 }
@@ -549,11 +569,66 @@ async function phase4({ base, browser, st }) {
   await Promise.all(ctxs.map((x) => x.close()));
 }
 
-const PHASES = { 1: phase1, 2: phase2, 3: phase3, 4: phase4 };
+const wakeOf = (page) => page.locator("[data-wakelock]").first().getAttribute("data-wakelock");
+
+async function phase5({ base, browser, st }) {
+  if (!base.startsWith("https://")) throw new Error(`phase 5 needs HTTPS, got ${base}`);
+  const health = JSON.parse((await insecureGet(`${base}/api/health`)).body);
+  if (health.scheme !== "https") throw new Error(`health scheme ${health.scheme}`);
+  await st.act("game:setPhones", { on: true });
+  const ctxs = [];
+
+  const tvCtx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
+  ctxs.push(tvCtx);
+  const tv = await tvCtx.newPage();
+  await tv.goto(`${base}/tv?motion=off`);
+  await tv.getByRole("button", { name: "Enable sound" }).click();
+  try {
+    await tv.locator(".sound-gate").waitFor({ state: "detached", timeout: 3000 });
+  } catch {
+    await tv.addStyleTag({ content: ".sound-gate{display:none!important}" });
+  }
+  await tv.locator(".tv-join-qr svg").waitFor();
+  const tvSecure = await tv.evaluate(() => ({ origin: location.origin, secure: window.isSecureContext }));
+  if (!tvSecure.origin.startsWith("https://") || !tvSecure.secure) throw new Error(`TV not on HTTPS: ${JSON.stringify(tvSecure)}`);
+  await shot(tv, "01-tv-lobby-https");
+  log(`TV lobby over ${tvSecure.origin} (QR encodes ${tvSecure.origin}/play?c=…)`);
+
+  const ada = await joinAndApprove(browser, "iPhone 13", base, st, "Ada", "p1");
+  const cora = await joinAndApprove(browser, "Pixel 7", base, st, "Cora", "p3");
+  ctxs.push(ada.ctx, cora.ctx);
+  await st.act("game:phoneDistribute");
+  const support = await ada.page.evaluate(() => ({ secure: window.isSecureContext, api: "wakeLock" in navigator }));
+  log(`iPhone context: secure ${support.secure}, wakeLock API ${support.api}`);
+  await until(async () => (await wakeOf(ada.page)) === "on", "Ada's screen lock held before the game");
+  await ada.page.getByText("Your screen stays on while this page is open by day.").waitFor();
+  await shot(ada.page, "02-iphone-wake-on-setup");
+  await until(async () => (await wakeOf(cora.page)) === "on", "Cora's screen lock held");
+  await shot(cora.page, "03-pixel-wake-on-setup");
+
+  await st.act("game:startFirstNight");
+  await until(async () => (await wakeOf(ada.page)) === "off", "lock released at night");
+  await shot(ada.page, "04-iphone-night-wake-off");
+  log("night: wake lock released (data-wakelock=off)");
+
+  await st.act("game:goDawn");
+  await st.act("game:finishDawn");
+  await until(() => st.st().phase === "day", "day 1");
+  await until(async () => (await wakeOf(ada.page)) === "on", "lock taken again by day");
+  await until(async () => (await wakeOf(cora.page)) === "on", "Cora's lock taken again by day");
+  await shot(ada.page, "05-iphone-day-wake-on");
+  await shot(cora.page, "06-pixel-day-wake-on");
+  log("day: wake lock held again on both phones");
+  await shot(tv, "07-tv-day-https");
+
+  await Promise.all(ctxs.map((x) => x.close()));
+}
+
+const PHASES = { 1: phase1, 2: phase2, 3: phase3, 4: phase4, 5: phase5 };
 
 const port = await freePort();
 const dir = mkdtempSync(join(tmpdir(), "botc-phones-drive-"));
-const base = `http://127.0.0.1:${port}`;
+const base = `${SECURE ? "https" : "http"}://127.0.0.1:${port}`;
 let server;
 let browser;
 let st;

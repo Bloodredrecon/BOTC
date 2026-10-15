@@ -7,6 +7,7 @@ console.log(
     host: config.host,
     port: config.port,
     pin: config.storytellerPin,
+    scheme: config.https ? "https" : "http",
     title: `BOTC Companion join addresses (host ${config.host}, port ${config.port})`,
   }),
 );

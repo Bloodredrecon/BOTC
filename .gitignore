@@ -7,6 +7,7 @@ data/server.pid
 data/logs/
 config/hue.json
 config/local.json
+config/tls/
 data/audio/*
 !data/audio/README.txt
 .env
