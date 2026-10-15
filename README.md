@@ -33,7 +33,11 @@ The server keeps running in the background after you close the launcher window. 
 
 Windows may ask to allow Node.js through the firewall the first time. Allow it on **Private** networks, or the TV and phones can't connect.
 
-The launcher also works from a terminal: `BOTC.bat start | stop | restart | rebuild | status | addresses | log`, or `BOTC.bat set -Port 3900 -BindHost 0.0.0.0 -Pin 4321` / `BOTC.bat reset-settings`.
+Before guests arrive, run **C) Pre-game check** (or `BOTC.bat check`). It checks Node and dependencies, whether the build is current, the port, the firewall rule, the LAN addresses (and `/api/health` on them if the server is running), the TV plates, the narration cues, the PIN, the saved game and the game log folder, and it never changes anything. `BOTC.bat check -Full` also runs the server tests.
+
+While a game is running, the Storyteller page shows **Server** and **TV** pills at the top and a banner if either drops out. Taps made while the server is unreachable are not sent (you are told), so nothing fires late after the connection comes back. The TV shows a small "Reconnecting…" badge and resyncs on its own.
+
+The launcher also works from a terminal: `BOTC.bat start | stop | restart | rebuild | status | addresses | check | log`, or `BOTC.bat set -Port 3900 -BindHost 0.0.0.0 -Pin 4321` / `BOTC.bat reset-settings`.
 
 Files the launcher uses (all gitignored):
 

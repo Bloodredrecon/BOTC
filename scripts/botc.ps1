@@ -11,6 +11,7 @@
     BOTC.bat start | stop | restart | rebuild | status | addresses | dev | log
     BOTC.bat log [-Lines 100]      game action log (data\logs\game-*.jsonl)
     BOTC.bat log -Server           raw server output (data\logs\server.log)
+    BOTC.bat check [-Full]         pre-game check (-Full also runs every server test)
     BOTC.bat set -Port 3900 -BindHost 0.0.0.0 -Pin 1234
     BOTC.bat reset-settings
   Add -Yes to auto-confirm stopping another BOTC server that holds the port.
@@ -18,14 +19,15 @@
 [CmdletBinding()]
 param(
   [Parameter(Position = 0)]
-  [ValidateSet('menu', 'start', 'stop', 'restart', 'rebuild', 'status', 'addresses', 'dev', 'log', 'set', 'reset-settings')]
+  [ValidateSet('menu', 'start', 'stop', 'restart', 'rebuild', 'status', 'addresses', 'dev', 'log', 'set', 'reset-settings', 'check')]
   [string]$Action = 'menu',
   [int]$Port = 0,
   [string]$BindHost = '',
   [string]$Pin = '',
   [switch]$Yes,
   [switch]$Server,
-  [int]$Lines = 60
+  [int]$Lines = 60,
+  [switch]$Full
 )
 
 $ErrorActionPreference = 'Stop'
@@ -201,6 +203,9 @@ function Remove-PidFile {
 # Running = PID file points at a live node.exe running our server\dist\index.js.
 function Get-ServerState {
   $info = Read-PidFile
+  if (-not $info -and (Test-Path -LiteralPath $PidFile)) {
+    return [pscustomobject]@{ Running = $false; Info = [pscustomobject]@{ pid = '(unreadable file)'; startedAt = '?' }; Stale = $true }
+  }
   if (-not $info) { return [pscustomobject]@{ Running = $false; Info = $null; Stale = $false } }
   if (Test-OurServerProcess ([int]$info.pid)) { return [pscustomobject]@{ Running = $true; Info = $info; Stale = $false } }
   return [pscustomobject]@{ Running = $false; Info = $info; Stale = $true }
@@ -601,6 +606,138 @@ function Start-DevMode {
   return $true
 }
 
+# ---------------------------------------------------------------- pre-game check
+
+$script:CheckCounts = @{ ok = 0; warn = 0; fail = 0 }
+
+function Write-Check([string]$status, [string]$name, [string]$detail) {
+  $script:CheckCounts[$status] += 1
+  $color = @{ ok = 'Green'; warn = 'Yellow'; fail = 'Red' }[$status]
+  Write-Host ("  [{0,-4}] " -f $status.ToUpper()) -ForegroundColor $color -NoNewline
+  Write-Host ("{0}: {1}" -f $name, $detail)
+}
+
+function Test-Firewall([string]$nodePath) {
+  if (-not (Get-Command Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue)) {
+    Write-Check 'warn' 'Firewall' 'cannot read firewall rules on this Windows; allow Node.js on Private networks if asked'
+    return
+  }
+  $rules = @(Get-NetFirewallApplicationFilter -Program $nodePath -ErrorAction SilentlyContinue |
+      Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' })
+  $blocks = @($rules | Where-Object { $_.Action -eq 'Block' })
+  $allows = @($rules | Where-Object { $_.Action -eq 'Allow' })
+  $categories = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.NetworkCategory })
+  if ($blocks.Count -gt 0) {
+    $profiles = ($blocks | ForEach-Object { [string]$_.Profile } | Sort-Object -Unique) -join ', '
+    Write-Check 'fail' 'Firewall' "an inbound BLOCK rule for node.exe exists ($profiles). Remove it in Windows Defender Firewall > Allow an app."
+  } elseif ($allows.Count -eq 0) {
+    Write-Check 'warn' 'Firewall' 'no inbound rule for node.exe yet; Windows will ask on first start. Choose Private networks.'
+  } else {
+    $profiles = @($allows | ForEach-Object { ([string]$_.Profile) -split ',\s*' } | Sort-Object -Unique)
+    $covered = @($categories | Where-Object { $profiles -contains $_ -or $profiles -contains 'Any' })
+    if ($categories.Count -gt 0 -and $covered.Count -eq 0) {
+      Write-Check 'fail' 'Firewall' "node.exe is allowed on $($profiles -join ', ') but this network is $($categories -join ', ')"
+    } else {
+      Write-Check 'ok' 'Firewall' "node.exe allowed inbound on $($profiles -join ', ')"
+    }
+  }
+  foreach ($p in @(Get-NetConnectionProfile -ErrorAction SilentlyContinue)) {
+    if ([string]$p.NetworkCategory -eq 'Public') {
+      Write-Check 'warn' 'Network type' "Windows treats '$($p.Name)' ($($p.InterfaceAlias)) as Public; set it to Private so the TV and phones can connect"
+    }
+  }
+}
+
+function Invoke-PreGameCheck([bool]$full) {
+  Write-Step 'Pre-game check'
+  $nodeCmd = Get-Command node.exe -ErrorAction SilentlyContinue
+  if (-not $nodeCmd) { Write-Check 'fail' 'Node.js' 'not installed (https://nodejs.org, version 20+)'; return $false }
+  $ver = (& $nodeCmd.Source -v) -replace '^v', ''
+  if ([int]($ver.Split('.')[0]) -lt 20) { Write-Check 'fail' 'Node.js' "$ver is too old (need 20+)" } else { Write-Check 'ok' 'Node.js' $ver }
+
+  $tsx = Join-Path $Root 'node_modules\tsx\dist\cli.mjs'
+  if (-not (Test-Path (Join-Path $Root 'node_modules\.package-lock.json'))) { Write-Check 'fail' 'Dependencies' 'not installed; Start once (or npm install)' }
+  else { Write-Check 'ok' 'Dependencies' 'installed' }
+
+  $web = @('web\src', 'web\public', 'web\index.html', 'web\vite.config.ts', 'web\package.json') | ForEach-Object { Join-Path $Root $_ }
+  $srv = @('server\src', 'server\package.json', 'server\tsconfig.json') | ForEach-Object { Join-Path $Root $_ }
+  $staleParts = @()
+  if (Test-BuildStale $WebIndex $web) { $staleParts += 'web' }
+  if (Test-BuildStale $ServerEntry $srv) { $staleParts += 'server' }
+  if ($staleParts.Count) { Write-Check 'warn' 'Build' "$($staleParts -join ' and ') older than the source; use 4) Rebuild and start" }
+  else { Write-Check 'ok' 'Build' 'up to date' }
+
+  $cfg = Get-BotcConfig
+  $state = Get-ServerState
+  if ($state.Stale) {
+    Write-Check 'ok' 'PID file' "data\server.pid points at PID $($state.Info.pid) (started $($state.Info.startedAt)), which is no longer the server; Start/Stop clear it"
+  }
+  $owners = @(Get-PortOwners $cfg.Port)
+  if ($state.Running -and [int]$state.Info.port -eq $cfg.Port) {
+    Write-Check 'ok' "Port $($cfg.Port)" "in use by this BOTC server (PID $($state.Info.pid))"
+  } elseif ($owners.Count -eq 0) {
+    Write-Check 'ok' "Port $($cfg.Port)" 'free'
+  } else {
+    $names = ($owners | ForEach-Object { $p = Get-ProcInfo $_; if ($p) { "$($p.Name) (PID $_)" } else { "PID $_" } }) -join ', '
+    if (Get-BotcHealth '127.0.0.1' $cfg.Port) { Write-Check 'warn' "Port $($cfg.Port)" "a BOTC server not started by this launcher is running: $names" }
+    else { Write-Check 'fail' "Port $($cfg.Port)" "used by another program: $names. Close it or change the port (Settings)." }
+  }
+
+  Test-Firewall $nodeCmd.Source
+
+  $lan = Get-LanIPv4
+  if ($cfg.Host -eq '127.0.0.1' -or $cfg.Host -eq 'localhost') {
+    Write-Check 'warn' 'Network' "host is $($cfg.Host): only this PC can connect (Settings > Host > 0.0.0.0)"
+  } elseif ($lan.Primary.Count -eq 0) {
+    Write-Check 'fail' 'Network' 'no LAN address; connect this PC to Wi-Fi or Ethernet'
+  } else {
+    Write-Check 'ok' 'Network' ("LAN address " + (($lan.Primary | ForEach-Object { "$($_.Address) ($($_.Name))" }) -join ', '))
+    if ($state.Running) {
+      foreach ($a in $lan.Primary) {
+        if (Get-BotcHealth $a.Address ([int]$state.Info.port)) { Write-Check 'ok' 'Reachable' "http://$($a.Address):$($state.Info.port) answers (tested from this PC; open it on a phone to be sure)" }
+        else { Write-Check 'fail' 'Reachable' "http://$($a.Address):$($state.Info.port) does not answer" }
+      }
+    } else {
+      Write-Check 'ok' 'Reachable' 'server not running; start it and run check again to test the LAN address'
+    }
+  }
+
+  $preflightArgs = if (Test-Path (Join-Path $Root 'server\dist\preflight.js')) { "`"$(Join-Path $Root 'server\dist\preflight.js')`" --json" }
+    elseif (Test-Path $tsx) { "`"$tsx`" `"$(Join-Path $Root 'server\src\preflight.ts')`" --json" } else { $null }
+  if ($preflightArgs) {
+    $json = & $env:ComSpec /d /c "`"$($nodeCmd.Source)`" $preflightArgs" 2>$null
+    try {
+      foreach ($r in ($json | Out-String | ConvertFrom-Json)) { Write-Check $r.status $r.name $r.detail }
+    } catch {
+      Write-Check 'fail' 'Game data' "preflight failed: $($json | Out-String)"
+    }
+  } else {
+    Write-Check 'warn' 'Game data' 'not checked (build or install first)'
+  }
+
+  if (Test-Path $tsx) {
+    if ($full) {
+      Write-Info 'Running all server tests (about 2 minutes)...'
+      $code = Invoke-Console $env:ComSpec '/d /c npm test --silent'
+      if ($code -eq 0) { Write-Check 'ok' 'Tests' 'all server tests pass' } else { Write-Check 'fail' 'Tests' 'some server tests failed (see above)' }
+    } else {
+      $out = & $env:ComSpec /d /c "cd /d `"$(Join-Path $Root 'server')`" && `"$($nodeCmd.Source)`" `"$tsx`" test/server-security.ts" 2>&1 | Out-String
+      if ($LASTEXITCODE -eq 0) { Write-Check 'ok' 'Smoke test' 'a throwaway server started, served the UI and handled sign-in (BOTC.bat check -Full runs every test)' }
+      else { Write-Check 'fail' 'Smoke test' ("failed:`n" + $out.Trim()) }
+    }
+  } else {
+    Write-Check 'warn' 'Tests' 'not run (dev dependencies missing; run npm install)'
+  }
+
+  Write-Host ''
+  $c = $script:CheckCounts
+  $summary = "{0} OK, {1} warning(s), {2} problem(s)" -f $c.ok, $c.warn, $c.fail
+  if ($c.fail -gt 0) { Write-Err "Check finished: $summary. Fix the problems above before the game." }
+  elseif ($c.warn -gt 0) { Write-Warn "Check finished: $summary." }
+  else { Write-Ok "Check finished: $summary. Ready to play." }
+  return ($c.fail -eq 0)
+}
+
 # ---------------------------------------------------------------- settings
 
 function Test-PinValue([string]$value) { return $value -match '^\d{4,12}$' }
@@ -778,6 +915,7 @@ function Show-MainMenu {
     Write-Info '7) Open Storyteller page in browser'
     Write-Info '8) View game log / server log'
     Write-Info '9) Settings (port, host, PIN)'
+    Write-Info 'C) Pre-game check (network, firewall, audio, plates, quick test)'
     Write-Info 'D) Dev mode (hot reload, for developers)'
     Write-Info 'Q) Quit'
     Write-Host ''
@@ -804,6 +942,7 @@ function Show-MainMenu {
           }
         }
         '9' { Show-SettingsMenu; $pause = $false }
+        'c' { $script:CheckCounts = @{ ok = 0; warn = 0; fail = 0 }; [void](Invoke-PreGameCheck $false) }
         'd' { [void](Start-DevMode) }
         'q' {
           if ((Get-ServerState).Running) {
@@ -839,6 +978,7 @@ switch ($Action) {
   'log' { if ($Server) { Show-LogTail $Lines } else { Show-GameLog $Lines } }
   'set' { $ok = Invoke-SetAction }
   'reset-settings' { $ok = Reset-Settings }
+  'check' { $ok = Invoke-PreGameCheck ([bool]$Full) }
 }
 if (-not $ok) { exit 1 }
 exit 0

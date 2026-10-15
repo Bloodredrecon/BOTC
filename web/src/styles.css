@@ -359,6 +359,44 @@ textarea {
   color: var(--ink-dim);
 }
 
+.conn-pills {
+  display: flex;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+}
+
+.conn-pill {
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.conn-pill::before {
+  content: "● ";
+}
+
+.conn-pill.on {
+  color: #7fbf7a;
+}
+
+.conn-pill.off {
+  color: var(--blood-bright);
+}
+
+.conn-banner {
+  margin: 0 0 0.75rem;
+  border-color: rgba(214, 54, 60, 0.6);
+  color: #f0c878;
+  font-weight: 600;
+}
+
+.conn-banner.tv-off {
+  border-color: rgba(196, 163, 90, 0.5);
+}
+
 .pin-default-warning {
   margin: 0 0 0.75rem;
   border-color: rgba(214, 54, 60, 0.6);

@@ -225,6 +225,19 @@ function recordAction(entry: Parameters<ActionLog["record"]>[0]) {
 
 const pinGuard = new PinGuard(config.storytellerPin);
 
+/** Connected-device counts for the Storyteller; tvChangedAt marks when the TV count last hit or left 0. */
+let tvChangedAt = Date.now();
+function roomSize(room: string): number {
+  return io.sockets.adapter.rooms.get(room)?.size ?? 0;
+}
+function sendPresence() {
+  io.to("storyteller").emit("presence", {
+    tv: roomSize("tv"),
+    tvChangedAt,
+    storytellers: roomSize("storyteller"),
+  });
+}
+
 function clientAddress(raw: string): string {
   return raw.startsWith("::ffff:") ? raw.slice(7) : raw;
 }
@@ -235,10 +248,12 @@ io.on("connection", (socket) => {
   socket.on("join", (payload: { role: "tv" | "storyteller"; pin?: string } | null) => {
     if (!payload || typeof payload !== "object") return;
     if (payload.role === "tv") {
+      if (roomSize("tv") === 0) tvChangedAt = Date.now();
       socket.join("tv");
       socket.data.role = "tv";
       actionLog.record({ t: Date.now(), kind: "connection", action: "tv:join", outcome: "info", client, ...here() });
       engine.setConnected("tv", true);
+      sendPresence();
       return;
     }
 
@@ -264,6 +279,7 @@ io.on("connection", (socket) => {
       actionLog.record({ t: Date.now(), kind: "auth", action: "storyteller:join", outcome: "ok", client, ...here() });
       socket.emit("auth:info", { pinIsDefault: pinGuard.isDefaultPin });
       engine.setConnected("storyteller", true);
+      sendPresence();
     }
   });
 
@@ -388,6 +404,7 @@ io.on("connection", (socket) => {
           });
         }
         socket.emit("auth:error", { message: "Storyteller auth required" });
+        if (typeof ack === "function") ack({ ok: false, error: "Storyteller auth required" });
         return;
       }
       if (event === "game:refresh") {
@@ -454,6 +471,8 @@ io.on("connection", (socket) => {
       const sts = io.sockets.adapter.rooms.get("storyteller");
       engine.setConnected("storyteller", !!(sts && sts.size > 0));
     }
+    if (socket.data.role === "tv" && roomSize("tv") === 0) tvChangedAt = Date.now();
+    if (socket.data.role === "tv" || socket.data.role === "storyteller") sendPresence();
   });
 });
 

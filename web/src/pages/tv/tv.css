@@ -1563,3 +1563,20 @@
   font-size: calc(0.86cqw * var(--fit, 1));
   line-height: 1.22;
 }
+
+/* Shown only while the TV's socket is down; small so the room barely notices. */
+.tv-offline {
+  position: fixed;
+  right: 1.2vw;
+  bottom: 1.4vh;
+  z-index: 40;
+  padding: 0.35em 0.9em;
+  font-family: var(--font-display, serif);
+  font-size: clamp(12px, 0.9vw, 28px);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-parch, #efe2c4);
+  background: rgba(20, 6, 8, 0.82);
+  border: 1px solid rgba(196, 30, 36, 0.55);
+  border-radius: 3px;
+}

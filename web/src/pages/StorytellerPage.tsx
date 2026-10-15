@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSocket, useStoryteller } from "../socket";
 import type { AudioCueInfo, NightShowSpec, Player, StorytellerState, Team } from "../types";
+import { ConnectionBanners, ConnectionPills } from "./storyteller/ConnectionStatus";
 import { LogPanel } from "./storyteller/LogPanel";
 
 const PIN_KEY = "botc_storyteller_pin";
@@ -314,11 +315,11 @@ function tabForPhase(phase: StorytellerState["phase"]): Tab {
 }
 
 export function StorytellerPage() {
-  const { socketRef, connected, emit } = useSocket();
+  const { socketRef, connected, emit, droppedAt } = useSocket();
   const [pinInput, setPinInput] = useState(() => localStorage.getItem(PIN_KEY) ?? "");
   const [pin, setPin] = useState<string | null>(() => localStorage.getItem(PIN_KEY));
   const [attempt, setAttempt] = useState(0);
-  const { state, authError, authed, retryAt, pinIsDefault } = useStoryteller(socketRef, pin, attempt);
+  const { state, authError, authed, retryAt, pinIsDefault, presence } = useStoryteller(socketRef, pin, attempt);
   const [tab, setTab] = useState<Tab>("control");
   const [, setTick] = useState(0);
 
@@ -389,7 +390,10 @@ export function StorytellerPage() {
       <div className="st-top">
         <h1 className="brand">BOTC</h1>
         <div className="muted">{formatStatus(state)}</div>
+        <ConnectionPills connected={connected} presence={presence} />
       </div>
+
+      <ConnectionBanners connected={connected} presence={presence} phase={state.phase} droppedAt={droppedAt} />
 
       {pinIsDefault && (
         <div className="panel pin-default-warning" role="alert">

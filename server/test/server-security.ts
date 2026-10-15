@@ -194,6 +194,27 @@ const cases: AsyncCase[] = [
     },
   },
   {
+    name: "Presence: the Storyteller sees the TV join and leave; unauthenticated actions get an error ack",
+    run: async () => {
+      const st = await sock();
+      const seen: { tv: number }[] = [];
+      st.on("presence", (p: { tv: number }) => seen.push(p));
+      if (!(await joinStoryteller(st, PIN)).ok) return "ST join failed";
+      await new Promise((r) => setTimeout(r, 200));
+      const base = seen.at(-1)?.tv ?? -1;
+      const tv = await sock();
+      tv.emit("join", { role: "tv" });
+      await new Promise((r) => setTimeout(r, 300));
+      if ((seen.at(-1)?.tv ?? -1) !== base + 1) return `after TV join: ${JSON.stringify(seen.at(-1))} (base ${base})`;
+      const ack = (await new Promise((resolve) => tv.emit("game:reset", {}, resolve))) as { ok: boolean };
+      if (ack.ok !== false) return `TV game:reset ack ${JSON.stringify(ack)}`;
+      tv.disconnect();
+      await new Promise((r) => setTimeout(r, 300));
+      if ((seen.at(-1)?.tv ?? -1) !== base) return `after TV leave: ${JSON.stringify(seen.at(-1))}`;
+      return null;
+    },
+  },
+  {
     name: "Wrong PINs are throttled; the right PIN is refused during the lock-out",
     run: async () => {
       const s = await sock();

@@ -108,7 +108,15 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 4. Reliability: pre-game check and disconnect handling
 
-- [ ] Status
+- [x] Status: done (Oct 15)
+
+**Done.**
+- `BOTC.bat check` (menu **C**, `-Full` adds the server tests): Node, dependencies, build up to date, port, firewall rule for node on Private networks (read-only), network profile, LAN addresses plus `/api/health` probe, then `server/src/preflight.ts` (config, default PIN, Hue, saved game parsed read-only, web build, TV plates, narration cue coverage for every cue family the engine plays, custom audio, game log folder writable). On this PC: 16 OK, 1 warning (default PIN), 1 problem (port 3847 held by another program, see Decisions).
+- Bug found and fixed (evidence: `%TEMP%\botc_probe\buffer.mjs`): socket.io-client buffers emits made while disconnected and replays them on reconnect *before* the page re-joins as Storyteller, so the server refused them as unauthenticated and the tap was silently lost (or, if it had been accepted, it would have fired late). Now the client does not send while offline and tells the Storyteller ("A tap made while offline was not sent"); the server also answers unauthenticated actions with an error ack instead of no ack.
+- Presence: `tvConnected` was tracked but never sent to the Storyteller (`projection.ts` only had `storytellerConnected`). New `presence` event (TV count, since-when). Storyteller page: Server/TV pills, offline banner, "TV is not connected (since HH:MM)" banner outside the lobby. TV: "Reconnecting…" badge. Both reconnect faster (max 3 s back-off) and immediately when the page becomes visible again.
+- Stale PID: already reported by status and cleared by start/stop (verified with the real Oct 12 file, PID 20504, backed up first). A corrupt/unreadable PID file is now treated as stale too (tested).
+- Live test (port 3916, temp session): kill server → banners on both screens; offline "2m talk" tap not sent (only the earlier 300 s timer is in the game log); restart → both recover, TV resyncs to `phase-day`; close TV → TV banner. No console errors.
+- Tests: `preflight.ts` (2) + one more real-server case (presence and unauthenticated ack). 172/172 pass. Screenshots: `docs/tv-design/_verify/item4-reliability/`.
 
 **Goal.** Before guests arrive, one command tells you whether tonight will work; during the game, dropped connections are obvious and recover on their own.
 
@@ -202,4 +210,5 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## Decisions needed from the user
 
-(Filled in as items are worked through.)
+- **Storyteller PIN is still the default `1234`.** The launcher, the pre-game check and the Storyteller page now warn. Change it with `BOTC.bat` → Settings (or `BOTC.bat set -Pin ...`).
+- **Port 3847 is held by another program.** `BOTC.bat check` (Oct 15) found 127.0.0.1:3847 owned by `Cursor.exe` (a utility process started 14:32 that day) answering "BeatLock WLED bridge". I did not test whether BOTC can still bind `0.0.0.0:3847` alongside it (to avoid disturbing it), but at best `localhost:3847` on this PC would reach BeatLock instead of BOTC. Either move BeatLock to another port or change BOTC's port (`BOTC.bat set -Port 3900`). Left untouched.

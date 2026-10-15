@@ -123,6 +123,11 @@ export function TvPage() {
       <h1 className="visually-hidden">Blood on the Clocktower</h1>
 
       {!soundOn && <SoundGate onEnable={enableSound} />}
+      {!connected && (
+        <div className="tv-offline" role="status">
+          Reconnecting…
+        </div>
+      )}
 
       <div className="tv-stage16">
         {!plateLogo && <TvBrandLogo />}

@@ -2,30 +2,53 @@ import { io, Socket } from "socket.io-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PublicState, StorytellerState } from "./types";
 
+export const NOT_CONNECTED = "Not connected to the server, so that was not sent. Try again once reconnected.";
+
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  /** Set when an action was dropped because the socket was down. */
+  const [droppedAt, setDroppedAt] = useState<number | null>(null);
 
   useEffect(() => {
     const socket = io({
       path: "/socket.io",
       transports: ["websocket", "polling"],
+      reconnectionDelayMax: 3000,
     });
     socketRef.current = socket;
     socket.on("connect", () => setConnected(true));
     socket.on("disconnect", () => setConnected(false));
+    // A sleeping tablet/TV may miss reconnect attempts; retry at once when it wakes.
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !socket.connected) socket.connect();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
+      document.removeEventListener("visibilitychange", onVisible);
       socket.disconnect();
     };
   }, []);
 
+  /**
+   * Never queue while offline: socket.io would replay the event on reconnect before the
+   * Storyteller re-joins, so the server refuses it and the tap is silently lost.
+   */
   const emit = useCallback((event: string, data?: unknown, ack?: (result: unknown) => void) => {
-    if (ack) socketRef.current?.emit(event, data, ack);
-    else socketRef.current?.emit(event, data);
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      setDroppedAt(Date.now());
+      ack?.({ ok: false, error: NOT_CONNECTED });
+      return;
+    }
+    if (ack) socket.emit(event, data, ack);
+    else socket.emit(event, data);
   }, []);
 
-  return { socketRef, connected, emit };
+  return { socketRef, connected, emit, droppedAt };
 }
+
+export type Presence = { tv: number; tvChangedAt: number; storytellers: number };
 
 export function useTvState(socketRef: React.MutableRefObject<Socket | null>) {
   const [state, setState] = useState<PublicState | null>(null);
@@ -68,6 +91,7 @@ export function useStoryteller(
   const [retryAt, setRetryAt] = useState<number | null>(null);
   const [authed, setAuthed] = useState(false);
   const [pinIsDefault, setPinIsDefault] = useState(false);
+  const [presence, setPresence] = useState<Presence | null>(null);
 
   useEffect(() => {
     const socket = socketRef.current;
@@ -90,6 +114,7 @@ export function useStoryteller(
     socket.on("state:storyteller", onState);
     socket.on("auth:error", onAuthErr);
     socket.on("auth:info", onAuthInfo);
+    socket.on("presence", setPresence);
     socket.on("connect", join);
     if (socket.connected) join();
 
@@ -97,9 +122,10 @@ export function useStoryteller(
       socket.off("state:storyteller", onState);
       socket.off("auth:error", onAuthErr);
       socket.off("auth:info", onAuthInfo);
+      socket.off("presence", setPresence);
       socket.off("connect", join);
     };
   }, [socketRef, pin, attempt]);
 
-  return { state, authError, authed, retryAt, pinIsDefault };
+  return { state, authError, authed, retryAt, pinIsDefault, presence };
 }
