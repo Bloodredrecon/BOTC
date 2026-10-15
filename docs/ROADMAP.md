@@ -139,7 +139,17 @@ Every item is verified with `npm run typecheck`, all server tests, `npm run buil
 
 ## 5. Storyteller tools: setup wizard, grimoire, undo, history
 
-- [ ] Status
+- [x] Status: done (Oct 15)
+
+**Done.**
+- Before: Setup only set the player count and names; the Grimoire tab was a list of seat chips plus the editor; there was no deal, undo or recap.
+- **Setup wizard** (`server/src/setup-wizard.ts`, `web/src/pages/storyteller/SetupWizard.tsx`): random or partly/fully hand-picked bag with official counts and the Baron adjustment; picks the Drunk's Townsfolk (not in play), the Fortune Teller's red herring (another good player; also when the Drunk thinks they are the Fortune Teller) and three bluffs (good, not in play, not the Drunk's Townsfolk). The preview is editable and stays on the phone (`game:previewDeal` is read-only, not logged). `game:applyDeal` re-validates on the server and only works in the lobby; it places "Is the Drunk", "Red herring" and the Imp's bluffs.
+- **Grimoire circle** (`GrimoireCircle.tsx`): seats clockwise from the top, team-coloured tokens, †/shroud for the dead, a dot for an unused ghost vote, up to 3 reminder tokens, Drunk "as X"; bluffs and red herring in the centre. More than 10 seats switch to a taller ellipse; checked at 15 seats on a 390 px phone (no overlapping tokens).
+- **Undo** (`server/src/undo.ts`, wired in `index.ts`, `UndoBar.tsx`): a snapshot is taken before every Storyteller action and kept only if the action succeeded and changed the game (30 steps; name/notes typing merges into one step). Undo asks first and names the action. It keeps the current sound mix and connection flags, never replays sounds/Hue, drops a timer that already ran out (it would replay the timer-end sound), and cancels pending automatic steps (dawn to day, night after execution, Slayer result, game over) with a notice. Not undoable: sounds, ambiance, scenes, notices, New game. New game clears the history.
+- **History tab**: Recap (winner, each player's character with "started as" from new `startingCharacters` recorded at the first night, the Drunk's believed role, fate, day by day nominations/votes/executions/deaths) and the existing action log.
+- Also fixed: a custom `BOTC_SESSION_PATH` in a folder that doesn't exist crashed the server at startup (`ENOENT` in `saveSession`, seen in the live check); it now creates the folder. The action log now shows a deal as "Ada (seat 1)=drunk (thinks chef), ..." instead of 600 characters of JSON.
+- Tests: `setup-wizard.ts` (7: 3,300 random deals for 5-15 players, Baron, Drunk, red herring, hand-picked, validation, apply), `undo.ts` (5), one real-server case (preview/apply/undo/reset, TV never sees undo state), one action-log check. 185/185 pass.
+- Live check (port 3917/3918, temp sessions): Baron+Drunk+Fortune Teller for 8 players gave T3/O3/M1/D1; an emptied bluff was refused with "Pick exactly three bluffs."; undo of "Resolve vote" went back to the open vote with 5 hands; recap correct. No console errors. Screenshots: `docs/tv-design/_verify/item5-storyteller-tools/`.
 
 **Goal.** Faster, safer storytelling: set up a legal game in a minute, see the table as a grimoire, undo mistakes, review what happened.
 

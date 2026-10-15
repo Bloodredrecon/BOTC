@@ -46,6 +46,7 @@ import {
   notOpenReason,
   travellerNomineeReason,
 } from "./nominations.js";
+import type { Deal } from "./setup-wizard.js";
 import type {
   Alignment,
   DayNomination,
@@ -447,6 +448,54 @@ export class GameEngine {
    * Resident (non-Traveller) seat count. Official games cap at 15; `allowOver15` is a house rule
    * up to 20. Seats keep their order — residents are added / removed at the end of the circle.
    */
+  /** Restore an earlier session (undo). Scheduled automatic steps are cancelled; returns what was cancelled. */
+  undoTo(next: GameSession): string[] {
+    const cancelled: string[] = [];
+    if (this.dawnThenDayTimer) cancelled.push("the move from dawn to day");
+    if (this.nightTimer) cancelled.push("the move to night after the execution");
+    if (this.shotTimer) cancelled.push("the Slayer shot result");
+    if (this.pendingWin) cancelled.push("the game-over announcement");
+    this.clearDawnThenDayTimer();
+    this.clearShotTimer();
+    this.clearNightTimer();
+    this.cancelPendingWin();
+    this.session = next;
+    this.lastSound = null;
+    this.lastHue = null;
+    saveSession(this.session);
+    this.emit();
+    return cancelled;
+  }
+
+  /** Put a dealt bag into the grimoire (lobby only). Validate with setup-wizard's validateDeal first. */
+  applyDeal(deal: Deal): { ok: boolean; message?: string } {
+    if (this.session.phase !== "lobby") {
+      return { ok: false, message: "Deal characters before the first night (the game has started — use New game first)." };
+    }
+    this.mutate((s) => {
+      for (const seat of deal.seats) {
+        const p = s.players.find((x) => x.id === seat.playerId);
+        if (!p) continue;
+        p.characterId = seat.characterId;
+        p.thinksCharacterId = seat.thinksCharacterId;
+        p.reminders = seat.characterId === "drunk" ? ["Is the Drunk"] : [];
+        p.bluffs = [];
+        p.abilityUsed = false;
+        p.alive = true;
+        p.usedGhostVote = false;
+      }
+      if (deal.redHerringId) placeExclusiveReminder(s, deal.redHerringId, "Red herring");
+      const demon = s.players.find((p) => !p.leftGame && !p.isTraveller && p.characterId === "imp");
+      if (demon) demon.bluffs = [...deal.bluffs];
+      const bluffNames = deal.bluffs.map((id) => findDef(this.script, id)?.name ?? id).join(", ");
+      pushStNotice(
+        s,
+        `Dealt ${deal.seats.length} characters${deal.baron ? " (Baron: +2 Outsiders)" : ""}. Demon bluffs: ${bluffNames}. Show each player their token, then start the first night.`,
+      );
+    });
+    return { ok: true };
+  }
+
   setPlayerCount(count: number, opts: { allowOver15?: boolean } = {}) {
     const allow = opts.allowOver15 ?? this.session.allowOver15;
     const cap = allow ? MAX_HOUSE_PLAYERS : MAX_OFFICIAL_PLAYERS;
@@ -862,6 +911,9 @@ export class GameEngine {
         s.exile = null;
         // The Baron's +2 Outsiders is fixed at setup; it does not revert if the Baron dies or star-passes.
         s.baronInSetup = s.players.some((p) => p.characterId === "baron" && !p.leftGame);
+        s.startingCharacters = Object.fromEntries(
+          s.players.filter((p) => !p.leftGame).map((p) => [p.id, p.characterId]),
+        );
         for (const p of s.players) {
           if (p.leftGame || p.characterId !== "drunk") continue;
           if (!p.thinksCharacterId) {

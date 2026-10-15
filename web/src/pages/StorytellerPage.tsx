@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useSocket, useStoryteller } from "../socket";
 import type { AudioCueInfo, NightShowSpec, Player, StorytellerState, Team } from "../types";
 import { ConnectionBanners, ConnectionPills } from "./storyteller/ConnectionStatus";
+import { GrimoireCircle } from "./storyteller/GrimoireCircle";
 import { LogPanel } from "./storyteller/LogPanel";
+import { RecapPanel } from "./storyteller/RecapPanel";
+import { SetupWizard } from "./storyteller/SetupWizard";
+import { UndoBar } from "./storyteller/UndoBar";
 
 const PIN_KEY = "botc_storyteller_pin";
 
@@ -319,8 +323,9 @@ export function StorytellerPage() {
   const [pinInput, setPinInput] = useState(() => localStorage.getItem(PIN_KEY) ?? "");
   const [pin, setPin] = useState<string | null>(() => localStorage.getItem(PIN_KEY));
   const [attempt, setAttempt] = useState(0);
-  const { state, authError, authed, retryAt, pinIsDefault, presence } = useStoryteller(socketRef, pin, attempt);
+  const { state, authError, authed, retryAt, pinIsDefault, presence, undo } = useStoryteller(socketRef, pin, attempt);
   const [tab, setTab] = useState<Tab>("control");
+  const [historyView, setHistoryView] = useState<"recap" | "log">("recap");
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -394,6 +399,7 @@ export function StorytellerPage() {
       </div>
 
       <ConnectionBanners connected={connected} presence={presence} phase={state.phase} droppedAt={droppedAt} />
+      <UndoBar undo={undo} emit={emit} />
 
       {pinIsDefault && (
         <div className="panel pin-default-warning" role="alert">
@@ -415,7 +421,7 @@ export function StorytellerPage() {
             ["rules", "Rules"],
             ["sound", "Sound"],
             ["ambiance", "Ambiance"],
-            ["log", "Log"],
+            ["log", "History"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -464,7 +470,19 @@ export function StorytellerPage() {
       {tab === "rules" && <RulesTab state={state} emit={emit} />}
       {tab === "sound" && <SoundTab state={state} emit={emit} />}
       {tab === "ambiance" && <AmbianceTab state={state} emit={emit} />}
-      {tab === "log" && <LogPanel socketRef={socketRef} />}
+      {tab === "log" && (
+        <>
+          <div className="chip-row history-switch">
+            <button type="button" className={`chip ${historyView === "recap" ? "on" : ""}`} onClick={() => setHistoryView("recap")}>
+              Recap
+            </button>
+            <button type="button" className={`chip ${historyView === "log" ? "on" : ""}`} onClick={() => setHistoryView("log")}>
+              Action log
+            </button>
+          </div>
+          {historyView === "recap" ? <RecapPanel state={state} /> : <LogPanel socketRef={socketRef} />}
+        </>
+      )}
     </div>
   );
 }
@@ -665,7 +683,7 @@ function SetupTab({
   emit,
 }: {
   state: StorytellerState;
-  emit: (e: string, d?: unknown) => void;
+  emit: EmitFn;
 }) {
   const residents = state.players.filter((p) => !p.isTraveller && !p.leftGame).length;
   const travellers = state.players.filter((p) => p.isTraveller && !p.leftGame).length;
@@ -714,6 +732,8 @@ function SetupTab({
         )}
         {state.setupWarning && <p className="warn">{state.setupWarning}</p>}
       </div>
+
+      <SetupWizard state={state} emit={emit} />
 
       <div className="panel">
         <h2>TV character sheet</h2>
@@ -802,22 +822,7 @@ function GrimoireTab({
     <div className="stack">
       <div className="panel">
         <h2>Seats</h2>
-        <div className="chip-row">
-          {state.players
-            .filter((p) => !p.leftGame)
-            .map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`chip ${selected === p.id ? "on" : ""}`}
-              onClick={() => setSelected(p.id)}
-            >
-              {p.seat}. {p.name}
-              {p.isTraveller ? " T" : ""}
-              {!p.alive ? " †" : ""}
-            </button>
-          ))}
-        </div>
+        <GrimoireCircle state={state} selectedId={player.id} onSelect={setSelected} />
       </div>
 
       <PlayerEditor

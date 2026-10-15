@@ -50,6 +50,9 @@ export function useSocket() {
 
 export type Presence = { tv: number; tvChangedAt: number; storytellers: number };
 
+/** Server-side undo history: how many steps, and what the next Undo would take back. */
+export type UndoState = { count: number; last: { label: string; at: number } | null };
+
 export function useTvState(socketRef: React.MutableRefObject<Socket | null>) {
   const [state, setState] = useState<PublicState | null>(null);
   const [joined, setJoined] = useState(false);
@@ -92,6 +95,7 @@ export function useStoryteller(
   const [authed, setAuthed] = useState(false);
   const [pinIsDefault, setPinIsDefault] = useState(false);
   const [presence, setPresence] = useState<Presence | null>(null);
+  const [undo, setUndo] = useState<UndoState>({ count: 0, last: null });
 
   useEffect(() => {
     const socket = socketRef.current;
@@ -115,6 +119,7 @@ export function useStoryteller(
     socket.on("auth:error", onAuthErr);
     socket.on("auth:info", onAuthInfo);
     socket.on("presence", setPresence);
+    socket.on("undo:state", setUndo);
     socket.on("connect", join);
     if (socket.connected) join();
 
@@ -123,9 +128,10 @@ export function useStoryteller(
       socket.off("auth:error", onAuthErr);
       socket.off("auth:info", onAuthInfo);
       socket.off("presence", setPresence);
+      socket.off("undo:state", setUndo);
       socket.off("connect", join);
     };
   }, [socketRef, pin, attempt]);
 
-  return { state, authError, authed, retryAt, pinIsDefault, presence };
+  return { state, authError, authed, retryAt, pinIsDefault, presence, undo };
 }

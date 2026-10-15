@@ -215,6 +215,61 @@ const cases: AsyncCase[] = [
     },
   },
   {
+    name: "Deal + undo over the socket: preview, apply, undo restores, reset clears the history, TV never sees it",
+    run: async () => {
+      const st = await sock();
+      const undoStates: { count: number; last: { label: string } | null }[] = [];
+      st.on("undo:state", (u) => undoStates.push(u));
+      if (!(await joinStoryteller(st, PIN)).ok) return "ST join failed";
+      const tv = await sock();
+      const tvUndo: unknown[] = [];
+      tv.on("undo:state", (u) => tvUndo.push(u));
+      tv.emit("join", { role: "tv" });
+      const act = (event: string, data: unknown) =>
+        new Promise<Record<string, unknown>>((resolve) => st.emit(event, data, (r: Record<string, unknown>) => resolve(r)));
+      const lastState = () =>
+        new Promise<{ players: { id: string; characterId: string | null; reminders: string[] }[]; phase: string }>((resolve) => {
+          st.once("state:storyteller", resolve);
+          st.emit("game:refresh", {});
+        });
+
+      await act("game:reset", {});
+      await act("game:setPlayerCount", { count: 7 });
+      const preview = (await act("game:previewDeal", { include: ["baron", "drunk"] })) as {
+        ok: boolean;
+        deal: { seats: { playerId: string; characterId: string }[]; counts: { outsider: number } };
+      };
+      if (!preview.ok || preview.deal.seats.length !== 7) return `preview: ${JSON.stringify(preview)}`;
+      if (preview.deal.counts.outsider !== 2) return `7 players + Baron should have 2 Outsiders: ${JSON.stringify(preview.deal.counts)}`;
+      const unchanged = await lastState();
+      if (unchanged.players.some((p) => p.characterId)) return "preview changed the grimoire";
+
+      const bad = await act("game:applyDeal", { deal: { ...preview.deal, bluffs: [] } });
+      if (bad.ok !== false || !String(bad.message).includes("three bluffs")) return `bad deal: ${JSON.stringify(bad)}`;
+      const applied = await act("game:applyDeal", { deal: preview.deal });
+      if (applied.ok !== true) return `apply: ${JSON.stringify(applied)}`;
+      const dealt = await lastState();
+      const want = new Map(preview.deal.seats.map((s) => [s.playerId, s.characterId]));
+      if (dealt.players.some((p) => want.get(p.id) !== p.characterId)) return "applied characters differ from the preview";
+      if (undoStates.at(-1)?.last?.label !== "Deal characters") return `undo label ${JSON.stringify(undoStates.at(-1))}`;
+
+      const undone = await act("game:undo", {});
+      if (undone.ok !== true) return `undo: ${JSON.stringify(undone)}`;
+      const back = await lastState();
+      if (back.players.some((p) => p.characterId)) return "undo did not clear the deal";
+      if (back.players.length !== 7) return `undo went too far: ${back.players.length} players`;
+
+      await act("game:reset", {});
+      await new Promise((r) => setTimeout(r, 200));
+      if (undoStates.at(-1)?.count !== 0) return `after reset undo count ${undoStates.at(-1)?.count}`;
+      const none = await act("game:undo", {});
+      if (none.ok !== false) return `undo after reset: ${JSON.stringify(none)}`;
+      if (tvUndo.length) return "TV received undo state";
+      tv.disconnect();
+      return null;
+    },
+  },
+  {
     name: "Wrong PINs are throttled; the right PIN is refused during the lock-out",
     run: async () => {
       const s = await sock();

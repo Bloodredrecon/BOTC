@@ -305,6 +305,8 @@ export type GameSession = {
   newDemons: NewDemon[];
   /** A Baron was in the bag at setup — the +2 Outsiders stays even if the Baron dies / star-passes. */
   baronInSetup: boolean;
+  /** Each player's character when the first night began (for the end-of-game recap; ST only). */
+  startingCharacters: Record<string, string | null>;
   /** Open call to exile a Traveller (not a nomination; abilities don't apply). */
   exile: ExileState | null;
   /** Storyteller toggled the public character sheet / setup counts onto the TV. */
@@ -442,6 +444,8 @@ export type StorytellerState = PublicState & {
   players: Player[];
   night: GameSession["night"];
   setup: SetupCounts | null;
+  /** The official row for this player count, before any Baron adjustment. */
+  officialSetup: SetupCounts | null;
   assignedCounts: SetupCounts;
   setupWarning: string | null;
   characters: CharacterDef[];
@@ -452,6 +456,7 @@ export type StorytellerState = PublicState & {
   executedTodayId: string | null;
   executionOccurredToday: boolean;
   newDemons: NewDemon[];
+  startingCharacters: Record<string, string | null>;
   tvSheet: boolean;
   allowOver15: boolean;
   /** Private: the Butler's hand is up without their Master's (the vote still counts). */

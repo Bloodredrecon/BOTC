@@ -26,6 +26,9 @@ import {
 } from "./action-log.js";
 import { GAME_LOG_DIR, loadConfig, loadScript, loadSession, ROOT, saveSession } from "./persistence.js";
 import { PinGuard } from "./pin-guard.js";
+import { pushStNotice } from "./rules.js";
+import { proposeDeal, validateDeal } from "./setup-wizard.js";
+import { comparable, mergeKeyFor, NOT_UNDOABLE, restoredSession, undoLabel, UndoStack } from "./undo.js";
 import type { AmbianceState, Phase } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -225,6 +228,33 @@ function recordAction(entry: Parameters<ActionLog["record"]>[0]) {
 
 const pinGuard = new PinGuard(config.storytellerPin);
 
+/** In memory only: a server restart starts a fresh undo history. */
+const undo = new UndoStack();
+function sendUndo() {
+  io.to("storyteller").emit("undo:state", undo.summary());
+}
+
+function residentIds(): string[] {
+  return engine.session.players
+    .filter((p) => !p.isTraveller && !p.leftGame)
+    .sort((a, b) => a.seat - b.seat)
+    .map((p) => p.id);
+}
+
+function undoLast(): { ok: boolean; message: string } {
+  const entry = undo.pop();
+  if (!entry) return { ok: false, message: "Nothing to undo." };
+  const cancelled = engine.undoTo(restoredSession(entry.before, engine.session));
+  const message = `Undone: ${entry.label}.${
+    cancelled.length ? ` Also cancelled ${cancelled.join(" and ")} — continue it by hand if it still applies.` : ""
+  }`;
+  engine.mutate((s) => pushStNotice(s, message));
+  return { ok: true, message };
+}
+
+/** Actions that only read state: answered, never logged or undone. */
+const READ_ONLY_ACTIONS = new Set(["game:refresh", "game:previewDeal"]);
+
 /** Connected-device counts for the Storyteller; tvChangedAt marks when the TV count last hit or left 0. */
 let tvChangedAt = Date.now();
 function roomSize(room: string): number {
@@ -278,6 +308,7 @@ io.on("connection", (socket) => {
       socket.data.authenticated = true;
       actionLog.record({ t: Date.now(), kind: "auth", action: "storyteller:join", outcome: "ok", client, ...here() });
       socket.emit("auth:info", { pinIsDefault: pinGuard.isDefaultPin });
+      socket.emit("undo:state", undo.summary());
       engine.setConnected("storyteller", true);
       sendPresence();
     }
@@ -386,6 +417,16 @@ io.on("connection", (socket) => {
     "game:clearStNotices": () => engine.clearStNotices(),
     "game:dismissStNotice": (d) => engine.dismissStNotice(String(d.id ?? "")),
     "game:refresh": () => engine.emit(),
+    "game:previewDeal": (d) =>
+      proposeDeal(script, residentIds(), {
+        include: Array.isArray(d.include) ? d.include.map(String) : [],
+      }),
+    "game:applyDeal": (d) => {
+      const checked = validateDeal(script, residentIds(), d.deal);
+      if (!checked.ok) return { ok: false, message: checked.errors.join(" ") };
+      return engine.applyDeal(checked.deal);
+    },
+    "game:undo": () => undoLast(),
   };
 
   for (const [event, handler] of Object.entries(actions)) {
@@ -407,11 +448,20 @@ io.on("connection", (socket) => {
         if (typeof ack === "function") ack({ ok: false, error: "Storyteller auth required" });
         return;
       }
-      if (event === "game:refresh") {
-        handler({});
-        if (typeof ack === "function") ack({ ok: true });
+      if (READ_ONLY_ACTIONS.has(event)) {
+        let result: unknown;
+        try {
+          result = handler((data ?? {}) as Record<string, unknown>);
+        } catch (err) {
+          app.log.error(err);
+          result = { ok: false, error: String(err) };
+        }
+        if (typeof ack === "function") ack(result ?? { ok: true });
         return;
       }
+      const undoable = !NOT_UNDOABLE.has(event);
+      const full = undoable ? structuredClone(engine.session) : null;
+      const fullCmp = full ? comparable(full) : null;
       const before = snapshotSession(engine.session);
       const args = describeArgs(engine.session, data);
       const b0 = broadcasts;
@@ -442,6 +492,19 @@ io.on("connection", (socket) => {
         events: events.length ? events.map((e) => describeEvent(s, e)) : undefined,
       });
       lastSnap = snapshotSession(s);
+      if (event === "game:reset" && !error) undo.clear();
+      if (full && !error && outcome.outcome === "ok" && comparable(engine.session) !== fullCmp) {
+        undo.push({
+          action: event,
+          label: undoLabel(event, args),
+          at: Date.now(),
+          phase: before.phase,
+          day: before.day,
+          before: full,
+          mergeKey: mergeKeyFor(event, data),
+        });
+      }
+      sendUndo();
       if (error) {
         app.log.error(error);
         socket.emit("action:error", { message: String(error) });

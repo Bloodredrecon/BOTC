@@ -88,6 +88,12 @@ const cases: Case[] = [
       const big = describeArgs(s, { notes: "y".repeat(2000) });
       if (!big || !("truncated" in big)) return "not truncated";
       if (describeArgs(s, null) !== undefined || describeArgs(s, 5) !== undefined) return "non-object args";
+      const deal = describeArgs(s, {
+        deal: { seats: [{ playerId: "p1", characterId: "drunk", thinksCharacterId: "chef" }], redHerringId: "p2", bluffs: ["mayor"] },
+      });
+      if (deal?.seats !== "Ada (seat 1)=drunk (thinks chef)" || deal.redHerring !== "Bram (seat 2)" || deal.bluffs !== "mayor") {
+        return `deal: ${JSON.stringify(deal)}`;
+      }
       return null;
     },
   },

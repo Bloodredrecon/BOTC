@@ -351,6 +351,8 @@ export type StorytellerState = Omit<PublicState, "players"> & {
   players: Player[];
   night: { stepIndex: number; steps: NightStep[]; isFirstNight: boolean } | null;
   setup: SetupCounts | null;
+  /** The official row for this player count, before any Baron adjustment. */
+  officialSetup: SetupCounts | null;
   assignedCounts: SetupCounts;
   setupWarning: string | null;
   characters: CharacterDef[];
@@ -361,6 +363,8 @@ export type StorytellerState = Omit<PublicState, "players"> & {
   executedTodayId: string | null;
   executionOccurredToday: boolean;
   newDemons: NewDemon[];
+  /** Each player's character when the first night began (end-of-game recap). */
+  startingCharacters: Record<string, string | null>;
   tvSheet: boolean;
   allowOver15: boolean;
   butlerWarning: string | null;
@@ -371,6 +375,15 @@ export type StorytellerState = Omit<PublicState, "players"> & {
   stNotices: { id: string; message: string; at: number }[];
   audioCues: AudioCueInfo[];
   ambianceCatalog: AmbianceLayerDef[];
+};
+
+/** A proposed deal from the setup wizard (server/src/setup-wizard.ts). */
+export type Deal = {
+  seats: { playerId: string; characterId: string; thinksCharacterId: string | null }[];
+  redHerringId: string | null;
+  bluffs: string[];
+  counts: SetupCounts;
+  baron: boolean;
 };
 
 /** One line of the Storyteller-only game action log (server/src/action-log.ts). */

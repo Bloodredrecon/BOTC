@@ -13,6 +13,13 @@ LAN companion for a physical **Blood on the Clocktower** game: storyteller phone
 
 Also: dawn overnight-death announce, setup bag counts, fabled on TV, session autosave, storyteller PIN.
 
+Storyteller tools:
+
+- **Deal characters** (Setup tab, before the first night): a legal random bag, or tap the characters you want in play and the rest is drawn. It picks the Drunk's Townsfolk, the Fortune Teller's red herring and three Demon bluffs; change any of them in the preview, then **Put in grimoire**. The Baron's +2 Outsiders is applied automatically.
+- **Grimoire circle** (Grimoire tab): the seats as a circle with characters, deaths, unused ghost votes and reminder tokens; tap a seat to edit it.
+- **Undo** (top of the Storyteller page): takes back the last action, naming it first. Sounds and lights are not replayed; a pending automatic step (dawn to day, game over) is cancelled and you're told. The history is kept in memory (up to 30 steps) and cleared by New game or a server restart.
+- **History** tab: a recap (who was what, starting characters, how each player died, each day's nominations and votes) and the full action log.
+
 ## Requirements
 
 - Node.js 20+

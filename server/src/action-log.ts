@@ -201,6 +201,19 @@ export function playerLabel(s: GameSession, id: string): string {
 const ID_KEYS = /^(playerId|nominatorId|nomineeId|shooterId|targetId|travellerId|calledById|beggarId|donorId|substituteId|starPassTo|redHerringPlayerId)$/;
 const ID_LIST_KEYS = /^(playerIds)$/;
 
+/** Setup-wizard deal as "Ada (seat 1)=drunk (thinks chef), ..." plus red herring and bluffs. */
+function describeDeal(s: GameSession, raw: unknown): Record<string, unknown> {
+  const d = (raw ?? {}) as { seats?: unknown; redHerringId?: unknown; bluffs?: unknown };
+  const seats = Array.isArray(d.seats) ? (d.seats as Record<string, unknown>[]) : [];
+  return {
+    seats: seats
+      .map((x) => `${playerLabel(s, String(x?.playerId ?? ""))}=${String(x?.characterId ?? "")}${x?.thinksCharacterId ? ` (thinks ${String(x.thinksCharacterId)})` : ""}`)
+      .join(", "),
+    ...(d.redHerringId ? { redHerring: playerLabel(s, String(d.redHerringId)) } : {}),
+    bluffs: Array.isArray(d.bluffs) ? d.bluffs.map(String).join(", ") : "",
+  };
+}
+
 /** Copies action args with player ids resolved to "Name (seat N)"; bounded in size. */
 export function describeArgs(s: GameSession, data: unknown): Record<string, unknown> | undefined {
   if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
@@ -209,6 +222,7 @@ export function describeArgs(s: GameSession, data: unknown): Record<string, unkn
     if (/pin|token|secret|password/i.test(k)) continue;
     if (ID_KEYS.test(k) && typeof v === "string") out[k] = playerLabel(s, v);
     else if (ID_LIST_KEYS.test(k) && Array.isArray(v)) out[k] = v.map((id) => playerLabel(s, String(id)));
+    else if (k === "deal") Object.assign(out, describeDeal(s, v));
     else out[k] = v;
   }
   if (Object.keys(out).length === 0) return undefined;

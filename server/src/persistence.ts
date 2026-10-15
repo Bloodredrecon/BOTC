@@ -175,6 +175,7 @@ export function createEmptySession(playerCount = 8): GameSession {
     executionOccurredToday: false,
     newDemons: [],
     baronInSetup: false,
+    startingCharacters: {},
     exile: null,
     tvSheet: false,
     allowOver15: false,
@@ -228,6 +229,8 @@ export function loadSession(): GameSession {
           : inDay && (Boolean(raw.executedTodayId) || executionLoggedToday),
       newDemons: Array.isArray(raw.newDemons) ? raw.newDemons : [],
       baronInSetup: Boolean(raw.baronInSetup),
+      startingCharacters:
+        raw.startingCharacters && typeof raw.startingCharacters === "object" ? raw.startingCharacters : {},
       exile: raw.exile ?? null,
       tvSheet: Boolean(raw.tvSheet),
       allowOver15: Boolean(raw.allowOver15),
@@ -250,7 +253,7 @@ export function loadSession(): GameSession {
 }
 
 export function saveSession(session: GameSession): void {
-  mkdirSync(DATA_DIR, { recursive: true });
+  mkdirSync(dirname(SESSION_PATH), { recursive: true });
   const { tvConnected: _t, storytellerConnected: _s, ...rest } = session;
   writeFileSync(SESSION_PATH, JSON.stringify(rest, null, 2), "utf-8");
 }
