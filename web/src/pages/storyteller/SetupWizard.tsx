@@ -24,12 +24,22 @@ function needFor(base: SetupCounts | null, baron: boolean): SetupCounts | null {
  * Deal a legal bag: random, or with characters the Storyteller wants in play. The preview stays on
  * this phone until "Put in grimoire"; the server checks the deal again before applying it.
  */
-export function SetupWizard({ state, emit }: { state: StorytellerState; emit: EmitFn }) {
+export function SetupWizard({
+  state,
+  emit,
+  dealPath = "companion",
+}: {
+  state: StorytellerState;
+  emit: EmitFn;
+  /** companion = use the deal wizard; physical = hide deal, use grimoire/tokens. */
+  dealPath?: "companion" | "physical";
+}) {
   const [include, setInclude] = useState<string[]>([]);
   const [choose, setChoose] = useState(false);
   const [deal, setDeal] = useState<Deal | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [afterApply, setAfterApply] = useState<"phones" | "tokens" | null>(null);
 
   const residents = useMemo(
     () => state.players.filter((p) => !p.isTraveller && !p.leftGame).sort((a, b) => a.seat - b.seat),
@@ -51,6 +61,19 @@ export function SetupWizard({ state, emit }: { state: StorytellerState; emit: Em
       <div className="panel">
         <h2>Deal characters</h2>
         <p className="muted">Dealing is only available before the first night. Edit characters in the Grimoire tab.</p>
+      </div>
+    );
+  }
+
+  if (dealPath === "physical") {
+    return (
+      <div className="panel setup-wizard">
+        <h2>Physical bag</h2>
+        <p className="muted">
+          Deal tokens at the table, then enter each seat&apos;s character in the <strong>Grimoire</strong> tab
+          (Drunk belief, Demon bluffs, and Fortune Teller red herring included). When phones are on, come back here
+          to send characters.
+        </p>
       </div>
     );
   }
@@ -81,6 +104,7 @@ export function SetupWizard({ state, emit }: { state: StorytellerState; emit: Em
       if (res.ok) {
         setDeal(null);
         setErrors([]);
+        setAfterApply(state.phones.enabled ? "phones" : "tokens");
       } else {
         setErrors([res.message ?? res.error ?? "The server refused the deal."]);
       }
@@ -177,6 +201,29 @@ export function SetupWizard({ state, emit }: { state: StorytellerState; emit: Em
           </button>
         )}
       </div>
+
+      {afterApply === "phones" && (
+        <div className="panel" style={{ marginTop: "0.75rem", borderColor: "var(--brass, #c9a45c)" }}>
+          <p style={{ margin: "0 0 0.5rem" }}>Characters are in the grimoire. Next: send them to phones (approve is separate).</p>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              emit("game:phoneDistribute", {}, () => setAfterApply(null));
+            }}
+          >
+            Send characters now
+          </button>
+        </div>
+      )}
+      {afterApply === "tokens" && (
+        <div className="panel" style={{ marginTop: "0.75rem", borderColor: "var(--brass, #c9a45c)" }}>
+          <p style={{ margin: 0 }}>Characters are in the grimoire. Ready for physical tokens at the table.</p>
+          <button type="button" className="primary" style={{ marginTop: "0.5rem" }} onClick={() => setAfterApply(null)}>
+            Ready for physical tokens
+          </button>
+        </div>
+      )}
 
       {errors.length > 0 && (
         <ul className="warn wizard-errors">

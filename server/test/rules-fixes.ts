@@ -135,7 +135,7 @@ const cases: Case[] = [
     name: "Item 6: the Butler cannot choose themselves as Master (night step and grimoire)",
     run: () => {
       const e = setup(["butler", "imp", "chef", "empath", "monk", "poisoner", "saint"], { phase: "lobby", day: 0 });
-      e.startFirstNight();
+      e.startFirstNight({ override: true });
       goToStep(e, "char-butler");
       const butler = pid(e, "butler");
       const r = e.applyNightReminder(butler, "Master");
@@ -178,7 +178,7 @@ const cases: Case[] = [
     name: "Item 13: Baron's +2 Outsiders stays after the Baron dies",
     run: () => {
       const e = setup(["baron", "imp", "saint", "recluse", "chef", "empath", "monk"], { phase: "lobby", day: 0 });
-      e.startFirstNight();
+      e.startFirstNight({ override: true });
       if (!e.session.baronInSetup) return "baronInSetup not recorded";
       const base = script.setupByPlayerCount["7"]!;
       // Star-pass onto the Baron: no Baron token remains in play.

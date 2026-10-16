@@ -6,6 +6,8 @@ The TV page plays cues through the TV’s speakers (pair Bluetooth speakers to t
 
 Browsers block autoplay. On `/tv`, tap **Enable sound** once after the page loads.
 
+That tap also reports **TV sound ready** to the Storyteller (separate from “TV connected”). Connection alone does not count as sound confirmed — if the TV reconnects after a full page reload, tap **Enable sound** again.
+
 ## Files
 
 Place files in `data/audio/` (preferred for custom tracks) or `web/public/audio/` (built-in names).

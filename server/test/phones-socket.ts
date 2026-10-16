@@ -145,7 +145,7 @@ const cases: AsyncCase[] = [
     name: "Isolation: every phone payload is its own; no notes, reminders, characters, hashes or other tokens anywhere",
     run: async () => {
       await act("game:updatePlayer", { playerId: "p6", patch: { notes: "CANARY-NOTE-p6-late" } });
-      await act("game:startFirstNight");
+      await act("game:startFirstNight", { override: true });
       await act("game:nightNext");
       await sleep(300);
       const chars = ["Washerwoman", "Empath", "Fortune Teller", "Monk", "Chef", "Poisoner", "Imp"];

@@ -127,7 +127,7 @@ const cases: Case[] = [
     name: "Item 9: 5-6 players — Minion info and Demon info are skipped",
     run: () => {
       const e = setup(["poisoner", "imp", "chef", "empath", "washerwoman"], { phase: "lobby", day: 0 });
-      e.startFirstNight();
+      e.startFirstNight({ override: true });
       const steps = e.session.night!.steps;
       for (const id of ["minion-info", "demon-info"]) {
         const s = steps.find((x) => x.id === id);
@@ -141,7 +141,7 @@ const cases: Case[] = [
     run: () => {
       const e = setup(["poisoner", "spy", "imp", "chef", "empath", "washerwoman", "monk"], { phase: "lobby", day: 0 });
       e.addTraveller("Tess", "thief");
-      e.startFirstNight();
+      e.startFirstNight({ override: true });
       const ids = stepIds(e);
       const t = ids.indexOf("char-thief");
       const m = ids.indexOf("minion-info");
@@ -159,7 +159,7 @@ const cases: Case[] = [
     run: () => {
       const e = setup(["poisoner", "imp", "chef", "empath", "washerwoman"], { phase: "lobby", day: 0 });
       e.addTraveller("Eve", "gunslinger", { alignment: "evil" });
-      e.startFirstNight();
+      e.startFirstNight({ override: true });
       goToStep(e, "evil-traveller-info");
       const s = currentStep(e)!;
       if (s.show.suggestedPlayerIds?.[0] !== pid(e, "imp")) return "does not show the Demon";

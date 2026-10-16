@@ -402,6 +402,23 @@ export type StorytellerState = Omit<PublicState, "players"> & {
   phones: PhonePanel;
   /** Phone seats whose vote the Storyteller set by hand this vote. */
   phoneVoteOverridden: string[];
+  /** TV Enable sound succeeded (ephemeral). */
+  tvSoundReady: boolean;
+  /** Lobby ready-to-begin checklist (server source of truth). */
+  setupReadiness: SetupReadiness;
+};
+
+export type SetupReadinessItem = {
+  id: string;
+  label: string;
+  ok: boolean;
+  hard: boolean;
+};
+
+export type SetupReadiness = {
+  items: SetupReadinessItem[];
+  ready: boolean;
+  applicable: boolean;
 };
 
 export type PhoneMessage = {

@@ -348,6 +348,11 @@ export type GameSession = {
   stNotices: { id: string; message: string; at: number }[];
   ambiance: AmbianceState;
   tvConnected: boolean;
+  /**
+   * TV page tapped Enable sound successfully. Ephemeral (not persisted); cleared when the last TV
+   * disconnects. Not inferred from tvConnected alone.
+   */
+  tvSoundReady: boolean;
   storytellerConnected: boolean;
   /** Random per game; scopes what phones keep in local storage (notes). */
   gameId: string;
@@ -577,6 +582,23 @@ export type StorytellerState = PublicState & {
   phones: PhonePanel;
   /** Phone seats whose vote the Storyteller set by hand this vote. */
   phoneVoteOverridden: string[];
+  /** TV Enable sound succeeded (ephemeral). */
+  tvSoundReady: boolean;
+  /** Lobby ready-to-begin checklist (server source of truth). */
+  setupReadiness: SetupReadiness;
+};
+
+export type SetupReadinessItem = {
+  id: string;
+  label: string;
+  ok: boolean;
+  hard: boolean;
+};
+
+export type SetupReadiness = {
+  items: SetupReadinessItem[];
+  ready: boolean;
+  applicable: boolean;
 };
 
 /** The Storyteller's view of player phones (never the token hashes). */

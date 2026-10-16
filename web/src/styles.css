@@ -573,9 +573,77 @@ textarea {
   justify-content: space-between;
   gap: 0.75rem;
   align-items: center;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.35rem;
   padding-bottom: 0.65rem;
   border-bottom: 1px solid rgba(196, 30, 36, 0.35);
+}
+
+.st-top-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.st-task-hint {
+  margin: 0 0 0.55rem;
+  font-size: 0.88rem;
+  color: var(--brass, #c9a45c);
+}
+
+.st-quick-actions {
+  margin: 0 0 0.55rem;
+}
+
+.phone-state-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 2px;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.phone-state-badge.off { color: var(--muted); }
+.phone-state-badge.warn {
+  color: var(--bone);
+  border-color: var(--brass);
+  background: rgba(201, 164, 92, 0.18);
+}
+.phone-state-badge.ready {
+  color: var(--good, #6a9);
+  border-color: rgba(102, 170, 153, 0.5);
+}
+
+.setup-readiness-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+.setup-readiness-list .ok { color: var(--good, #6a9); }
+.setup-readiness-list .fail { color: var(--bone); }
+.setup-readiness-list .soft { color: var(--muted); }
+
+.wake-done-mark {
+  font-size: 0.85rem;
+  color: var(--good, #6a9);
+  align-self: center;
+}
+.night-overrides {
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
+.open-noms-pulse {
+  box-shadow: 0 0 0 2px rgba(196, 68, 68, 0.45);
+  animation: open-noms-pulse 1.6s ease-in-out infinite;
+}
+@keyframes open-noms-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(196, 68, 68, 0.35); }
+  50% { box-shadow: 0 0 0 4px rgba(196, 68, 68, 0.55); }
 }
 
 .st-top .brand {

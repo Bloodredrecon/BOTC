@@ -5,8 +5,18 @@ function clock(t: number): string {
   return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-export function ConnectionPills({ connected, presence }: { connected: boolean; presence: Presence | null }) {
+export function ConnectionPills({
+  connected,
+  presence,
+  tvSoundReady,
+}: {
+  connected: boolean;
+  presence: Presence | null;
+  /** From session: TV tapped Enable sound (not inferred from connection). */
+  tvSoundReady?: boolean;
+}) {
   const tvOn = connected && (presence?.tv ?? 0) > 0;
+  const soundOn = tvOn && Boolean(tvSoundReady);
   return (
     <div className="conn-pills" aria-label="Connections">
       <span className={`conn-pill ${connected ? "on" : "off"}`} title="This device to the server">
@@ -17,6 +27,18 @@ export function ConnectionPills({ connected, presence }: { connected: boolean; p
         title={presence ? `TV ${tvOn ? "connected" : "not connected"} since ${clock(presence.tvChangedAt)}` : "TV status unknown"}
       >
         TV{presence && presence.tv > 1 ? ` ×${presence.tv}` : ""}
+      </span>
+      <span
+        className={`conn-pill ${soundOn ? "on" : "off"}`}
+        title={
+          soundOn
+            ? "TV sound ready — Enable sound succeeded"
+            : tvOn
+              ? "TV connected but sound not confirmed — tap Enable sound on the TV"
+              : "TV sound ready after Enable sound on the TV"
+        }
+      >
+        Sound
       </span>
     </div>
   );

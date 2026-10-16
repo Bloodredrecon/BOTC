@@ -23,7 +23,7 @@ export function isPhoneAction(action: string): boolean {
  * Session fields an undo keeps as they are now (connection flags, the sound mix, player phones:
  * claims, what a phone was shown and messages can't be taken back).
  */
-const KEEP_ON_UNDO = ["ambiance", "tvConnected", "storytellerConnected", "gameId", "phones"] as const;
+const KEEP_ON_UNDO = ["ambiance", "tvConnected", "tvSoundReady", "storytellerConnected", "gameId", "phones"] as const;
 
 export type UndoEntry = {
   action: string;

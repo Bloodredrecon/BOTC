@@ -67,10 +67,17 @@ export function TvPage() {
     try {
       await unlockAudio();
       setSoundOn(true);
+      // Tell the Storyteller sound is ready — do not infer from TV connection alone.
+      socketRef.current?.emit("tv:soundReady");
     } catch {
       alert("Could not unlock audio. Tap again after interacting with the page.");
     }
   }
+
+  // Re-announce after reconnect if this page already unlocked audio (no new gesture needed).
+  useEffect(() => {
+    if (soundOn && connected) socketRef.current?.emit("tv:soundReady");
+  }, [soundOn, connected, socketRef]);
 
   if (!state) {
     const lobbyPlate = plateKeyForPhase("lobby");

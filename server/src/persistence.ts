@@ -202,6 +202,7 @@ export function createEmptySession(playerCount = 8): GameSession {
     stNotices: [],
     ambiance: normalizeAmbiance(null),
     tvConnected: false,
+    tvSoundReady: false,
     storytellerConnected: false,
     gameId: newGameId(),
     phones: emptyPhones(),
@@ -261,6 +262,7 @@ export function loadSession(phonesDefault = false): GameSession {
       stNotices: Array.isArray(raw.stNotices) ? raw.stNotices : [],
       ambiance: normalizeAmbiance(raw.ambiance),
       tvConnected: false,
+      tvSoundReady: false,
       storytellerConnected: false,
       gameId: typeof raw.gameId === "string" && raw.gameId ? raw.gameId : base.gameId,
       phones: normalizePhones(raw.phones, phonesDefault),
@@ -277,6 +279,6 @@ function withPhonesDefault(s: GameSession, enabled: boolean): GameSession {
 
 export function saveSession(session: GameSession): void {
   mkdirSync(dirname(SESSION_PATH), { recursive: true });
-  const { tvConnected: _t, storytellerConnected: _s, ...rest } = session;
+  const { tvConnected: _t, tvSoundReady: _sound, storytellerConnected: _s, ...rest } = session;
   writeFileSync(SESSION_PATH, JSON.stringify(rest, null, 2), "utf-8");
 }

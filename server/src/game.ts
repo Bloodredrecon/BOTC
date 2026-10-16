@@ -59,6 +59,7 @@ import {
   notOpenReason,
   travellerNomineeReason,
 } from "./nominations.js";
+import { computeSetupReadiness } from "./setup-readiness.js";
 import type { Deal } from "./setup-wizard.js";
 import type {
   Alignment,
@@ -545,8 +546,19 @@ export class GameEngine {
   }
 
   setConnected(role: "tv" | "storyteller", connected: boolean) {
-    if (role === "tv") this.session.tvConnected = connected;
-    else this.session.storytellerConnected = connected;
+    if (role === "tv") {
+      this.session.tvConnected = connected;
+      // Sound unlock is per TV page session — clear when the last TV leaves.
+      if (!connected) this.session.tvSoundReady = false;
+    } else this.session.storytellerConnected = connected;
+    this.emit();
+  }
+
+  /** TV page reported Enable sound succeeded. Does not infer from connection alone. */
+  setTvSoundReady(ready: boolean) {
+    if (!this.session.tvConnected && ready) return;
+    if (this.session.tvSoundReady === ready) return;
+    this.session.tvSoundReady = ready;
     this.emit();
   }
 
@@ -576,6 +588,7 @@ export class GameEngine {
     const residents = old.players.filter((p) => !p.isTraveller && !p.leftGame).sort(bySeat);
     const townsfolk = old.players.filter((p) => !p.isTraveller).length || 8;
     const tvConnected = old.tvConnected;
+    const tvSoundReady = old.tvSoundReady;
     const storytellerConnected = old.storytellerConnected;
     this.session = createEmptySession(Math.max(5, Math.min(20, townsfolk)));
     if (opts.sameTable) {
@@ -590,6 +603,7 @@ export class GameEngine {
     }
     this.session.phones = phonesForNewGame(old, this.session, Boolean(opts.sameTable));
     this.session.tvConnected = tvConnected;
+    this.session.tvSoundReady = tvConnected && tvSoundReady;
     this.session.storytellerConnected = storytellerConnected;
     this.lastSound = "hush";
     this.lastHue = "hush";
@@ -1051,7 +1065,19 @@ export class GameEngine {
     });
   }
 
-  startFirstNight() {
+  /**
+   * Enter the first night. In lobby, hard readiness items must pass unless `override` is set
+   * (Start anyway — Storyteller override).
+   */
+  startFirstNight(opts: { override?: boolean } = {}): { ok: boolean; message?: string } {
+    const readiness = computeSetupReadiness(this.session, this.script);
+    if (readiness.applicable && !readiness.ready && !opts.override) {
+      const missing = readiness.items.filter((i) => i.hard && !i.ok).map((i) => i.label);
+      return {
+        ok: false,
+        message: `Not ready to begin: ${missing.join("; ")}. Fix the checklist, or use Start anyway.`,
+      };
+    }
     this.cancelPendingWin();
     this.clearShotTimer();
     this.clearNightTimer();
@@ -1100,6 +1126,7 @@ export class GameEngine {
       },
       { hue: "night", sound: pickSoundOrFallback("first_night", "night") },
     );
+    return { ok: true };
   }
 
   startNight() {
@@ -1497,11 +1524,10 @@ export class GameEngine {
    * One-tap story flow:
    * lobby → first night → dawn → day 1 → dusk → open nominations → close nominations → night → …
    */
-  advancePhase() {
+  advancePhase(opts: { override?: boolean } = {}): { ok: boolean; message?: string } | void {
     const p = this.session.phase;
     if (p === "lobby" || p === "ended") {
-      this.startFirstNight();
-      return;
+      return this.startFirstNight(opts);
     }
     if (p === "firstNight" || p === "night") {
       this.goDawn();
@@ -2264,7 +2290,7 @@ export class GameEngine {
   }
 
   setPhase(phase: Phase) {
-    if (phase === "firstNight") this.startFirstNight();
+    if (phase === "firstNight") this.startFirstNight({ override: true });
     else if (phase === "night") this.startNight();
     else if (phase === "dawn") this.goDawn();
     else if (phase === "day") this.goDay();

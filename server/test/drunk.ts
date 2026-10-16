@@ -14,7 +14,7 @@ const cases: Case[] = [
       e.updatePlayer(id, { reminders: ["Is the Drunk"] });
       const p = player(e, id);
       if (p.characterId !== "drunk" || p.thinksCharacterId !== "chef") return `got ${p.characterId}/${p.thinksCharacterId}`;
-      e.startFirstNight();
+      e.startFirstNight({ override: true });
       const chef = e.session.night!.steps.find((s) => s.id === "char-chef");
       if (!chef?.playerIds.includes(id)) return "Drunk does not wake as the Chef";
       if (!chef.show.infoImpaired) return "Drunk Chef info not flagged false";

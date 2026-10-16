@@ -5,7 +5,7 @@ import { ConnectionBanners, ConnectionPills } from "./storyteller/ConnectionStat
 import { GrimoireCircle } from "./storyteller/GrimoireCircle";
 import { LogPanel } from "./storyteller/LogPanel";
 import { PhoneInbox } from "./storyteller/PhoneInbox";
-import { PendingClaimsBanner, PhonesPanel } from "./storyteller/PhonesPanel";
+import { PendingClaimsBanner, PhoneStateBadge, PhonesPanel } from "./storyteller/PhonesPanel";
 import { RecapPanel } from "./storyteller/RecapPanel";
 import { SetupWizard } from "./storyteller/SetupWizard";
 import { UndoBar } from "./storyteller/UndoBar";
@@ -208,6 +208,34 @@ function flowStep(state: StorytellerState): FlowStep | null {
   }
 }
 
+/** Light guided hint under the top bar — next expected ST action (not a full guided mode). */
+function currentTaskHint(state: StorytellerState): string | null {
+  if (state.phase === "lobby") {
+    const r = state.setupReadiness;
+    if (!r) return "Finish setup, then start the first night.";
+    if (r.ready) return "Ready to begin — start the first night when the room is set.";
+    const next = r.items.find((i) => i.hard && !i.ok);
+    return next ? `Setup: ${next.label}` : "Finish setup, then start the first night.";
+  }
+  if (state.phase === "firstNight" || state.phase === "night") {
+    const step = state.night?.steps[state.night.stepIndex];
+    return step ? `Night: ${step.name} — then Done → next` : "Work through the night order, then dawn.";
+  }
+  if (state.phase === "dawn") {
+    return state.dawnDeathsAnnounced
+      ? `Finish dawn → Day ${nextDayNumber(state.dayNumber)}`
+      : `Announce deaths → Day ${nextDayNumber(state.dayNumber)}`;
+  }
+  if (state.phase === "day") return "Open discussion — go to dusk when the town is ready.";
+  if (state.phase === "dusk" && !state.nominationsOpen && !state.nightPending) {
+    return "Dusk — open nominations when the room is ready.";
+  }
+  if (state.phase === "dusk" || state.phase === "nomination" || state.phase === "vote" || state.phase === "execution") {
+    return flowStatus(state);
+  }
+  return null;
+}
+
 /** One sentence: where the day is and what the Storyteller does next. */
 function flowStatus(state: StorytellerState): string {
   switch (state.phase) {
@@ -279,10 +307,22 @@ function DayFlowBar({
       {showNext && (
         <div className="row">
           <button
-            className="primary"
+            className={
+              state.phase === "dusk" && !state.nominationsOpen && !state.nightPending
+                ? "primary open-noms-pulse"
+                : "primary"
+            }
             type="button"
             disabled={Boolean(blocked)}
-            onClick={() => emit("game:advancePhase")}
+            onClick={() => {
+              if (state.phase === "lobby" && state.setupReadiness && !state.setupReadiness.ready) {
+                if (confirm("Start anyway? Hard checklist items are still open.")) {
+                  emit("game:advancePhase", { override: true });
+                }
+                return;
+              }
+              emit("game:advancePhase", {});
+            }}
             style={{ fontSize: "1.05rem" }}
           >
             Next: {advanceLabel(state)}
@@ -392,13 +432,31 @@ export function StorytellerPage() {
     );
   }
 
+  const taskHint = currentTaskHint(state);
+  const dayish = DAY_PHASES.includes(state.phase);
+
   return (
     <div className="st">
       <div className="st-top">
         <h1 className="brand">BOTC</h1>
         <div className="muted">{formatStatus(state)}</div>
-        <ConnectionPills connected={connected} presence={presence} />
+        <div className="st-top-status">
+          <PhoneStateBadge state={state} />
+          <ConnectionPills connected={connected} presence={presence} tvSoundReady={state.tvSoundReady} />
+        </div>
       </div>
+      {taskHint && (
+        <p className="st-task-hint" role="status">
+          {taskHint}
+        </p>
+      )}
+      {dayish && (
+        <div className="st-quick-actions row">
+          <button type="button" className="chip" onClick={() => setTab("travel")}>
+            Add Traveller
+          </button>
+        </div>
+      )}
 
       <ConnectionBanners connected={connected} presence={presence} phase={state.phase} droppedAt={droppedAt} />
       <UndoBar undo={undo} emit={emit} />
@@ -440,7 +498,7 @@ export function StorytellerPage() {
       </div>
 
       {(tab === "control" || tab === "votes") && (
-        <DayFlowBar state={state} emit={emit} showNext={tab === "control"} />
+        <DayFlowBar state={state} emit={emit} showNext />
       )}
 
       {(state.stNotices?.length ?? 0) > 0 && (
@@ -528,13 +586,41 @@ function ControlTab({
         </p>
         {!flowStep(state) && (
           <div className="row">
-            <button className="primary" type="button" onClick={() => emit("game:advancePhase")}>
+            <button
+              className="primary"
+              type="button"
+              disabled={state.phase === "lobby" && state.setupReadiness && !state.setupReadiness.ready}
+              onClick={() => emit("game:advancePhase", {})}
+            >
               {advanceLabel(state)}
             </button>
+            {state.phase === "lobby" && state.setupReadiness && !state.setupReadiness.ready && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm("Start anyway? Hard checklist items are still open. Use Setup for the full list.")) {
+                    emit("game:advancePhase", { override: true });
+                  }
+                }}
+              >
+                Start anyway — Storyteller override
+              </button>
+            )}
           </div>
         )}
         <div className="row">
-          <button type="button" onClick={() => emit("game:startFirstNight")}>
+          <button
+            type="button"
+            onClick={() => {
+              if (state.phase === "lobby" && state.setupReadiness && !state.setupReadiness.ready) {
+                if (confirm("Start anyway? Hard checklist items are still open.")) {
+                  emit("game:startFirstNight", { override: true });
+                }
+                return;
+              }
+              emit("game:startFirstNight", {});
+            }}
+          >
             First night
           </button>
           <button type="button" onClick={() => emit("game:goDawn")}>
@@ -695,6 +781,62 @@ async function runDemo(emit: (e: string, d?: unknown) => void) {
   emit("game:scene", { scene: "day" });
 }
 
+function SetupReadinessPanel({
+  state,
+  emit,
+}: {
+  state: StorytellerState;
+  emit: EmitFn;
+}) {
+  const r = state.setupReadiness;
+  if (!r?.applicable) return null;
+  const missing = r.items.filter((i) => i.hard && !i.ok);
+  return (
+    <div className="panel setup-readiness" style={{ borderColor: r.ready ? "var(--good, #6a9)" : "var(--brass, #c9a45c)" }}>
+      <h2>Ready to begin</h2>
+      <ul className="setup-readiness-list">
+        {r.items.map((item) => (
+          <li key={item.id} className={item.ok ? "ok" : item.hard ? "fail" : "soft"}>
+            <span aria-hidden>{item.ok ? "✓" : item.hard ? "○" : "·"}</span> {item.label}
+            {!item.hard && !item.ok ? <span className="muted"> (optional)</span> : null}
+          </li>
+        ))}
+      </ul>
+      <div className="row" style={{ marginTop: "0.75rem" }}>
+        <button
+          className="primary"
+          type="button"
+          disabled={!r.ready}
+          onClick={() => emit("game:startFirstNight", {})}
+        >
+          Start first night
+        </button>
+        {!r.ready && (
+          <button
+            type="button"
+            onClick={() => {
+              if (
+                confirm(
+                  `Start anyway? Still open:\n• ${missing.map((m) => m.label).join("\n• ")}\n\nUse this for house rules or a fully manual game.`,
+                )
+              ) {
+                emit("game:startFirstNight", { override: true });
+              }
+            }}
+          >
+            Start anyway — Storyteller override
+          </button>
+        )}
+      </div>
+      {!r.ready && (
+        <p className="muted" style={{ marginTop: "0.5rem" }}>
+          The server blocks Start first night until the hard items pass (or you override).
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SetupTab({
   state,
   emit,
@@ -702,13 +844,15 @@ function SetupTab({
   state: StorytellerState;
   emit: EmitFn;
 }) {
+  const [dealPath, setDealPath] = useState<"companion" | "physical" | null>(null);
   const residents = state.players.filter((p) => !p.isTraveller && !p.leftGame).length;
   const travellers = state.players.filter((p) => p.isTraveller && !p.leftGame).length;
   return (
     <div className="stack">
+      {/* 1. Players and names */}
       <div className="panel">
         <h2>
-          Players ({residents}
+          Players and names ({residents}
           {travellers ? ` + ${travellers} Traveller${travellers === 1 ? "" : "s"}` : ""})
         </h2>
         <label className="muted">Player count, not counting Travellers (5–{state.allowOver15 ? 20 : 15})</label>
@@ -748,18 +892,60 @@ function SetupTab({
           <p className="warn">Outside official 5–15 bag — use Travellers or adjust manually.</p>
         )}
         {state.setupWarning && <p className="warn">{state.setupWarning}</p>}
+        <h3 className="phone-sub" style={{ marginTop: "0.85rem" }}>
+          Names
+        </h3>
+        <div className="stack">
+          {state.players.map((p) => (
+            <input
+              key={p.id}
+              value={p.name}
+              onChange={(e) =>
+                emit("game:updatePlayer", { playerId: p.id, patch: { name: e.target.value } })
+              }
+            />
+          ))}
+        </div>
       </div>
 
-      <SetupWizard state={state} emit={emit} />
-
+      {/* 2. Phone claims */}
       <PhonesPanel state={state} emit={emit} />
       <PhoneInbox state={state} emit={emit} unreadOnly={false} />
 
+      {/* 3. Deal / review */}
+      <div className="panel">
+        <h2>How are you dealing?</h2>
+        <p className="muted">Choose once — this only changes the setup steps below.</p>
+        <div className="chip-row">
+          <button
+            type="button"
+            className={`chip ${dealPath === "companion" ? "on" : ""}`}
+            onClick={() => setDealPath("companion")}
+          >
+            Use companion deal
+          </button>
+          <button
+            type="button"
+            className={`chip ${dealPath === "physical" ? "on" : ""}`}
+            onClick={() => setDealPath("physical")}
+          >
+            Use physical bag / enter roles manually
+          </button>
+        </div>
+      </div>
+      {dealPath && <SetupWizard state={state} emit={emit} dealPath={dealPath} />}
+
+      {/* 4–5. Character delivery is inside PhonesPanel / post-deal prompt; TV / rules */}
       <div className="panel">
         <h2>TV character sheet</h2>
         <p className="muted">
           Shows the script&apos;s characters and the official setup counts on the TV (lobby, day and dusk only).
-          The Baron&apos;s adjustment is never shown.
+          The Baron&apos;s adjustment is never shown. Confirm TV sound separately (Enable sound on the TV).
+        </p>
+        <p className="muted">
+          TV: {state.setupReadiness?.items.find((i) => i.id === "tv")?.ok ? "connected" : "not connected"}
+          {" · "}
+          Sound: {state.tvSoundReady ? "ready" : "not confirmed"}
         </p>
         <button
           type="button"
@@ -770,8 +956,9 @@ function SetupTab({
         </button>
       </div>
 
+      {/* 6. Optional Fabled */}
       <div className="panel">
-        <h2>Fabled (public)</h2>
+        <h2>Fabled (optional, public)</h2>
         <div className="chip-row">
           {state.allFabled.map((f) => {
             const on = state.fabled.some((x) => x.id === f.id);
@@ -794,20 +981,7 @@ function SetupTab({
         </div>
       </div>
 
-      <div className="panel">
-        <h2>Names</h2>
-        <div className="stack">
-          {state.players.map((p) => (
-            <input
-              key={p.id}
-              value={p.name}
-              onChange={(e) =>
-                emit("game:updatePlayer", { playerId: p.id, patch: { name: e.target.value } })
-              }
-            />
-          ))}
-        </div>
-      </div>
+      <SetupReadinessPanel state={state} emit={emit} />
     </div>
   );
 }
@@ -1137,6 +1311,9 @@ function NightTab({
   /** After the player has picked, reveal yes/no or character on the phone */
   const [revealResult, setRevealResult] = useState(false);
   const [targetConfirmed, setTargetConfirmed] = useState(false);
+  /** Info was shown / choice confirmed — elevate Done → next for this wake. */
+  const [wakeCompleted, setWakeCompleted] = useState(false);
+  const [nightOverridesOpen, setNightOverridesOpen] = useState(false);
   const [redHerringId, setRedHerringId] = useState<string>("");
   /** Imp self-kill with several Minions: the server asks who receives the star-pass. */
   const [starPass, setStarPass] = useState<{ impId: string; candidates: { id: string; name: string }[] } | null>(null);
@@ -1182,24 +1359,47 @@ function NightTab({
     setShowing(false);
     setRevealResult(false);
     setTargetConfirmed(false);
+    setWakeCompleted(false);
+    setNightOverridesOpen(false);
     setRedHerringId("");
     setStarPass(null);
     setMayorPrompt(null);
   }, [night?.stepIndex, night?.isFirstNight, step?.id]);
 
   if (!night) {
+    const lobbyBlocked = state.phase === "lobby" && state.setupReadiness && !state.setupReadiness.ready;
     return (
       <div className="stack">
         <div className="panel">
           <p className="muted">No night in progress.</p>
           <div className="row">
-            <button className="primary" type="button" onClick={() => emit("game:startFirstNight")}>
+            <button
+              className="primary"
+              type="button"
+              disabled={Boolean(lobbyBlocked)}
+              onClick={() => emit("game:startFirstNight", {})}
+            >
               Start first night
             </button>
+            {lobbyBlocked && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm("Start anyway? Hard checklist items are still open. See Setup → Ready to begin.")) {
+                    emit("game:startFirstNight", { override: true });
+                  }
+                }}
+              >
+                Start anyway — Storyteller override
+              </button>
+            )}
             <button type="button" onClick={() => emit("game:startNight")}>
               Start night
             </button>
           </div>
+          {lobbyBlocked && (
+            <p className="muted">Finish the Ready to begin checklist on Setup, or override deliberately.</p>
+          )}
         </div>
         {state.dayAbilities.length > 0 && (
           <div className="panel">
@@ -2229,6 +2429,7 @@ function NightTab({
               onClick={() => {
                 setShowing(false);
                 setRevealResult(false);
+                setWakeCompleted(true);
               }}
             >
               Hide (back to Storyteller)
@@ -2237,7 +2438,7 @@ function NightTab({
         </div>
       )}
 
-      <div className="footer-actions">
+      <div className="footer-actions night-wake-footer">
         <button type="button" onClick={() => emit("game:nightPrev")}>
           Back
         </button>
@@ -2247,17 +2448,39 @@ function NightTab({
           </button>
         ) : (
           <>
-            <button className="primary" type="button" onClick={finishNightStep}>
+            {(wakeCompleted || targetConfirmed) && (
+              <span className="wake-done-mark" role="status">
+                Shown / confirmed
+              </span>
+            )}
+            <button
+              className="primary"
+              type="button"
+              onClick={finishNightStep}
+              style={wakeCompleted || targetConfirmed ? { fontSize: "1.1rem" } : undefined}
+            >
               Done → next
             </button>
-            <button type="button" onClick={() => emit("game:nightNext")}>
-              Skip step
+            <button type="button" className="ghost" onClick={() => setNightOverridesOpen((o) => !o)}>
+              {nightOverridesOpen ? "Hide overrides" : "Overrides…"}
             </button>
           </>
         )}
-        <button type="button" onClick={() => emit("game:goDawn")}>
-          End night → Dawn
-        </button>
+        {step?.id !== "dawn" && nightOverridesOpen && (
+          <div className="night-overrides row">
+            <button type="button" onClick={() => emit("game:nightNext")}>
+              Skip step
+            </button>
+            <button type="button" onClick={() => emit("game:goDawn")}>
+              End night → Dawn
+            </button>
+          </div>
+        )}
+        {step?.id === "dawn" && (
+          <button type="button" onClick={() => emit("game:goDawn")}>
+            End night → Dawn
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2852,14 +3075,15 @@ function DawnTab({
   emit: (e: string, d?: unknown) => void;
 }) {
   const selected = new Set(state.dawnDeathIds);
+  const inDawn = state.phase === "dawn";
   return (
     <div className="stack">
       <div className="panel">
         <h2>Overnight deaths</h2>
         <p className="muted">
-          Dawn is the death announcement before Day {nextDayNumber(state.dayNumber)}. Select who died,
-          announce on the TV, then finish dawn — that is what moves you to Day{" "}
-          {nextDayNumber(state.dayNumber)}.
+          {inDawn
+            ? `Select who died overnight, then announce to start Day ${nextDayNumber(state.dayNumber)}.`
+            : `Dawn announces overnight deaths before Day ${nextDayNumber(state.dayNumber)}. Enter dawn when the night is over.`}
         </p>
         <div className="chip-row">
           {state.players
@@ -2885,9 +3109,11 @@ function DawnTab({
         </div>
       </div>
       <div className="row">
-        <button type="button" onClick={() => emit("game:goDawn")}>
-          Enter dawn
-        </button>
+        {!inDawn && (
+          <button type="button" onClick={() => emit("game:goDawn")}>
+            Enter dawn
+          </button>
+        )}
         <button
           className="primary"
           type="button"
@@ -2896,10 +3122,21 @@ function DawnTab({
             emit("game:announceDawnThenDay");
           }}
         >
-          Announce → Day {nextDayNumber(state.dayNumber)}
+          Announce deaths → Day {nextDayNumber(state.dayNumber)}
         </button>
-        <button type="button" onClick={() => emit("game:finishDawn")}>
-          Skip announce · Day {nextDayNumber(state.dayNumber)}
+        <button
+          type="button"
+          onClick={() => {
+            if (
+              confirm(
+                `Skip the dawn announcement and go straight to Day ${nextDayNumber(state.dayNumber)}? The TV will not play the death reveal.`,
+              )
+            ) {
+              emit("game:finishDawn");
+            }
+          }}
+        >
+          Skip announcement…
         </button>
       </div>
     </div>
@@ -3074,7 +3311,11 @@ function VotesTab({
                 Go to dusk
               </button>
             ) : (
-              <button className="primary" type="button" onClick={() => emit("game:openNominations")}>
+              <button
+                className="primary open-noms-pulse"
+                type="button"
+                onClick={() => emit("game:openNominations")}
+              >
                 Open nominations
               </button>
             )}
@@ -3291,7 +3532,7 @@ function VotesTab({
   );
 }
 
-/** Phone voting: the clock-hand count (start / pause / back), its speed, and the voting-only off switch. */
+/** Phone voting: lead with current mode, then clock-hand controls when phone-assisted. */
 function PhoneCount({ state, emit }: { state: StorytellerState; emit: (e: string, d?: unknown) => void }) {
   const nom = state.nomination;
   if (!nom || !state.phones.enabled) return null;
@@ -3300,76 +3541,89 @@ function PhoneCount({ state, emit }: { state: StorytellerState; emit: (e: string
   const done = Boolean(sweep && sweep.index >= sweep.order.length);
   const running = Boolean(sweep && !sweep.paused && !done);
   const at = sweep && !done ? state.players.find((p) => p.id === sweep.order[sweep.index])?.name : null;
-  if (state.phones.voting === "manual") {
-    return (
-      <div className="phone-count">
-        <p className="muted">Phone voting is off — count every hand on the chips.</p>
-        <button type="button" onClick={() => emit("game:phoneVoting", { mode: "phones" })}>
-          Use phone voting (from the next vote)
-        </button>
-      </div>
-    );
-  }
+  const phoneMode = state.phones.voting === "phones";
+  const phoneSeats = pv?.phoneSeats.length ?? 0;
+  const seated = state.players.filter((p) => !p.leftGame).length;
+  const manualSeats = Math.max(0, seated - phoneSeats);
+  const modeSummary = phoneMode
+    ? pv
+      ? `${phoneSeats} phone seat${phoneSeats === 1 ? "" : "s"}, ${manualSeats} manual`
+      : "Phone-assisted count (phones lock when the clock hand reaches them)"
+    : "Manual count — every hand on the chips";
+
   return (
     <div className="phone-count">
-      {!pv ? (
-        <p className="muted">
-          {state.phase === "vote"
-            ? "No phones were connected when this vote opened — count the hands on the chips."
-            : "Phones vote once you start the vote clock. Seats without a phone are counted on the chips."}
-        </p>
-      ) : (
-        <>
-          <p className="muted">
-            {pv.phoneSeats.length} {pv.phoneSeats.length === 1 ? "seat votes" : "seats vote"} by phone; the rest are counted
-            by hand. Tapping a chip sets that seat yourself.
-            {sweep
-              ? done
-                ? " Count finished."
-                : running
-                  ? ` Clock hand moving — next: ${at ?? "?"}.`
-                  : ` Paused — next: ${at ?? "?"}.`
-              : ""}
-          </p>
-          <div className="row">
-            <button className={running ? "" : "primary"} type="button" disabled={running} onClick={() => emit("game:phoneSweepStart")}>
-              {!sweep ? "Start the count" : done ? "Count again" : running ? "Counting…" : "Resume count"}
-            </button>
-            <button type="button" disabled={!running} onClick={() => emit("game:phoneSweepPause")}>
-              Pause
-            </button>
-            <button type="button" disabled={!sweep || sweep.index === 0} onClick={() => emit("game:phoneSweepBack")}>
-              Back one seat
-            </button>
-            <label className="phone-count-speed">
-              Speed{" "}
-              <select
-                value={state.phones.sweepMsPerSeat}
-                onChange={(e) => emit("game:phoneSweepSpeed", { ms: Number(e.target.value) })}
-              >
-                {[1000, 1500, 2000, 3000].includes(state.phones.sweepMsPerSeat) ? null : (
-                  <option value={state.phones.sweepMsPerSeat}>{state.phones.sweepMsPerSeat / 1000} s</option>
-                )}
-                <option value={1000}>1 s a seat</option>
-                <option value={1500}>1.5 s a seat</option>
-                <option value={2000}>2 s a seat</option>
-                <option value={3000}>3 s a seat</option>
-              </select>
-            </label>
-          </div>
-        </>
-      )}
+      <p style={{ margin: "0 0 0.35rem", fontFamily: "Cinzel, serif" }}>
+        Voting mode: <strong>{phoneMode ? "Phone-assisted count" : "Manual count"}</strong>
+      </p>
+      <p className="muted" style={{ margin: "0 0 0.5rem" }}>
+        {modeSummary}
+      </p>
       <button
         type="button"
         className="ghost"
         onClick={() => {
-          if (confirm("Turn phone voting off? Hands already counted stay; you count the rest on the chips.")) {
-            emit("game:phoneVoting", { mode: "manual" });
+          if (phoneMode) {
+            if (confirm("Switch to manual count? Hands already counted stay; you count the rest on the chips.")) {
+              emit("game:phoneVoting", { mode: "manual" });
+            }
+          } else {
+            emit("game:phoneVoting", { mode: "phones" });
           }
         }}
       >
-        Phones off for voting
+        {phoneMode ? "Switch to manual count" : "Switch to phone-assisted count"}
       </button>
+      {phoneMode && (
+        <>
+          {!pv ? (
+            <p className="muted">
+              {state.phase === "vote"
+                ? "No phones were connected when this vote opened — count the hands on the chips."
+                : "Phones vote once you start the vote clock. Seats without a phone are counted on the chips."}
+            </p>
+          ) : (
+            <>
+              <p className="muted">
+                Tapping a chip sets that seat yourself.
+                {sweep
+                  ? done
+                    ? " Count finished."
+                    : running
+                      ? ` Clock hand moving — next: ${at ?? "?"}.`
+                      : ` Paused — next: ${at ?? "?"}.`
+                  : ""}
+              </p>
+              <div className="row">
+                <button className={running ? "" : "primary"} type="button" disabled={running} onClick={() => emit("game:phoneSweepStart")}>
+                  {!sweep ? "Start the count" : done ? "Count again" : running ? "Counting…" : "Resume count"}
+                </button>
+                <button type="button" disabled={!running} onClick={() => emit("game:phoneSweepPause")}>
+                  Pause
+                </button>
+                <button type="button" disabled={!sweep || sweep.index === 0} onClick={() => emit("game:phoneSweepBack")}>
+                  Back one seat
+                </button>
+                <label className="phone-count-speed">
+                  Speed{" "}
+                  <select
+                    value={state.phones.sweepMsPerSeat}
+                    onChange={(e) => emit("game:phoneSweepSpeed", { ms: Number(e.target.value) })}
+                  >
+                    {[1000, 1500, 2000, 3000].includes(state.phones.sweepMsPerSeat) ? null : (
+                      <option value={state.phones.sweepMsPerSeat}>{state.phones.sweepMsPerSeat / 1000} s</option>
+                    )}
+                    <option value={1000}>1 s a seat</option>
+                    <option value={1500}>1.5 s a seat</option>
+                    <option value={2000}>2 s a seat</option>
+                    <option value={3000}>3 s a seat</option>
+                  </select>
+                </label>
+              </div>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

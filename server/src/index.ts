@@ -377,6 +377,13 @@ io.on("connection", (socket) => {
     ack({ ok: true, entries: actionLog.recent(Number.isFinite(n) ? Math.min(1000, Math.max(1, n)) : 200) });
   });
 
+  /** TV only: Enable sound succeeded — Storyteller sees “TV sound ready”. */
+  socket.on("tv:soundReady", () => {
+    if (socket.data.role !== "tv") return;
+    engine.setTvSoundReady(true);
+    actionLog.record({ t: Date.now(), kind: "connection", action: "tv:soundReady", outcome: "info", client, ...here() });
+  });
+
   function requireStoryteller(): boolean {
     return socket.data.role === "storyteller" && socket.data.authenticated === true;
   }
@@ -405,7 +412,7 @@ io.on("connection", (socket) => {
     "game:updatePlayer": (d) =>
       engine.updatePlayer(String(d.playerId), d.patch as Parameters<GameEngine["updatePlayer"]>[1]),
     "game:setFabled": (d) => engine.setFabled(d.ids as string[]),
-    "game:startFirstNight": () => engine.startFirstNight(),
+    "game:startFirstNight": (d) => engine.startFirstNight({ override: Boolean(d.override) }),
     "game:startNight": () => engine.startNight(),
     "game:nightNext": () => engine.nightNext(),
     "game:nightPrev": () => engine.nightPrev(),
@@ -416,7 +423,7 @@ io.on("connection", (socket) => {
     "game:announceDawnThenDay": () => engine.announceDawnThenDay(),
     "game:finishDawn": () => engine.finishDawn(),
     "game:goDay": () => engine.goDay(),
-    "game:advancePhase": () => engine.advancePhase(),
+    "game:advancePhase": (d) => engine.advancePhase({ override: Boolean(d.override) }),
     "game:goDusk": () => engine.goDusk(),
     "game:openNominations": () => engine.openNominations(),
     "game:endDay": () => engine.endDay(),

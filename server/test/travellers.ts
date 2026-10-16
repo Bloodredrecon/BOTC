@@ -196,7 +196,7 @@ const cases: Case[] = [
       if (!pub.sheet.travellers.some((x) => x.id === "thief")) return "sheet lacks Traveller";
       const join = e.session.publicLog.find((x) => x.type === "traveller_join");
       if (!join || join.type !== "traveller_join" || join.characterName !== "Thief") return "join line lacks character";
-      e.startFirstNight();
+      e.startFirstNight({ override: true });
       if (publicState(e).sheet) return "sheet shown at night";
       return null;
     },

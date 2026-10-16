@@ -110,7 +110,7 @@ const cases: Case[] = [
         if (err) checks.push(`${label}: ${err}`);
       };
       check("lobby");
-      e.startFirstNight();
+      e.startFirstNight({ override: true });
       for (let i = 0; i < 6; i++) {
         check(`first night step ${i}`);
         e.nightNext();

@@ -5,6 +5,7 @@ import { nominationRules } from "./nominations.js";
 import type { ScriptData } from "./persistence.js";
 import { toPhonePanel } from "./phones.js";
 import { exileThreshold } from "./nominations.js";
+import { computeSetupReadiness } from "./setup-readiness.js";
 import {
   adjustSetupForBaron,
   alignmentOf,
@@ -312,6 +313,8 @@ export function toStorytellerState(
     ambianceCatalog: listAmbianceCatalog(),
     phones: toPhonePanel(session, extras?.phoneLive ?? { connected: {}, spectators: 0 }),
     phoneVoteOverridden: session.nomination?.phoneVote?.overridden ?? [],
+    tvSoundReady: Boolean(session.tvSoundReady),
+    setupReadiness: computeSetupReadiness(session, script),
   };
 }
 

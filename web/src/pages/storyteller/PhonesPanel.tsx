@@ -27,6 +27,52 @@ function seatName(state: StorytellerState, playerId: string): string {
   return p ? `${p.seat} · ${p.name || `Seat ${p.seat}`}` : playerId;
 }
 
+/** Compact phone-state for the top bar: off | claims | not sent | stale | ready. */
+export function phoneStateSummary(state: StorytellerState): {
+  label: string;
+  tone: "off" | "warn" | "ready";
+} {
+  const ph = state.phones;
+  if (!ph?.enabled) return { label: "Phones off", tone: "off" };
+  const pending = ph.claims.filter((c) => c.status === "pending").length;
+  if (pending > 0) {
+    return {
+      label: `${pending} claim${pending === 1 ? "" : "s"} waiting`,
+      tone: "warn",
+    };
+  }
+  const seated = state.players.filter((p) => !p.leftGame);
+  let notSent = 0;
+  let stale = 0;
+  for (const p of seated) {
+    const priv = ph.private[p.id];
+    const shown = priv?.revealedCharacterId ?? null;
+    const want = shouldShow(p);
+    if (!shown) {
+      notSent += 1;
+      continue;
+    }
+    if (shown !== want || (p.isTraveller && priv?.revealedAlignment !== (p.alignment ?? "good"))) stale += 1;
+  }
+  if (notSent > 0) return { label: "Characters not sent", tone: "warn" };
+  if (stale > 0) {
+    return {
+      label: `${stale} stale card${stale === 1 ? "" : "s"}`,
+      tone: "warn",
+    };
+  }
+  return { label: "Phones ready", tone: "ready" };
+}
+
+export function PhoneStateBadge({ state }: { state: StorytellerState }) {
+  const s = phoneStateSummary(state);
+  return (
+    <span className={`phone-state-badge ${s.tone}`} title="Player phones status" role="status">
+      {s.label}
+    </span>
+  );
+}
+
 /** Top of the Storyteller page: phones waiting for approval, on every tab. */
 export function PendingClaimsBanner({ state, emit }: { state: StorytellerState; emit: EmitFn }) {
   const ph = state.phones;

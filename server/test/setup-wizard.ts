@@ -190,7 +190,7 @@ const cases: Case[] = [
       if (imp.bluffs.join() !== r.deal.bluffs.join()) return `bluffs ${imp.bluffs}`;
       if (projection.setupWarning(e.session, script)) return `setup warning: ${projection.setupWarning(e.session, script)}`;
       if (!notices(e).includes("Dealt 8 characters")) return notices(e);
-      e.startFirstNight();
+      e.startFirstNight({ override: true });
       if (e.session.startingCharacters[drunk.id] !== "drunk") return "startingCharacters not recorded";
       const again = e.applyDeal(r.deal);
       if (again.ok) return "deal accepted after the game started";

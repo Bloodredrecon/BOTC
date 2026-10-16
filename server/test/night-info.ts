@@ -258,7 +258,7 @@ cases.push(
         const me = receiverOf(s, "washerwoman");
         me.reminders.push("Drunk");
         const e = new GameEngine(s, script, hue, () => {});
-        e.startFirstNight();
+        e.startFirstNight({ override: true });
         const show = e.session.night!.steps.find((x) => x.characterId === "washerwoman")!.show;
         if (show.suggestedPlayerIds?.includes(me.id)) return `iteration ${i}: self suggested`;
         if (show.suggestedCharacterId === "washerwoman") return `iteration ${i}: Washerwoman suggested`;
@@ -274,7 +274,7 @@ cases.push(
         const s = randomSession("washerwoman");
         const me = receiverOf(s, "washerwoman");
         const e = new GameEngine(s, script, hue, () => {});
-        e.startFirstNight();
+        e.startFirstNight({ override: true });
         e.applyNightReminder(me.id, "Poisoned");
         e.rebuildNight();
         const show = e.session.night!.steps.find((x) => x.characterId === "washerwoman")!.show;
