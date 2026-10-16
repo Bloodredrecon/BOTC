@@ -3,18 +3,20 @@ import type { PlayerState } from "../../types";
 import { CharacterCard } from "./CharacterCard";
 import { MessagesView, unreadReplies } from "./MessagesView";
 import { NotesView } from "./NotesView";
+import { ProfileEditor } from "./ProfileEditor";
 import { SheetView, TownView, isNight, phaseLine } from "./TownView";
 import { VoteCard } from "./VoteCard";
 import { useWakeLock } from "./wakeLock";
 
 type Emit = (event: string, data?: unknown, ack?: (r: unknown) => void) => void;
-type Tab = "character" | "town" | "notes" | "ask";
+type Tab = "character" | "town" | "notes" | "ask" | "you";
 
 const TABS: [Tab, string][] = [
   ["character", "Card"],
   ["town", "Town"],
   ["notes", "Notes"],
   ["ask", "Ask"],
+  ["you", "You"],
 ];
 
 export function PlayHeader({ title, sub }: { title: string; sub: string }) {
@@ -73,13 +75,13 @@ export function PlayerView({ state, emit, onLeave }: { state: PlayerState; emit:
         <NotesView state={state} />
       ) : tab === "ask" ? (
         <MessagesView state={state} emit={emit} />
-      ) : tab === "character" ? (
+      ) : tab === "you" ? (
         <div className="play-stack">
-          <CharacterCard me={me} gameId={state.gameId} />
-          <details className="play-card play-details">
-            <summary>Characters in this script</summary>
-            <SheetView sheet={state.sheet} />
-          </details>
+          <div className="play-card">
+            <p className="play-kicker">Your profile</p>
+            <p className="play-muted">Name and photo show on the TV and to the Storyteller.</p>
+            <ProfileEditor emit={emit} playerId={me.playerId} name={me.name} photoRev={me.photoRev ?? null} />
+          </div>
           <button
             type="button"
             className="ghost play-leave"
@@ -90,6 +92,14 @@ export function PlayerView({ state, emit, onLeave }: { state: PlayerState; emit:
             Not my seat? Unlink this phone
           </button>
           {wake === "on" && <p className="play-muted play-wake">Your screen stays on while this page is open by day.</p>}
+        </div>
+      ) : tab === "character" ? (
+        <div className="play-stack">
+          <CharacterCard me={me} gameId={state.gameId} />
+          <details className="play-card play-details">
+            <summary>Characters in this script</summary>
+            <SheetView sheet={state.sheet} />
+          </details>
         </div>
       ) : (
         <TownView state={state} meId={me.playerId} />

@@ -4,6 +4,7 @@ import { expandFirstAvailableVariants, expandSoundVariants, resolveSoundCueId } 
 import { buildNightSteps } from "./night.js";
 import type { ScriptData } from "./persistence.js";
 import { createEmptySession, normalizePlayer, saveSession } from "./persistence.js";
+import { copyPlayerPhoto } from "./player-photos.js";
 import {
   advanceSweep,
   haltSweep,
@@ -580,7 +581,11 @@ export class GameEngine {
     if (opts.sameTable) {
       this.session.players.forEach((p, i) => {
         const was = residents[i];
-        if (was) p.name = was.name;
+        if (!was) return;
+        p.name = was.name;
+        if (was.photoRev) {
+          if (copyPlayerPhoto(old.gameId, was.id, this.session.gameId, p.id)) p.photoRev = was.photoRev;
+        }
       });
     }
     this.session.phones = phonesForNewGame(old, this.session, Boolean(opts.sameTable));

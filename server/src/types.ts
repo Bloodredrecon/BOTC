@@ -58,6 +58,11 @@ export type Player = {
   learnedDemon: boolean;
   /** Beggar: vote tokens given by dead players (one spent per vote). */
   voteTokens: number;
+  /**
+   * Cache-bust for a face JPEG under data/player-photos/{gameId}/{id}.jpg (null = no photo).
+   * Public like the name — phones, TV and Storyteller may show it.
+   */
+  photoRev: number | null;
 };
 
 export type Alignment = "good" | "evil";
@@ -439,6 +444,8 @@ export type PublicPlayer = {
   leftGame: boolean;
   /** Travellers declare their character on arrival — public. Null for residents. */
   travellerCharacterName?: string | null;
+  /** Non-null when the seat has a face photo; fetch `/api/player-photos/:id?v=photoRev`. */
+  photoRev: number | null;
 };
 
 export type RevealPlayer = PublicPlayer & {
@@ -617,6 +624,8 @@ export type PhoneMe = {
   playerId: string;
   seat: number;
   name: string;
+  /** Non-null when this seat has a face photo. */
+  photoRev: number | null;
   /** Public alive bit: an overnight death shows only after the dawn announcement. */
   alive: boolean;
   usedGhostVote: boolean;
@@ -647,7 +656,7 @@ export type PlayerState = PhonePublic & { me: PhoneMe };
 export type PhoneStatus =
   | { status: "off" }
   | { status: "unclaimed"; reason: "unknown" | "denied" | "revoked" | "replaced" | "cleared" | null }
-  | { status: "pending"; playerId: string; seat: number; name: string }
+  | { status: "pending"; playerId: string; seat: number; name: string; photoRev: number | null }
   | { status: "active"; playerId: string };
 
 export type HueScene =

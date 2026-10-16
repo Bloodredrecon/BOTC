@@ -57,6 +57,8 @@ export type Player = {
   learnedDemon: boolean;
   /** Beggar: vote tokens given by dead players. */
   voteTokens: number;
+  /** Cache-bust for `/api/player-photos/:id` (null = no photo). */
+  photoRev: number | null;
 };
 
 export type Alignment = "good" | "evil";
@@ -238,6 +240,8 @@ export type PublicPlayer = {
   leftGame: boolean;
   /** Travellers' characters are public. */
   travellerCharacterName?: string | null;
+  /** Non-null when the seat has a face photo (`/api/player-photos/:id?v=photoRev`). */
+  photoRev: number | null;
 };
 
 export type RevealPlayer = PublicPlayer & {
@@ -465,6 +469,7 @@ export type PhoneMe = {
   playerId: string;
   seat: number;
   name: string;
+  photoRev: number | null;
   alive: boolean;
   usedGhostVote: boolean;
   isTraveller: boolean;
@@ -494,7 +499,7 @@ export type PhoneStatus =
   | { status: "off" }
   | { status: "watching" }
   | { status: "unclaimed"; reason: "unknown" | "denied" | "revoked" | "replaced" | "cleared" | null }
-  | { status: "pending"; playerId: string; seat: number; name: string }
+  | { status: "pending"; playerId: string; seat: number; name: string; photoRev: number | null }
   | { status: "active"; playerId: string };
 
 /** A proposed deal from the setup wizard (server/src/setup-wizard.ts). */

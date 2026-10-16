@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { PublicEvent, PublicPlayer, PublicState, RevealPlayer, Team } from "../../types";
+import { playerPhotoUrl } from "../play/photo";
 import { TV_EL } from "./assets";
 import { Dot, Fleur, OakPlaque, PhaseWord, TvLabel, TvScript } from "./chrome";
 import { FitBox, FitText } from "./fit";
@@ -229,8 +230,12 @@ export function TownBoard({
               title={team ? TEAM_LABEL[team] : undefined}
               style={r ? ({ "--ri": i } as CSSProperties) : undefined}
             >
-              <span className="tv-seat-emblem" aria-hidden>
-                <img src={p.alive ? TV_EL.emblemSun : TV_EL.emblemSkull} alt="" draggable={false} />
+              <span className={`tv-seat-emblem ${p.photoRev ? "has-photo" : ""}`} aria-hidden>
+                {p.photoRev ? (
+                  <img src={playerPhotoUrl(p.id, p.photoRev)!} alt="" className="tv-seat-face" draggable={false} />
+                ) : (
+                  <img src={p.alive ? TV_EL.emblemSun : TV_EL.emblemSkull} alt="" draggable={false} />
+                )}
                 {state === "spent" && <i className="tv-seat-x" />}
               </span>
               <span className="tv-seat-text">

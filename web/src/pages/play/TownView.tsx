@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PhonePublic, PublicSheet, Team } from "../../types";
+import { playerPhotoUrl } from "./photo";
 
 const TEAM_LABEL: Record<Team, string> = {
   townsfolk: "Townsfolk",
@@ -113,6 +114,9 @@ export function TownView({ state, meId }: { state: PhonePublic; meId?: string })
             return (
               <li key={p.id} className={`${p.alive ? "" : "dead"} ${p.id === meId ? "me" : ""}`}>
                 <span className="play-seat-n">{p.seat}</span>
+                {playerPhotoUrl(p.id, p.photoRev) ? (
+                  <img src={playerPhotoUrl(p.id, p.photoRev)!} alt="" className="play-seat-face" />
+                ) : null}
                 <span className="play-seat-name">
                   {p.name || `Seat ${p.seat}`}
                   {p.id === meId && <em> (you)</em>}

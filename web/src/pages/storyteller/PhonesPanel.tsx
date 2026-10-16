@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { PhoneClaimInfo, Player, StorytellerState } from "../../types";
+import { playerPhotoUrl } from "../play/photo";
 
 type EmitFn = (e: string, d?: unknown, ack?: (result: unknown) => void) => void;
 type Ack = { ok?: boolean; message?: string; error?: string; code?: string; expiresAt?: number };
@@ -36,10 +37,16 @@ export function PendingClaimsBanner({ state, emit }: { state: StorytellerState; 
     <div className="panel phone-pending" role="status">
       <h2>Phone{pending.length === 1 ? "" : "s"} asking for a seat</h2>
       <ul className="phone-claim-list">
-        {pending.map((c) => (
+        {pending.map((c) => {
+          const seated = state.players.find((p) => p.id === c.playerId);
+          const face = seated ? playerPhotoUrl(seated.id, seated.photoRev) : null;
+          return (
           <li key={c.id}>
-            <span>
-              <b>{c.deviceLabel}</b> asks for seat <b>{seatName(state, c.playerId)}</b>
+            <span className="phone-pending-who">
+              {face ? <img src={face} alt="" className="phone-seat-face" /> : null}
+              <span>
+                <b>{c.deviceLabel}</b> asks for seat <b>{seatName(state, c.playerId)}</b>
+              </span>
             </span>
             <span className="row">
               <button type="button" className="primary" onClick={() => emit("game:phoneApprove", { claimId: c.id })}>
@@ -50,7 +57,8 @@ export function PendingClaimsBanner({ state, emit }: { state: StorytellerState; 
               </button>
             </span>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );
@@ -249,9 +257,18 @@ export function PhonesPanel({ state, emit }: { state: StorytellerState; emit: Em
               return (
                 <li key={p.id} className="phone-seat">
                   <div className="phone-seat-head">
-                    <b>
-                      {p.seat} · {p.name || `Seat ${p.seat}`}
-                    </b>
+                    <span className="phone-seat-who">
+                      {playerPhotoUrl(p.id, p.photoRev) ? (
+                        <img src={playerPhotoUrl(p.id, p.photoRev)!} alt="" className="phone-seat-face" />
+                      ) : (
+                        <span className="phone-seat-face empty" aria-hidden>
+                          {(p.name || "?").slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                      <b>
+                        {p.seat} · {p.name || `Seat ${p.seat}`}
+                      </b>
+                    </span>
                     <span className="muted">
                       Phone shows: {shown ? `${charName(state, shown)} (${priv?.revealedAlignment ?? "?"})` : "nothing yet"}
                     </span>

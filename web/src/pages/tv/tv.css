@@ -735,6 +735,19 @@
   filter: drop-shadow(0 0.1cqw 0.2cqw rgba(0, 0, 0, 0.7));
 }
 
+.tv-seat-emblem.has-photo img.tv-seat-face {
+  border-radius: 50%;
+  object-fit: cover;
+  border: 0.12cqw solid rgba(242, 230, 204, 0.55);
+  filter: drop-shadow(0 0.12cqw 0.25cqw rgba(0, 0, 0, 0.75));
+}
+
+.tv-seat.dead .tv-seat-emblem.has-photo img.tv-seat-face,
+.tv-seat.ghost .tv-seat-emblem.has-photo img.tv-seat-face,
+.tv-seat.spent .tv-seat-emblem.has-photo img.tv-seat-face {
+  filter: grayscale(0.85) brightness(0.75) drop-shadow(0 0.12cqw 0.25cqw rgba(0, 0, 0, 0.75));
+}
+
 .tv-seat-text {
   position: relative;
   z-index: 1;

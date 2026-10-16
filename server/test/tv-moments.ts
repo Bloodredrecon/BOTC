@@ -28,6 +28,7 @@ const PUBLIC_PLAYER_KEYS = new Set([
   "isTraveller",
   "leftGame",
   "travellerCharacterName",
+  "photoRev",
 ]);
 
 const PHASES: Session["phase"][] = ["lobby", "firstNight", "night", "dawn", "day", "dusk", "nomination", "vote", "execution"];

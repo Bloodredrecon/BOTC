@@ -123,6 +123,7 @@ export function loadScript(): ScriptData {
 }
 
 export function normalizePlayer(p: Partial<Player> & { id: string; seat: number }): Player {
+  const photoRev = typeof p.photoRev === "number" && Number.isFinite(p.photoRev) && p.photoRev > 0 ? Math.floor(p.photoRev) : null;
   return {
     id: p.id,
     seat: p.seat,
@@ -140,6 +141,7 @@ export function normalizePlayer(p: Partial<Player> & { id: string; seat: number 
     alignment: p.alignment === "good" || p.alignment === "evil" ? p.alignment : null,
     learnedDemon: p.learnedDemon ?? false,
     voteTokens: Math.max(0, Math.floor(Number(p.voteTokens ?? 0)) || 0),
+    photoRev,
   };
 }
 

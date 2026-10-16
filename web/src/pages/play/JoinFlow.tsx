@@ -31,6 +31,7 @@ export function JoinFlow({
   const [code, setCode] = useState(() => cleanCode(new URLSearchParams(window.location.search).get("c") ?? ""));
   const [seats, setSeats] = useState<Seat[] | null>(null);
   const [pick, setPick] = useState<Seat | null>(null);
+  const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [handover, setHandover] = useState(false);
@@ -63,7 +64,8 @@ export function JoinFlow({
   const claim = (seat: Seat) => {
     setBusy(true);
     setError(null);
-    emit("player:claim", { code, playerId: seat.id }, (r) => {
+    const name = displayName.trim().slice(0, 32);
+    emit("player:claim", { code, playerId: seat.id, ...(name ? { name } : {}) }, (r) => {
       const a = r as Ack;
       setBusy(false);
       if (!a.ok) return setError(a.error ?? "That didn't work.");
@@ -123,10 +125,28 @@ export function JoinFlow({
               <span className="play-seat-n">{pick.seat}</span> {pick.name || `Seat ${pick.seat}`}
             </p>
             {pick.taken && <p className="play-muted">This seat already has a phone. The Storyteller decides which one keeps it.</p>}
+            <label className="play-profile-name">
+              <span className="play-muted">Your name (shown on the TV)</span>
+              <input
+                value={displayName}
+                maxLength={32}
+                autoComplete="nickname"
+                placeholder={pick.name || `Seat ${pick.seat}`}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </label>
+            <p className="play-muted">You can add a photo after you claim the seat.</p>
             <button type="button" className="primary play-wide" disabled={busy} onClick={() => claim(pick)}>
               Yes, that&apos;s me
             </button>
-            <button type="button" className="ghost" onClick={() => setPick(null)}>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setPick(null);
+                setDisplayName("");
+              }}
+            >
               Pick another seat
             </button>
           </>
@@ -139,7 +159,13 @@ export function JoinFlow({
               <ol className="play-seat-pick">
                 {seats.map((s) => (
                   <li key={s.id}>
-                    <button type="button" onClick={() => setPick(s)}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPick(s);
+                        setDisplayName(s.name && !/^Player \d+$/i.test(s.name) && !/^Seat\d+$/i.test(s.name) ? s.name : "");
+                      }}
+                    >
                       <span className="play-seat-n">{s.seat}</span>
                       <span className="play-seat-name">{s.name || `Seat ${s.seat}`}</span>
                       {s.taken && <small>has a phone</small>}

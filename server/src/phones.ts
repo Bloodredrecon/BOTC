@@ -206,6 +206,7 @@ export function toPlayerState(
     playerId: p.id,
     seat: seen.seat,
     name: seen.name,
+    photoRev: seen.photoRev ?? null,
     alive: seen.alive,
     usedGhostVote: seen.usedGhostVote,
     isTraveller: seen.isTraveller,

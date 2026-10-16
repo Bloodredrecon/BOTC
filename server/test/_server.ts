@@ -47,8 +47,8 @@ export async function startServer(env: Record<string, string> = {}): Promise<Tes
       BOTC_SESSION_PATH: join(dir, "session.json"),
       BOTC_LOG_DIR: join(dir, "logs"),
       BOTC_CONTROL_TOKEN: "",
-      BOTC_PHONES: "",
-      // "0", not "": config/local.json may turn HTTPS on for real games.
+      // "0", not "": config/local.json may turn phones / HTTPS on for real games.
+      BOTC_PHONES: "0",
       BOTC_HTTPS: "0",
       ...env,
     },

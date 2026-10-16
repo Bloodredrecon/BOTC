@@ -28,6 +28,7 @@ import {
 import { GAME_LOG_DIR, loadConfig, loadScript, loadSession, ROOT, saveSession } from "./persistence.js";
 import { PhoneHub } from "./phone-hub.js";
 import { PinGuard } from "./pin-guard.js";
+import { readPlayerPhoto } from "./player-photos.js";
 import { pushStNotice } from "./rules.js";
 import { proposeDeal, validateDeal } from "./setup-wizard.js";
 import {
@@ -97,6 +98,16 @@ app.get("/api/config/public", async () => ({
 }));
 
 app.get("/api/audio/cues", async () => ({ cues: listAudioCues() }));
+
+/** Face photos are as public as names (TV / phones / Storyteller). Upload is phones-on only. */
+app.get<{ Params: { playerId: string } }>("/api/player-photos/:playerId", async (req, reply) => {
+  const buf = readPlayerPhoto(engine.session, String(req.params.playerId ?? ""));
+  if (!buf) return reply.code(404).send({ error: "No photo" });
+  return reply
+    .header("Cache-Control", "public, max-age=86400, immutable")
+    .type("image/jpeg")
+    .send(buf);
+});
 
 await app.register(fastifyStatic, {
   root: CUSTOM_AUDIO_DIR,

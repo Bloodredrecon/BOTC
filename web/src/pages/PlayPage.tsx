@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { PHONE_TOKEN_KEY, useSocket, usePhone } from "../socket";
 import { JoinFlow } from "./play/JoinFlow";
 import { PlayHeader, PlayerView } from "./play/PlayerView";
+import { ProfileEditor } from "./play/ProfileEditor";
 import { SheetView, TownView, phaseLine } from "./play/TownView";
 import "./play/play.css";
 
@@ -82,7 +83,14 @@ export function PlayPage() {
         <p className="play-pick">
           <span className="play-seat-n">{status.seat}</span> {status.name || `Seat ${status.seat}`}
         </p>
-        <p className="play-muted">The Storyteller approves each phone. Keep this page open.</p>
+        <p className="play-muted">The Storyteller approves each phone. Keep this page open — you can set your name and photo now.</p>
+        <ProfileEditor
+          emit={emit}
+          playerId={status.playerId}
+          name={status.name}
+          photoRev={status.photoRev ?? null}
+          compact
+        />
         <button type="button" className="ghost" onClick={leave}>
           Not you? Pick again
         </button>

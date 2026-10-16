@@ -22,6 +22,7 @@ import {
   toPlayerState,
   type ClaimChange,
 } from "./phones.js";
+import { cleanName, clearPlayerPhoto, decodePhotoPayload, savePlayerPhoto } from "./player-photos.js";
 import { setupWarning, toPublicState } from "./projection.js";
 import type { GameSession, PhoneClaim, PhoneStatus, PublicState } from "./types.js";
 
@@ -150,7 +151,10 @@ export class PhoneHub {
     const p = s.players.find((x) => x.id === claim.playerId && !x.leftGame);
     if (!p) return { status: { status: "unclaimed", reason: "cleared" } };
     if (claim.status === "pending") {
-      return { status: { status: "pending", playerId: p.id, seat: p.seat, name: p.name }, claim };
+      return {
+        status: { status: "pending", playerId: p.id, seat: p.seat, name: p.name, photoRev: p.photoRev ?? null },
+        claim,
+      };
     }
     return { status: { status: "active", playerId: p.id }, claim };
   }
@@ -311,6 +315,7 @@ export class PhoneHub {
         const mine = own();
         if (mine?.status === "active") return { ok: false, error: "This phone already has a seat." };
         const label = deviceLabel(socket.handshake.headers["user-agent"]);
+        const wantName = cleanName(d.name);
         const result = this.engine.mutatePrivate((s) => {
           if (mine) removeClaim(s, mine.id);
           const r = createClaim(s, String(d.playerId ?? ""), label);
@@ -318,6 +323,7 @@ export class PhoneHub {
           return r;
         });
         if (!result.ok) return result;
+        if (wantName) this.engine.updatePlayer(result.claim.playerId, { name: wantName });
         this.actionLog.record({
           t: Date.now(),
           kind: "auth",
@@ -328,6 +334,43 @@ export class PhoneHub {
           ...this.here(),
         });
         return { ok: true, token: result.token };
+      },
+      "player:setName": (d) => {
+        if (!this.session.phones.enabled) return { ok: false, error: "Player phones are off for this game." };
+        const mine = own();
+        if (!mine || (mine.status !== "pending" && mine.status !== "active")) {
+          return { ok: false, error: "Claim a seat first." };
+        }
+        const name = cleanName(d.name);
+        if (!name) return { ok: false, error: "Enter a name." };
+        this.engine.updatePlayer(mine.playerId, { name });
+        return { ok: true, name };
+      },
+      "player:setPhoto": (d) => {
+        if (!this.session.phones.enabled) return { ok: false, error: "Player phones are off for this game." };
+        const mine = own();
+        if (!mine || (mine.status !== "pending" && mine.status !== "active")) {
+          return { ok: false, error: "Claim a seat first." };
+        }
+        const decoded = decodePhotoPayload(d.image);
+        if (!decoded.ok) return decoded;
+        let out: { ok: true; photoRev: number } | { ok: false; error: string } = { ok: false, error: "Could not save photo." };
+        this.engine.mutate((s) => {
+          out = savePlayerPhoto(s, mine.playerId, decoded.buf);
+        });
+        return out;
+      },
+      "player:clearPhoto": () => {
+        if (!this.session.phones.enabled) return { ok: false, error: "Player phones are off for this game." };
+        const mine = own();
+        if (!mine || (mine.status !== "pending" && mine.status !== "active")) {
+          return { ok: false, error: "Claim a seat first." };
+        }
+        let out: { ok: true } | { ok: false; error: string } = { ok: false, error: "Could not clear photo." };
+        this.engine.mutate((s) => {
+          out = clearPlayerPhoto(s, mine.playerId);
+        });
+        return out;
       },
       "player:handover": (d) => {
         if (!this.session.phones.enabled) return { ok: false, error: "Player phones are off for this game." };

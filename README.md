@@ -154,7 +154,7 @@ Trouble Brewing ships in `data/scripts/trouble-brewing.json`. Folders are ready 
 ## Privacy
 
 - `/tv` is public on your LAN (alive/dead, votes, log — no characters)
-- `/play` (only while player phones are on) gives each approved phone the public view plus its own private data, nothing about other players. A seat token is stored on the phone; the server keeps only its SHA-256 hash. Wrong join codes are throttled per device
+- `/play` (only while player phones are on) gives each approved phone the public view plus its own private data, nothing about other players. A seat token is stored on the phone; the server keeps only its SHA-256 hash. Wrong join codes are throttled per device. Players can set their display name and upload a face photo (JPEG under `data/player-photos/`, gitignored); uploads are refused while phones are off
 - `/storyteller` requires the PIN; keep it off guest devices
 - Wrong PINs are throttled per device: after 5 misses it locks for 5 s, doubling per further miss (max 5 min)
 

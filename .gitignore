@@ -5,6 +5,8 @@ server/dist/
 data/session.json
 data/server.pid
 data/logs/
+data/player-photos/*
+!data/player-photos/README.txt
 config/hue.json
 config/local.json
 config/tls/

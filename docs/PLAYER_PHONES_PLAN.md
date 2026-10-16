@@ -429,3 +429,12 @@ The user answered the questions on Oct 15. These decisions override anything abo
 - **Tests:** new `https.ts` (4: certificate SAN / key / validity / reuse / renewal rules incl. virtual adapters; join URLs follow the scheme; a real HTTPS server verified against its own certificate, untrusted clients refused, Storyteller over `wss`; the shipped default stays HTTP with no certificate). Test servers now force `BOTC_HTTPS=0` so a `config/local.json` with HTTPS on can't break them. Total 241/241.
 - **Headless check:** `node scripts/phones_drive.mjs 5`: TV lobby over `https://` (secure context, QR follows), iPhone and Pixel hold the wake lock in the lobby and by day and release it at night. The launcher was also run end to end (start, status, check, stop) over HTTPS on a spare port in a throwaway copy.
 - **Not verifiable headless:** whether a real iPhone / Android grants the wake lock after the user clicks through the certificate warning, and which smart-TV browsers accept a self-signed certificate. Try at the table; HTTP stays the fallback.
+
+### Phase 6: player name + face photo (done Oct 16)
+
+- **Name:** during claim (`player:claim {name}`) and any time while pending or approved (`player:setName`). Updates the seat's `Player.name` so the TV and Storyteller see it; the Storyteller can still rename from the grimoire.
+- **Photo:** `player:setPhoto {image}` (JPEG base64 or `data:image/jpeg;base64,…`) and `player:clearPhoto`. The phone resizes to a square ~256px JPEG first; the server rejects non-JPEG and payloads over 350 KB. Stored at `data/player-photos/{gameId}/{playerId}.jpg` (gitignored; override with `BOTC_PHOTOS_DIR`). `Player.photoRev` is public; clients fetch `/api/player-photos/:playerId?v=photoRev`.
+- **UI:** join “Is this you?” name field → pending screen profile editor → approved phone **You** tab. Storyteller device panel and pending banner show the circular face when present; TV town tokens use the photo in place of the sun/skull emblem when present.
+- **Phones off:** `player:setName` / `player:setPhoto` / `player:clearPhoto` / claim are refused (same as other player actions).
+- **Same-table new game:** name and photo file copy to the new `gameId` / seat binding.
+- **Tests:** `server/test/player-profile.ts` (payload validation, name on ST/TV, photo accept/reject, GET + disk, reconnect, phones-off).

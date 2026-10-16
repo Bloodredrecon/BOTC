@@ -149,6 +149,7 @@ export function buildReveal(session: GameSession, script: ScriptData): RevealPla
         isTraveller: p.isTraveller,
         leftGame: p.leftGame,
         travellerCharacterName: p.isTraveller ? (c?.name ?? null) : null,
+        photoRev: p.photoRev ?? null,
         characterId: id,
         characterName: c?.name ?? null,
         team: (c?.team as Team) ?? null,
@@ -208,6 +209,7 @@ export function toPublicState(
         leftGame: p.leftGame,
         // Travellers declare their character publicly; residents never appear here before the reveal.
         travellerCharacterName: p.isTraveller ? (findCharacter(script, p.characterId)?.name ?? null) : null,
+        photoRev: p.photoRev ?? null,
       })),
     fabled: session.fabled
       .map((id) => script.fabled.find((f) => f.id === id))
