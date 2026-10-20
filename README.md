@@ -100,9 +100,9 @@ See also [docs/HUE.md](docs/HUE.md) and [docs/AUDIO.md](docs/AUDIO.md).
 
 Settings are layered. The highest one wins:
 
-1. Environment variables: `BOTC_PORT` or `PORT`, `BOTC_HOST` or `HOST`, `BOTC_PIN`, `BOTC_PHONES`, `BOTC_HTTPS` (`1` / `0`)
+1. Environment variables: `BOTC_PORT` or `PORT`, `BOTC_HOST` or `HOST`, `BOTC_PIN`, `BOTC_PHONES`, `BOTC_HTTPS` (`1` / `0`), `BOTC_WLED` / `BOTC_WLED_HOST` / `BOTC_WLED_LEDS` / `BOTC_WLED_BRI`
 2. `config/local.json`: your machine's overrides, written by the launcher's Settings menu (gitignored)
-3. `config/default.json`: shipped defaults (port `3847`, host `0.0.0.0`, PIN `1234`, `playerPhones` and `https` off)
+3. `config/default.json`: shipped defaults (port `3847`, host `0.0.0.0`, PIN `1234`, `playerPhones`, `https` and WLED off)
 
 `config/local.json` only needs the keys you want to change, for example:
 
@@ -110,7 +110,7 @@ Settings are layered. The highest one wins:
 { "port": 3900, "host": "0.0.0.0", "storytellerPin": "4321" }
 ```
 
-`host` is the address the server listens on. `0.0.0.0` means all networks (needed for the TV and phones). `127.0.0.1` means this PC only. A specific IP means only that network adapter. Restart the server after changing settings. Hue settings live in `config/hue.json` (see below).
+`host` is the address the server listens on. `0.0.0.0` means all networks (needed for the TV and phones). `127.0.0.1` means this PC only. A specific IP means only that network adapter. Restart the server after changing settings. Hue settings live in `config/hue.json` (see below). WLED strip settings live under `wled` in `config/local.json` or **BOTC.bat → Settings → LED strip**.
 
 ## Developer mode
 
@@ -142,6 +142,15 @@ Then open `http://<server-ip>:3847/tv` and `/storyteller`. The startup log lists
 4. Set `"enabled": true`
 
 The **server** must reach the Bridge. If Hue is down, the app stays in stub mode and gameplay continues.
+
+## WLED LED strip
+
+Addressable strip (WLED JSON API). Off until you turn it on:
+
+1. `BOTC.bat` → **Settings** → **LED strip (WLED)** → set the controller IP → on
+2. Or `config/local.json`: `{ "wled": { "enabled": true, "host": "192.168.50.139", "ledCount": 300, "start": 0, "stop": 300 } }`
+
+The game strip is **300 LEDs**. The controller at `192.168.50.139` reports 577 because a 277-LED strip is on the same chain; BOTC does not light those. Storyteller **Ambiance → Lights** follows the game, sets brightness, and previews scenes. The strip going down never blocks play. Details: `docs/WLED.md`.
 
 ## Audio
 

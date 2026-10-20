@@ -406,6 +406,22 @@ export type StorytellerState = Omit<PublicState, "players"> & {
   tvSoundReady: boolean;
   /** Lobby ready-to-begin checklist (server source of truth). */
   setupReadiness: SetupReadiness;
+  /** Storyteller-only: WLED / Hue strip status (never sent to TV or phones). */
+  lighting?: LightingStatus;
+};
+
+export type LightingBackend = "none" | "wled" | "hue" | "both";
+
+export type LightingStatus = {
+  configured: boolean;
+  follow: boolean;
+  live: boolean;
+  backend: LightingBackend;
+  host: string;
+  ledCount: number;
+  brightness: number;
+  scene: string | null;
+  lastError: string | null;
 };
 
 export type SetupReadinessItem = {

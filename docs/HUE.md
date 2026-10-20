@@ -11,3 +11,5 @@
 6. Restart the server. `/api/health` should report `hueLive: true`.
 
 If the Bridge is unreachable, the server stays in stub mode and logs `[hue:stub] scene=…`. Gameplay is never blocked.
+
+For an addressable LED strip, use WLED instead (`docs/WLED.md`). Both backends share the same scene names; WLED is off by default.

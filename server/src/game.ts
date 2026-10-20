@@ -1,4 +1,5 @@
 import type { HueDriver } from "./hue.js";
+import { STUB_LIGHTING_STATUS } from "./lighting.js";
 import { normalizeAmbiance, type AmbianceState } from "./ambiance.js";
 import { expandFirstAvailableVariants, expandSoundVariants, resolveSoundCueId } from "./audio-library.js";
 import { buildNightSteps } from "./night.js";
@@ -416,7 +417,7 @@ export class GameEngine {
     return true;
   }
 
-  mutate(fn: (s: GameSession) => void, opts?: { sound?: string | null; hue?: HueScene }) {
+  mutate(fn: (s: GameSession) => void, opts?: { sound?: string | null; hue?: HueScene; voteMs?: number }) {
     const hadLivingPoisoner = Boolean(livingPoisoner(this.session));
     fn(this.session);
     // Poison ends the moment the Poisoner dies or stops being the Poisoner (star-pass).
@@ -431,7 +432,10 @@ export class GameEngine {
     }
     if (opts?.hue !== undefined) {
       this.lastHue = opts.hue;
-      if (opts.hue) void this.hue.applyScene(opts.hue);
+      if (opts.hue) {
+        void this.hue.applyScene(opts.hue, opts.voteMs ? { durationMs: opts.voteMs } : undefined);
+        if (opts.hue === "vote" && opts.voteMs) this.hue.beginVoteFill?.(opts.voteMs);
+      }
     }
     saveSession(this.session);
     this.syncSweepTimer();
@@ -453,6 +457,7 @@ export class GameEngine {
         hueScene: this.lastHue,
         seq: this.seq,
         phoneLive: this.phoneLive(),
+        lighting: this.hue.status?.() ?? STUB_LIGHTING_STATUS,
       }),
     });
   }
@@ -540,7 +545,11 @@ export class GameEngine {
 
   emitPrivate(playerIds: string[] = []) {
     this.privateBroadcast?.(
-      toStorytellerState(this.session, this.script, { seq: this.seq, phoneLive: this.phoneLive() }),
+      toStorytellerState(this.session, this.script, {
+        seq: this.seq,
+        phoneLive: this.phoneLive(),
+        lighting: this.hue.status?.() ?? STUB_LIGHTING_STATUS,
+      }),
       playerIds,
     );
   }
@@ -606,8 +615,8 @@ export class GameEngine {
     this.session.tvSoundReady = tvConnected && tvSoundReady;
     this.session.storytellerConnected = storytellerConnected;
     this.lastSound = "hush";
-    this.lastHue = "hush";
-    void this.hue.applyScene("hush");
+    this.lastHue = "lobby";
+    void this.hue.applyScene("lobby");
     saveSession(this.session);
     this.emit();
     this.lastSound = null;
@@ -1580,7 +1589,7 @@ export class GameEngine {
           s.publicLog.push({ type: "dusk", dayNumber: day, at: Date.now() });
         }
       },
-      { hue: "dawn", sound: pickSound("dusk") },
+      { hue: "dusk", sound: pickSound("dusk") },
     );
     return { ok: true };
   }
@@ -1839,7 +1848,11 @@ export class GameEngine {
         s.timer = { endsAt: Date.now() + seconds * 1000, label: "Vote" };
         openPhoneVote(s, this.phoneVoters());
       },
-      { hue: "nomination", sound: pickSound("vote_open", "atm_hands_ready", "atm_silence_for_vote") },
+      {
+        hue: "vote",
+        sound: pickSound("vote_open", "atm_hands_ready", "atm_silence_for_vote"),
+        voteMs: Math.max(1, seconds) * 1000,
+      },
     );
   }
 
@@ -2285,7 +2298,7 @@ export class GameEngine {
         s.night = null;
         s.nomination = null;
       },
-      { hue: "hush", sound },
+      { hue: winner === "good" ? "good_wins" : winner === "evil" ? "evil_wins" : "hush", sound },
     );
   }
 

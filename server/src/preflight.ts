@@ -78,6 +78,19 @@ export function runPreflight(): CheckResult[] {
     }
     if (config.hue.enabled) add(config.hue.bridgeIp ? "ok" : "warn", "Hue", config.hue.bridgeIp ? `enabled, bridge ${config.hue.bridgeIp}` : "enabled but no bridge IP");
     else add("ok", "Hue", "disabled (lights stay in stub mode)");
+    if (config.wled.enabled) {
+      add(
+        config.wled.host ? "ok" : "warn",
+        "WLED",
+        config.wled.host
+          ? `enabled, ${config.wled.host}, game strip ${config.wled.ledCount} LEDs (pixels ${config.wled.start}-${config.wled.stop})`
+          : "enabled but no strip IP",
+      );
+    } else if (config.wled.host) {
+      add("ok", "WLED", `off, strip ${config.wled.host} saved — turn on in Settings or Storyteller Ambiance`);
+    } else {
+      add("ok", "WLED", "disabled (no LED strip)");
+    }
   }
 
   if (!existsSync(SESSION_PATH)) {

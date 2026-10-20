@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSocket, useStoryteller } from "../socket";
-import type { AudioCueInfo, NightShowSpec, Player, StorytellerState, Team } from "../types";
+import type { AudioCueInfo, LightingStatus, NightShowSpec, Player, StorytellerState, Team } from "../types";
 import { ConnectionBanners, ConnectionPills } from "./storyteller/ConnectionStatus";
 import { GrimoireCircle } from "./storyteller/GrimoireCircle";
 import { LogPanel } from "./storyteller/LogPanel";
@@ -690,6 +690,7 @@ function ControlTab({
 
       <div className="panel">
         <h2>Room scenes</h2>
+        <p className="muted">{lightingHint(state.lighting)}</p>
         <div className="row">
           <button type="button" onClick={() => emit("game:scene", { scene: "day" })}>
             Day lights
@@ -2928,6 +2929,105 @@ function SoundTab({
   );
 }
 
+const LIGHTING_PREVIEWS: { id: string; label: string }[] = [
+  { id: "lobby", label: "Lobby" },
+  { id: "night", label: "Night" },
+  { id: "dawn", label: "Dawn" },
+  { id: "day", label: "Day" },
+  { id: "dusk", label: "Dusk" },
+  { id: "nomination", label: "Nomination" },
+  { id: "vote", label: "Vote" },
+  { id: "execution", label: "Gallows" },
+  { id: "death_settle", label: "Death" },
+  { id: "hush", label: "Hush" },
+  { id: "good_wins", label: "Good" },
+  { id: "evil_wins", label: "Evil" },
+];
+
+function lightingHint(lighting: LightingStatus | undefined): string {
+  if (!lighting?.configured) {
+    return "LED strip is off. Enable it on the server PC: BOTC.bat → Settings → LED strip (WLED).";
+  }
+  const where = lighting.host ? ` ${lighting.host}` : "";
+  const leds = lighting.ledCount ? ` · ${lighting.ledCount} LEDs` : "";
+  if (!lighting.follow) return `WLED${where}${leds} saved, not following the game. Ambiance tab turns it on.`;
+  return `Following the game (${lighting.backend}${where}${leds}${lighting.scene ? ` · ${lighting.scene}` : ""}).`;
+}
+
+function LightsPanel({
+  lighting,
+  emit,
+}: {
+  lighting: LightingStatus | undefined;
+  emit: (e: string, d?: unknown) => void;
+}) {
+  const configured = Boolean(lighting?.configured);
+  const follow = Boolean(lighting?.follow);
+  const bri = lighting?.brightness ?? 128;
+  return (
+    <div className="panel">
+      <h2>Lights</h2>
+      {!configured ? (
+        <p className="muted">
+          No strip configured. On the server PC open <b>BOTC.bat</b> → Settings → LED strip (WLED), set the
+          IP, then turn it on. Gameplay is fine without it.
+        </p>
+      ) : (
+        <>
+          <p className="muted">
+            {lighting?.backend === "hue" ? "Philips Hue" : "WLED"}
+            {lighting?.host ? ` · ${lighting.host}` : ""}
+            {lighting?.ledCount ? ` · ${lighting.ledCount} LEDs` : ""}
+            {lighting?.scene ? ` · ${lighting.scene}` : ""}
+            {lighting?.lastError ? ` · last error: ${lighting.lastError}` : ""}
+            . Game strip is {lighting?.ledCount ?? 300} LEDs; a second strip on the same controller is left off. Slow colour washes only — nothing strobes.
+          </p>
+          <div className="row" style={{ marginTop: "0.5rem" }}>
+            <button
+              type="button"
+              className={`chip${follow ? " on" : ""}`}
+              aria-pressed={follow}
+              onClick={() => emit("lighting:set", { follow: !follow })}
+            >
+              {follow ? "Following game" : "Lights off"}
+            </button>
+            <button type="button" onClick={() => emit("lighting:set", { follow: false })}>
+              Strip off
+            </button>
+          </div>
+          <label className="ambiance-master">
+            <span>Brightness · {Math.round((bri / 255) * 100)}%</span>
+            <input
+              type="range"
+              min={8}
+              max={255}
+              step={1}
+              value={bri}
+              disabled={!follow}
+              onChange={(e) => emit("lighting:set", { brightness: Number(e.target.value) })}
+            />
+          </label>
+          <p className="muted" style={{ marginTop: "0.65rem" }}>
+            Preview (lights only, no audio):
+          </p>
+          <div className="chip-row" style={{ marginTop: "0.35rem" }}>
+            {LIGHTING_PREVIEWS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={`chip${lighting?.scene === s.id ? " on" : ""}`}
+                onClick={() => emit("lighting:preview", { scene: s.id })}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AmbianceTab({
   state,
   emit,
@@ -2977,6 +3077,7 @@ function AmbianceTab({
 
   return (
     <div className="stack">
+      <LightsPanel lighting={state.lighting} emit={emit} />
       <div className="panel">
         <h2>Ambiance</h2>
         <p className="muted">

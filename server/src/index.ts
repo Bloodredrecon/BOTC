@@ -14,6 +14,8 @@ import {
 } from "./audio-library.js";
 import { GameEngine } from "./game.js";
 import { createHueDriver } from "./hue.js";
+import { composeLighting, sceneForSession, type LightingScene } from "./lighting.js";
+import { createWledDriver } from "./wled.js";
 import { formatJoinInfo, joinBaseUrls, type Scheme } from "./join-info.js";
 import { ensureCertificate, TLS_DIR, type TlsMaterial } from "./tls.js";
 import {
@@ -45,7 +47,7 @@ import type { AmbianceState, Phase } from "./types.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const config = loadConfig();
 const script = loadScript();
-const hue = createHueDriver(config.hue);
+const lighting = composeLighting([createWledDriver(config.wled), createHueDriver(config.hue)]);
 
 ensureAudioDirs();
 ensureIntroPlaceholder();
@@ -71,7 +73,9 @@ app.get("/api/health", async () => ({
   ok: true,
   app: "botc-companion",
   pid: process.pid,
-  hueLive: hue.isLive(),
+  hueLive: config.hue.enabled && Boolean(config.hue.bridgeIp && config.hue.username),
+  wledLive: lighting.isLive() && (lighting.status().backend === "wled" || lighting.status().backend === "both"),
+  lighting: lighting.status().backend,
   script: script.name,
   scheme,
 }));
@@ -209,7 +213,7 @@ let inAction = false;
 let broadcasts = 0;
 
 let phoneHub: PhoneHub | null = null;
-const engine = new GameEngine(loadSession(config.playerPhones), script, hue, ({ public: pub, storyteller }) => {
+const engine = new GameEngine(loadSession(config.playerPhones), script, lighting, ({ public: pub, storyteller }) => {
   broadcasts += 1;
   io.to("tv").emit("state:public", pub);
   io.to("storyteller").emit("state:storyteller", storyteller);
@@ -255,7 +259,7 @@ function logSystemChanges() {
 }
 
 /** Slider-driven actions fire many times a second; log only the last of each burst. */
-const COALESCED_ACTIONS = new Set(["game:setAmbiance"]);
+const COALESCED_ACTIONS = new Set(["game:setAmbiance", "lighting:set"]);
 let pendingCoalesced: { action: string; entry: Parameters<ActionLog["record"]>[0]; timer: NodeJS.Timeout } | null =
   null;
 function flushCoalesced() {
@@ -302,7 +306,7 @@ function undoLast(): { ok: boolean; message: string } {
 }
 
 /** Actions that only read state: answered, never logged or undone. */
-const READ_ONLY_ACTIONS = new Set(["game:refresh", "game:previewDeal"]);
+const READ_ONLY_ACTIONS = new Set(["game:refresh", "game:previewDeal", "lighting:set", "lighting:preview"]);
 
 /** Connected-device counts for the Storyteller; tvChangedAt marks when the TV count last hit or left 0. */
 let tvChangedAt = Date.now();
@@ -462,6 +466,37 @@ io.on("connection", (socket) => {
         masterVolume: typeof d.masterVolume === "number" ? d.masterVolume : undefined,
         layers: Array.isArray(d.layers) ? (d.layers as AmbianceState["layers"]) : undefined,
       }),
+    "lighting:set": (d) => {
+      void (async () => {
+        if (typeof d.follow === "boolean") await lighting.setFollow?.(d.follow);
+        if (typeof d.brightness === "number") await lighting.setBrightness?.(d.brightness);
+        if (d.follow === true) await lighting.applyScene(sceneForSession(engine.session));
+        engine.emit();
+      })();
+    },
+    "lighting:preview": (d) => {
+      const scene = String(d.scene ?? "") as LightingScene;
+      const allowed: LightingScene[] = [
+        "lobby",
+        "day",
+        "night",
+        "night_wake",
+        "dawn",
+        "dusk",
+        "nomination",
+        "vote",
+        "vote_urgency",
+        "execution",
+        "death_settle",
+        "hush",
+        "good_wins",
+        "evil_wins",
+      ];
+      if (!allowed.includes(scene)) return { ok: false, message: "Unknown scene" };
+      void lighting.preview?.(scene);
+      engine.emit();
+      return { ok: true };
+    },
     "game:addTraveller": (d) =>
       engine.addTraveller(String(d.name ?? ""), String(d.characterId ?? ""), {
         seat: d.seat != null && d.seat !== "" ? Number(d.seat) : null,
@@ -627,6 +662,7 @@ const timerTick = setInterval(() => {
   if (timer && Date.now() >= timer.endsAt) {
     engine.timerEnded();
   }
+  if (engine.session.phase === "vote") lighting.tickVoteClock?.();
 }, 500);
 
 let shuttingDown = false;
@@ -659,4 +695,9 @@ process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 console.log(formatJoinInfo({ host: config.host, port: config.port, pin: config.storytellerPin, scheme }));
-console.log(`Hue: ${hue.isLive() ? "live" : "stub mode"}`);
+{
+  const st = lighting.status();
+  if (st.backend === "none") console.log("Lights: off (enable WLED in BOTC.bat > Settings, or Hue in config/hue.json)");
+  else console.log(`Lights: ${st.backend}${st.live ? " live" : " configured, follow off"}${st.host ? ` ${st.host}` : ""}${st.backend === "wled" || st.backend === "both" ? ` ${st.ledCount} LEDs` : ""}`);
+}
+if (lighting.isLive()) void lighting.applyScene(sceneForSession(engine.session));

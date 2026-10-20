@@ -586,6 +586,8 @@ export type StorytellerState = PublicState & {
   tvSoundReady: boolean;
   /** Lobby ready-to-begin checklist (server source of truth). */
   setupReadiness: SetupReadiness;
+  /** Storyteller-only: WLED / Hue strip status (never sent to TV or phones). */
+  lighting: LightingStatus;
 };
 
 export type SetupReadinessItem = {
@@ -682,15 +684,35 @@ export type PhoneStatus =
   | { status: "active"; playerId: string };
 
 export type HueScene =
+  | "lobby"
   | "day"
   | "night"
   | "night_wake"
   | "dawn"
+  | "dusk"
   | "nomination"
+  | "vote"
   | "vote_urgency"
   | "execution"
   | "death_settle"
   | "hush"
+  | "good_wins"
+  | "evil_wins"
   | null;
+
+export type LightingBackend = "none" | "wled" | "hue" | "both";
+
+/** Storyteller Control / Ambiance: room lights. Absent on TV and phones. */
+export type LightingStatus = {
+  configured: boolean;
+  follow: boolean;
+  live: boolean;
+  backend: LightingBackend;
+  host: string;
+  ledCount: number;
+  brightness: number;
+  scene: Exclude<HueScene, null> | null;
+  lastError: string | null;
+};
 
 export type ClientRole = "storyteller" | "tv" | "player" | "spectator";

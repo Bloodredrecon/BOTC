@@ -1,4 +1,5 @@
 import { listAmbianceCatalog, normalizeAmbiance, toAmbiancePublic } from "./ambiance.js";
+import { STUB_LIGHTING_STATUS } from "./lighting.js";
 import { listAudioCues } from "./audio-library.js";
 import { dayAbilityTips } from "./night.js";
 import { nominationRules } from "./nominations.js";
@@ -277,6 +278,7 @@ export function toStorytellerState(
     hueScene?: PublicState["hueScene"];
     seq?: number;
     phoneLive?: { connected: Record<string, number>; spectators: number };
+    lighting?: StorytellerState["lighting"];
   },
 ): StorytellerState {
   const pub = toPublicState(session, script, extras);
@@ -315,6 +317,7 @@ export function toStorytellerState(
     phoneVoteOverridden: session.nomination?.phoneVote?.overridden ?? [],
     tvSoundReady: Boolean(session.tvSoundReady),
     setupReadiness: computeSetupReadiness(session, script),
+    lighting: extras?.lighting ?? { ...STUB_LIGHTING_STATUS },
   };
 }
 

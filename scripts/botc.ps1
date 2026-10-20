@@ -15,6 +15,7 @@
     BOTC.bat set -Port 3900 -BindHost 0.0.0.0 -Pin 1234
     BOTC.bat set -Https on|off      self-signed HTTPS (phones can keep their screens on)
     BOTC.bat set -Phones on|off     "Player phones" default for new games
+    BOTC.bat set -Wled on|off -WledHost 192.168.50.139 -WledLeds 300 -WledStart 0
     BOTC.bat reset-settings
   Add -Yes to auto-confirm stopping another BOTC server that holds the port.
 #>
@@ -28,6 +29,11 @@ param(
   [string]$Pin = '',
   [string]$Https = '',
   [string]$Phones = '',
+  [string]$Wled = '',
+  [string]$WledHost = '',
+  [int]$WledLeds = 0,
+  [int]$WledBri = 0,
+  [int]$WledStart = -1,
   [switch]$Yes,
   [switch]$Server,
   [int]$Lines = 60,
@@ -116,6 +122,9 @@ function Get-BotcConfig {
     Https = $false; HttpsSource = 'built-in'; DefaultHttps = $false
     Phones = $false; PhonesSource = 'built-in'; DefaultPhones = $false
     Scheme = 'http'
+    WledEnabled = $false; WledHost = ''; WledLeds = 300; WledBri = 128; WledStart = 0; WledStop = 300
+    WledSource = 'built-in'
+    DefaultWledEnabled = $false; DefaultWledHost = ''; DefaultWledLeds = 300; DefaultWledBri = 128; DefaultWledStart = 0; DefaultWledStop = 300
   }
   $def = Read-JsonFile $DefaultConfigPath
   if ($def) {
@@ -125,6 +134,19 @@ function Get-BotcConfig {
     if ($def.storytellerPin) { $cfg.Pin = [string]$def.storytellerPin; $cfg.DefaultPin = $cfg.Pin; $cfg.PinSource = 'default.json' }
     if ($def.https -is [bool]) { $cfg.Https = $def.https; $cfg.DefaultHttps = $def.https; $cfg.HttpsSource = 'default.json' }
     if ($def.playerPhones -is [bool]) { $cfg.Phones = $def.playerPhones; $cfg.DefaultPhones = $def.playerPhones; $cfg.PhonesSource = 'default.json' }
+    if ($def.wled) {
+      if ($def.wled.enabled -is [bool]) { $cfg.WledEnabled = $def.wled.enabled; $cfg.DefaultWledEnabled = $def.wled.enabled }
+      if ($def.wled.host) { $cfg.WledHost = [string]$def.wled.host; $cfg.DefaultWledHost = $cfg.WledHost }
+      $lc = 0
+      if ([int]::TryParse(([string]$def.wled.ledCount), [ref]$lc) -and $lc -ge 1) { $cfg.WledLeds = $lc; $cfg.DefaultWledLeds = $lc }
+      $br = 0
+      if ([int]::TryParse(([string]$def.wled.brightness), [ref]$br) -and $br -ge 1 -and $br -le 255) { $cfg.WledBri = $br; $cfg.DefaultWledBri = $br }
+      $st = -1
+      if ([int]::TryParse(([string]$def.wled.start), [ref]$st) -and $st -ge 0) { $cfg.WledStart = $st; $cfg.DefaultWledStart = $st }
+      $sp = 0
+      if ([int]::TryParse(([string]$def.wled.stop), [ref]$sp) -and $sp -gt $cfg.WledStart) { $cfg.WledStop = $sp; $cfg.DefaultWledStop = $sp }
+      $cfg.WledSource = 'default.json'
+    }
   }
   $local = Read-JsonFile $LocalConfigPath
   if ($local) {
@@ -134,9 +156,40 @@ function Get-BotcConfig {
     if ($null -ne $local.storytellerPin -and ([string]$local.storytellerPin).Trim()) { $cfg.Pin = ([string]$local.storytellerPin).Trim(); $cfg.PinSource = 'local.json' }
     if ($local.https -is [bool]) { $cfg.Https = $local.https; $cfg.HttpsSource = 'local.json' }
     if ($local.playerPhones -is [bool]) { $cfg.Phones = $local.playerPhones; $cfg.PhonesSource = 'local.json' }
+    if ($local.wled) {
+      if ($local.wled.enabled -is [bool]) { $cfg.WledEnabled = $local.wled.enabled }
+      if ($null -ne $local.wled.host) { $cfg.WledHost = ([string]$local.wled.host).Trim() }
+      $lc = 0
+      if ([int]::TryParse(([string]$local.wled.ledCount), [ref]$lc) -and $lc -ge 1) { $cfg.WledLeds = $lc }
+      $br = 0
+      if ([int]::TryParse(([string]$local.wled.brightness), [ref]$br) -and $br -ge 1 -and $br -le 255) { $cfg.WledBri = $br }
+      $st = -1
+      if ([int]::TryParse(([string]$local.wled.start), [ref]$st) -and $st -ge 0) { $cfg.WledStart = $st }
+      $sp = 0
+      if ([int]::TryParse(([string]$local.wled.stop), [ref]$sp) -and $sp -gt $cfg.WledStart) { $cfg.WledStop = $sp }
+      $cfg.WledSource = 'local.json'
+    }
   }
   if ($env:BOTC_HTTPS) { $cfg.Https = ($env:BOTC_HTTPS -match '^(1|true|on|yes)$'); $cfg.HttpsSource = 'env BOTC_HTTPS' }
   if ($env:BOTC_PHONES) { $cfg.Phones = ($env:BOTC_PHONES -match '^(1|true|on|yes)$'); $cfg.PhonesSource = 'env BOTC_PHONES' }
+  if ($env:BOTC_WLED) { $cfg.WledEnabled = ($env:BOTC_WLED -match '^(1|true|on|yes)$'); $cfg.WledSource = 'env BOTC_WLED' }
+  if ($env:BOTC_WLED_HOST) { $cfg.WledHost = $env:BOTC_WLED_HOST.Trim(); $cfg.WledSource = 'env BOTC_WLED_HOST' }
+  if ($env:BOTC_WLED_LEDS) {
+    $lc = 0
+    if ([int]::TryParse($env:BOTC_WLED_LEDS, [ref]$lc) -and $lc -ge 1) { $cfg.WledLeds = $lc; $cfg.WledSource = 'env BOTC_WLED_LEDS' }
+  }
+  if ($env:BOTC_WLED_BRI) {
+    $br = 0
+    if ([int]::TryParse($env:BOTC_WLED_BRI, [ref]$br) -and $br -ge 1 -and $br -le 255) { $cfg.WledBri = $br; $cfg.WledSource = 'env BOTC_WLED_BRI' }
+  }
+  if ($env:BOTC_WLED_START) {
+    $st = -1
+    if ([int]::TryParse($env:BOTC_WLED_START, [ref]$st) -and $st -ge 0) {
+      $cfg.WledStart = $st
+      $cfg.WledStop = $st + $cfg.WledLeds
+      $cfg.WledSource = 'env BOTC_WLED_START'
+    }
+  }
   if ($cfg.Https) { $cfg.Scheme = 'https' }
   $envPortName = if ($env:BOTC_PORT) { 'BOTC_PORT' } elseif ($env:PORT) { 'PORT' } else { $null }
   if ($envPortName) {
@@ -159,6 +212,54 @@ function Set-LocalSetting([string]$key, $value, $defaultValue) {
     $obj.PSObject.Properties.Remove($key)
   } else {
     $obj | Add-Member -NotePropertyName $key -NotePropertyValue $value -Force
+  }
+  if (@($obj.PSObject.Properties).Count -eq 0) {
+    if (Test-Path -LiteralPath $LocalConfigPath) { Remove-Item -LiteralPath $LocalConfigPath -Force }
+  } else {
+    Write-JsonFile $LocalConfigPath $obj
+  }
+}
+
+function Test-WledHostValue([string]$value) {
+  if (-not $value) { return $true }
+  $h = $value.Trim() -replace '^https?://', '' -replace '/.*$', ''
+  if ($h -match ':3847$') { return $false }
+  $ip = $null
+  $hostOnly = ($h -split ':')[0]
+  return [System.Net.IPAddress]::TryParse($hostOnly, [ref]$ip) -and $ip.AddressFamily -eq 'InterNetwork'
+}
+
+function Set-LocalWled {
+  param(
+    [Parameter(Mandatory = $false)] $Enabled,
+    [Parameter(Mandatory = $false)] $WledHost,
+    [Parameter(Mandatory = $false)] $LedCount,
+    [Parameter(Mandatory = $false)] $Brightness,
+    [Parameter(Mandatory = $false)] $Start
+  )
+  $cfg = Get-BotcConfig
+  $obj = Read-JsonFile $LocalConfigPath
+  if (-not $obj) { $obj = New-Object psobject }
+  $nextEnabled = if ($null -ne $Enabled) { [bool]$Enabled } else { [bool]$cfg.WledEnabled }
+  $nextHost = if ($null -ne $WledHost) { ([string]$WledHost).Trim() } else { [string]$cfg.WledHost }
+  $nextLeds = if ($null -ne $LedCount) { [int]$LedCount } else { [int]$cfg.WledLeds }
+  $nextBri = if ($null -ne $Brightness) { [int]$Brightness } else { [int]$cfg.WledBri }
+  $nextStart = if ($null -ne $Start) { [int]$Start } else { [int]$cfg.WledStart }
+  $nextStop = $nextStart + $nextLeds
+  $isDefault = (-not $nextEnabled) -and (-not $nextHost) -and ($nextLeds -eq $cfg.DefaultWledLeds) -and ($nextBri -eq $cfg.DefaultWledBri) -and ($nextStart -eq $cfg.DefaultWledStart)
+  if ($isDefault) {
+    $obj.PSObject.Properties.Remove('wled')
+  } else {
+    $wled = [pscustomobject]@{
+      enabled    = [bool]$nextEnabled
+      host       = $nextHost
+      ledCount   = [int]$nextLeds
+      brightness = [int]$nextBri
+      segmentId  = 0
+      start      = [int]$nextStart
+      stop       = [int]$nextStop
+    }
+    $obj | Add-Member -NotePropertyName 'wled' -NotePropertyValue $wled -Force
   }
   if (@($obj.PSObject.Properties).Count -eq 0) {
     if (Test-Path -LiteralPath $LocalConfigPath) { Remove-Item -LiteralPath $LocalConfigPath -Force }
@@ -638,6 +739,7 @@ function Show-Status {
   }
   Write-Info ("Settings: port {0} ({1}), host {2} ({3}), PIN {4} ({5})" -f $cfg.Port, $cfg.PortSource, $cfg.Host, $cfg.HostSource, $cfg.Pin, $cfg.PinSource)
   Write-Info ("          HTTPS {0} ({1}), player phones default {2} ({3})" -f (Format-OnOff $cfg.Https), $cfg.HttpsSource, (Format-OnOff $cfg.Phones), $cfg.PhonesSource)
+  Write-Info ("          WLED {0} host {1} leds {2} ({3})" -f (Format-OnOff $cfg.WledEnabled), $(if ($cfg.WledHost) { $cfg.WledHost } else { '(none)' }), $cfg.WledLeds, $cfg.WledSource)
   if (Test-DefaultPin $cfg) { Write-Warn "The Storyteller PIN is still the default ($($cfg.Pin)); anyone on the network could open the grimoire. Change it: BOTC.bat set -Pin <4-12 digits>" }
   return $true
 }
@@ -842,7 +944,7 @@ function Test-HostValue([string]$value) {
 }
 
 function Show-EnvOverrideWarning($cfg) {
-  foreach ($pair in @(@('Port', $cfg.PortSource), @('Host', $cfg.HostSource), @('PIN', $cfg.PinSource), @('HTTPS', $cfg.HttpsSource), @('Player phones', $cfg.PhonesSource))) {
+  foreach ($pair in @(@('Port', $cfg.PortSource), @('Host', $cfg.HostSource), @('PIN', $cfg.PinSource), @('HTTPS', $cfg.HttpsSource), @('Player phones', $cfg.PhonesSource), @('WLED', $cfg.WledSource))) {
     if ($pair[1] -like 'env *') {
       Write-Warn "$($pair[0]) is forced by environment variable $($pair[1].Substring(4)); config\local.json is ignored for it."
     }
@@ -874,10 +976,34 @@ function Invoke-SetAction {
     if ($null -eq $v) { Write-Err 'Use -Phones on or -Phones off.'; return $false }
     Set-LocalSetting 'playerPhones' $v $cfg.DefaultPhones; $changed = $true
   }
-  if (-not $changed) { Write-Err 'Nothing to set. Use -Port, -BindHost, -Pin, -Https and/or -Phones.'; return $false }
+  $wledPatch = $false
+  $wEnabled = $null; $wHost = $null; $wLeds = $null; $wBri = $null; $wStart = $null
+  if ($Wled) {
+    $v = ConvertTo-OnOff $Wled
+    if ($null -eq $v) { Write-Err 'Use -Wled on or -Wled off.'; return $false }
+    $wEnabled = $v; $wledPatch = $true
+  }
+  if ($WledHost) {
+    if (-not (Test-WledHostValue $WledHost)) { Write-Err "Invalid WLED host '$WledHost' (IPv4, not port 3847)."; return $false }
+    $wHost = $WledHost.Trim(); $wledPatch = $true
+  }
+  if ($WledLeds -ne 0) {
+    if ($WledLeds -lt 1 -or $WledLeds -gt 5000) { Write-Err 'WLED LED count must be 1-5000.'; return $false }
+    $wLeds = $WledLeds; $wledPatch = $true
+  }
+  if ($WledBri -ne 0) {
+    if ($WledBri -lt 1 -or $WledBri -gt 255) { Write-Err 'WLED brightness must be 1-255.'; return $false }
+    $wBri = $WledBri; $wledPatch = $true
+  }
+  if ($WledStart -ge 0) {
+    $wStart = $WledStart; $wledPatch = $true
+  }
+  if ($wledPatch) { Set-LocalWled -Enabled $wEnabled -WledHost $wHost -LedCount $wLeds -Brightness $wBri -Start $wStart; $changed = $true }
+  if (-not $changed) { Write-Err 'Nothing to set. Use -Port, -BindHost, -Pin, -Https, -Phones and/or -Wled.'; return $false }
   $cfg = Get-BotcConfig
   Write-Ok ("Saved. Port {0} ({1}), host {2} ({3}), PIN {4} ({5})" -f $cfg.Port, $cfg.PortSource, $cfg.Host, $cfg.HostSource, $cfg.Pin, $cfg.PinSource)
   Write-Ok ("       HTTPS {0} ({1}), player phones default {2} ({3})" -f (Format-OnOff $cfg.Https), $cfg.HttpsSource, (Format-OnOff $cfg.Phones), $cfg.PhonesSource)
+  Write-Ok ("       WLED {0} host {1} leds {2} pixels {3}-{4} ({5})" -f (Format-OnOff $cfg.WledEnabled), $(if ($cfg.WledHost) { $cfg.WledHost } else { '(none)' }), $cfg.WledLeds, $cfg.WledStart, $cfg.WledStop, $cfg.WledSource)
   Show-EnvOverrideWarning $cfg
   if ((Get-ServerState).Running) { Write-Warn 'Restart the server to apply.' }
   return $true
@@ -886,13 +1012,13 @@ function Invoke-SetAction {
 function Reset-Settings {
   $obj = Read-JsonFile $LocalConfigPath
   if ($obj) {
-    foreach ($k in @('port', 'host', 'storytellerPin', 'https', 'playerPhones')) { $obj.PSObject.Properties.Remove($k) }
+    foreach ($k in @('port', 'host', 'storytellerPin', 'https', 'playerPhones', 'wled')) { $obj.PSObject.Properties.Remove($k) }
     if (@($obj.PSObject.Properties).Count -eq 0) { Remove-Item -LiteralPath $LocalConfigPath -Force }
     else { Write-JsonFile $LocalConfigPath $obj }
   } elseif (Test-Path -LiteralPath $LocalConfigPath) {
     Remove-Item -LiteralPath $LocalConfigPath -Force
   }
-  Write-Ok 'Port, host, PIN, HTTPS and the player phones default reset to defaults.'
+  Write-Ok 'Port, host, PIN, HTTPS, player phones default and WLED reset to defaults.'
   return $true
 }
 
@@ -972,6 +1098,28 @@ function Read-HostSetting($cfg) {
   Write-Ok "Host set to $value."
 }
 
+function Read-WledSetting($cfg) {
+  Write-Info 'WLED drives an addressable LED strip over HTTP JSON (same LAN as this PC). Off by default; the game never waits on it.'
+  Write-Info 'This controller reports 577 LEDs because two strips share one chain (300 + 277). BOTC lights only the 300.'
+  Write-Info ("Current: {0}, host {1}, {2} LEDs, pixels {3}-{4}  [{5}]" -f (Format-OnOff $cfg.WledEnabled), $(if ($cfg.WledHost) { $cfg.WledHost } else { '(none)' }), $cfg.WledLeds, $cfg.WledStart, $cfg.WledStop, $cfg.WledSource)
+  $en = ConvertTo-OnOff ((Read-Host ("  Enable strip? on/off (Enter = {0})" -f (Format-OnOff $cfg.WledEnabled))).Trim())
+  if ($null -eq $en) { $en = [bool]$cfg.WledEnabled }
+  $hint = if ($cfg.WledHost) { $cfg.WledHost } else { '192.168.50.139' }
+  $rawHost = (Read-Host "  Strip IP (Enter = $hint, blank word 'none' to clear)").Trim()
+  if ($rawHost -eq '') { $hostVal = $hint } elseif ($rawHost -match '^(none|off|clear)$') { $hostVal = '' } else { $hostVal = $rawHost }
+  if ($hostVal -and -not (Test-WledHostValue $hostVal)) { Write-Err "Invalid IP '$hostVal' (IPv4 only, do not use port 3847)."; return }
+  $rawStart = (Read-Host "  Start pixel (Enter = $($cfg.WledStart); 0 = first 300 on the chain, 277 = the other strip)").Trim()
+  $start = [int]$cfg.WledStart
+  if ($rawStart) {
+    $n = 0
+    if (-not [int]::TryParse($rawStart, [ref]$n) -or $n -lt 0) { Write-Err 'Start pixel must be 0 or more.'; return }
+    $start = $n
+  }
+  Set-LocalWled -Enabled $en -WledHost $hostVal -LedCount 300 -Start $start
+  $cfg = Get-BotcConfig
+  Write-Ok ("WLED {0}, {1}, 300 LEDs pixels {2}-{3}. Restart the server to apply. Storyteller Ambiance tab can still mute the strip." -f (Format-OnOff $cfg.WledEnabled), $(if ($cfg.WledHost) { $cfg.WledHost } else { '(no IP)' }), $cfg.WledStart, $cfg.WledStop)
+}
+
 function Read-PinSetting($cfg) {
   $raw = (Read-Host "  New Storyteller PIN (4-12 digits, Enter = keep $($cfg.Pin))").Trim()
   if (-not $raw) { return }
@@ -990,8 +1138,9 @@ function Show-SettingsMenu {
     Write-Info ("3) Storyteller PIN  {0,-16} [{1}]" -f $cfg.Pin, $cfg.PinSource)
     Write-Info ("4) HTTPS            {0,-16} [{1}]  phones keep their screens on; a certificate warning once per device" -f (Format-OnOff $cfg.Https), $cfg.HttpsSource)
     Write-Info ("5) Player phones    {0,-16} [{1}]  default for a new saved game (switch per game on the Setup tab)" -f (Format-OnOff $cfg.Phones), $cfg.PhonesSource)
-    Write-Info '6) Make a new HTTPS certificate'
-    Write-Info '7) Reset all to defaults'
+    Write-Info ("6) LED strip (WLED) {0,-16} [{1}]  {2}  {3} LEDs" -f (Format-OnOff $cfg.WledEnabled), $cfg.WledSource, $(if ($cfg.WledHost) { $cfg.WledHost } else { '(no IP)' }), $cfg.WledLeds)
+    Write-Info '7) Make a new HTTPS certificate'
+    Write-Info '8) Reset all to defaults'
     Write-Info 'B) Back'
     Show-EnvOverrideWarning $cfg
     $choice = (Read-Host '  Choose').Trim().ToLower()
@@ -1002,8 +1151,9 @@ function Show-SettingsMenu {
       '3' { Read-PinSetting $cfg }
       '4' { Read-HttpsSetting $cfg }
       '5' { Read-PhonesSetting $cfg }
-      '6' { $newCert = Reset-Certificate }
-      '7' { if (Confirm-Choice 'Reset port, host, PIN, HTTPS and the player phones default?' $false) { [void](Reset-Settings) } }
+      '6' { Read-WledSetting $cfg }
+      '7' { $newCert = Reset-Certificate }
+      '8' { if (Confirm-Choice 'Reset port, host, PIN, HTTPS, player phones default and WLED?' $false) { [void](Reset-Settings) } }
       'b' { break }
       '' { break }
       default { Write-Warn 'Unknown choice.' }
@@ -1012,7 +1162,7 @@ function Show-SettingsMenu {
     $state = Get-ServerState
     $new = Get-BotcConfig
     $runningScheme = if ($state.Running -and $state.Info.scheme) { [string]$state.Info.scheme } else { 'http' }
-    if ($state.Running -and ([int]$state.Info.port -ne $new.Port -or [string]$state.Info.host -ne $new.Host -or $new.Pin -ne $cfg.Pin -or $runningScheme -ne $new.Scheme -or ($newCert -and $new.Https))) {
+    if ($state.Running -and ([int]$state.Info.port -ne $new.Port -or [string]$state.Info.host -ne $new.Host -or $new.Pin -ne $cfg.Pin -or $runningScheme -ne $new.Scheme -or ($newCert -and $new.Https) -or $new.WledEnabled -ne $cfg.WledEnabled -or [string]$new.WledHost -ne [string]$cfg.WledHost -or [int]$new.WledLeds -ne [int]$cfg.WledLeds)) {
       if (Confirm-Choice 'Restart the server now to apply?' $true) {
         if (Stop-BotcServer) { [void](Start-BotcServer $false) }
       }
@@ -1040,7 +1190,7 @@ function Show-Header {
   } else {
     Write-Host '   Server:  STOPPED' -ForegroundColor DarkGray
   }
-  Write-Host ("   Settings: port {0} | host {1} | PIN {2} | HTTPS {3} | phones {4}" -f $cfg.Port, $cfg.Host, $cfg.Pin, (Format-OnOff $cfg.Https), (Format-OnOff $cfg.Phones)) -ForegroundColor DarkGray
+  Write-Host ("   Settings: port {0} | host {1} | PIN {2} | HTTPS {3} | phones {4} | WLED {5}" -f $cfg.Port, $cfg.Host, $cfg.Pin, (Format-OnOff $cfg.Https), (Format-OnOff $cfg.Phones), (Format-OnOff $cfg.WledEnabled)) -ForegroundColor DarkGray
   if (Test-DefaultPin $cfg) {
     Write-Host "   WARNING: Storyteller PIN is still the default ($($cfg.Pin)). Change it: 9) Settings > 3) PIN" -ForegroundColor Yellow
   }
@@ -1058,7 +1208,7 @@ function Show-MainMenu {
     Write-Info '6) Open TV page in browser'
     Write-Info '7) Open Storyteller page in browser'
     Write-Info '8) View game log / server log'
-    Write-Info '9) Settings (port, host, PIN, HTTPS, player phones)'
+    Write-Info '9) Settings (port, host, PIN, HTTPS, player phones, LED strip)'
     Write-Info 'C) Pre-game check (network, firewall, audio, plates, quick test)'
     Write-Info 'D) Dev mode (hot reload, for developers)'
     Write-Info 'Q) Quit'

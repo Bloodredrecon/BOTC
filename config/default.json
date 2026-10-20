@@ -13,5 +13,14 @@
       "accent": "",
       "effect": ""
     }
+  },
+  "wled": {
+    "enabled": false,
+    "host": "",
+    "ledCount": 300,
+    "brightness": 128,
+    "segmentId": 0,
+    "start": 0,
+    "stop": 300
   }
 }

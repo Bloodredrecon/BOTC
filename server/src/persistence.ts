@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeAmbiance } from "./ambiance.js";
+import { DEFAULT_WLED, mergeWled, type WledConfig } from "./wled.js";
 import { emptyPhones, newGameId, normalizePhones } from "./phones.js";
 import type {
   CharacterDef,
@@ -36,6 +37,7 @@ export type AppConfig = {
     username: string;
     lights: { ambient: string; accent: string; effect: string };
   };
+  wled: WledConfig;
 };
 
 export type ScriptData = {
@@ -68,7 +70,8 @@ function parsePort(raw: unknown): number | null {
 /**
  * Precedence (highest wins): env vars > config/local.json > config/default.json.
  * config/hue.json is merged into `hue` after local.json.
- * Env: BOTC_PORT or PORT, BOTC_HOST or HOST, BOTC_PIN, BOTC_PHONES (1/0), BOTC_HTTPS (1/0).
+ * Env: BOTC_PORT or PORT, BOTC_HOST or HOST, BOTC_PIN, BOTC_PHONES (1/0), BOTC_HTTPS (1/0),
+ * BOTC_WLED (1/0), BOTC_WLED_HOST, BOTC_WLED_LEDS, BOTC_WLED_BRI, BOTC_WLED_START, BOTC_WLED_STOP.
  */
 export function loadConfig(): AppConfig {
   const base = readJson(CONFIG_PATH) as unknown as AppConfig;
@@ -88,6 +91,7 @@ export function loadConfig(): AppConfig {
       if (typeof local.playerPhones === "boolean") base.playerPhones = local.playerPhones;
       if (typeof local.https === "boolean") base.https = local.https;
       base.hue = mergeHue(base.hue, local.hue);
+      base.wled = mergeWled(base.wled ?? DEFAULT_WLED, local.wled);
     } catch (err) {
       console.warn(`config/local.json could not be read (${String(err)}); using defaults`);
     }
@@ -114,6 +118,13 @@ export function loadConfig(): AppConfig {
   if (process.env.BOTC_PHONES) base.playerPhones = /^(1|true|on|yes)$/i.test(process.env.BOTC_PHONES);
   base.https = Boolean(base.https);
   if (process.env.BOTC_HTTPS) base.https = /^(1|true|on|yes)$/i.test(process.env.BOTC_HTTPS);
+  base.wled = mergeWled(DEFAULT_WLED, base.wled);
+  if (process.env.BOTC_WLED) base.wled.enabled = /^(1|true|on|yes)$/i.test(process.env.BOTC_WLED);
+  if (process.env.BOTC_WLED_HOST) base.wled = mergeWled(base.wled, { host: process.env.BOTC_WLED_HOST });
+  if (process.env.BOTC_WLED_LEDS) base.wled = mergeWled(base.wled, { ledCount: Number(process.env.BOTC_WLED_LEDS) });
+  if (process.env.BOTC_WLED_BRI) base.wled = mergeWled(base.wled, { brightness: Number(process.env.BOTC_WLED_BRI) });
+  if (process.env.BOTC_WLED_START) base.wled = mergeWled(base.wled, { start: Number(process.env.BOTC_WLED_START) });
+  if (process.env.BOTC_WLED_STOP) base.wled = mergeWled(base.wled, { stop: Number(process.env.BOTC_WLED_STOP) });
   return base;
 }
 
