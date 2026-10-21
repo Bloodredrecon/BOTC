@@ -1,0 +1,16 @@
+{
+  "name": "botc-cloudflare",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker + Containers (or Tunnel docs) for BOTC Companion",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "check": "tsc --noEmit && wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "wrangler": "^4.151.3"
+  }
+}

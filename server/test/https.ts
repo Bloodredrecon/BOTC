@@ -13,7 +13,7 @@ process.env.BOTC_SESSION_PATH = join(mkdtempSync(join(tmpdir(), "botc-https-")),
 
 const { count, httpsGet, runAsyncCases, startServer, storyteller, until } = await import("./_server.js");
 const { ensureCertificate, renewReason, requiredIps, wantedIps } = await import("../src/tls.js");
-const { formatJoinInfo, joinBaseUrls, lanAddresses } = await import("../src/join-info.js");
+const { formatJoinInfo, joinBaseUrls, lanAddresses, publicBaseUrl } = await import("../src/join-info.js");
 const { ROOT } = await import("../src/persistence.js");
 
 const PIN = "52719384";
@@ -58,14 +58,39 @@ const cases: import("./_server.js").AsyncCase[] = [
   {
     name: "Join addresses follow the scheme (QR, TV join card base, launcher printout)",
     run: async () => {
-      const lan = lanAddresses().primary;
-      const urls = joinBaseUrls("0.0.0.0", 3847, "https");
-      if (lan.length && !urls.main.every((u) => u.startsWith("https://"))) return `main ${urls.main}`;
-      if (joinBaseUrls("192.168.1.20", 3847, "https").main[0] !== "https://192.168.1.20:3847") return "specific host";
-      if (joinBaseUrls("192.168.1.20", 3847).main[0] !== "http://192.168.1.20:3847") return "http stays the default";
-      const text = formatJoinInfo({ host: "127.0.0.1", port: 3847, pin: "9999", scheme: "https" });
-      if (!text.includes("https://localhost:3847/tv") || text.includes("http://localhost")) return "printout scheme";
-      return null;
+      const prevPublic = process.env.BOTC_PUBLIC_URL;
+      delete process.env.BOTC_PUBLIC_URL;
+      try {
+        const lan = lanAddresses().primary;
+        const urls = joinBaseUrls("0.0.0.0", 3847, "https");
+        if (lan.length && !urls.main.every((u) => u.startsWith("https://"))) return `main ${urls.main}`;
+        if (joinBaseUrls("192.168.1.20", 3847, "https").main[0] !== "https://192.168.1.20:3847") return "specific host";
+        if (joinBaseUrls("192.168.1.20", 3847).main[0] !== "http://192.168.1.20:3847") return "http stays the default";
+        const text = formatJoinInfo({ host: "127.0.0.1", port: 3847, pin: "9999", scheme: "https" });
+        if (!text.includes("https://localhost:3847/tv") || text.includes("http://localhost")) return "printout scheme";
+        return null;
+      } finally {
+        if (prevPublic === undefined) delete process.env.BOTC_PUBLIC_URL;
+        else process.env.BOTC_PUBLIC_URL = prevPublic;
+      }
+    },
+  },
+  {
+    name: "BOTC_PUBLIC_URL wins for join/QR; path prefixes are rejected",
+    run: async () => {
+      const prevPublic = process.env.BOTC_PUBLIC_URL;
+      try {
+        process.env.BOTC_PUBLIC_URL = "https://botc.danazonprime.co.uk/";
+        if (publicBaseUrl() !== "https://botc.danazonprime.co.uk") return "strip trailing slash";
+        if (joinBaseUrls("192.168.1.20", 3847).main[0] !== "https://botc.danazonprime.co.uk") return "public overrides host";
+        if (!joinBaseUrls("192.168.1.20", 3847).other.includes("http://192.168.1.20:3847")) return "LAN kept in other";
+        process.env.BOTC_PUBLIC_URL = "https://danazonprime.co.uk/botc";
+        if (publicBaseUrl() !== null) return "path prefix must be rejected";
+        return null;
+      } finally {
+        if (prevPublic === undefined) delete process.env.BOTC_PUBLIC_URL;
+        else process.env.BOTC_PUBLIC_URL = prevPublic;
+      }
     },
   },
   {

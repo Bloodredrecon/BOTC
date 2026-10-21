@@ -43,7 +43,38 @@ function isLoopback(host: string): boolean {
 /** Base URLs (no trailing slash) that other devices can use, best first. */
 export type Scheme = "http" | "https";
 
-export function joinBaseUrls(host: string, port: number, scheme: Scheme = "http"): { main: string[]; other: string[] } {
+/**
+ * Public origin for QR / phone join links when the server is behind a tunnel or
+ * Cloudflare Containers (e.g. https://botc.danazonprime.co.uk).
+ * Env: BOTC_PUBLIC_URL. Origin only — path prefixes are rejected (app routes are rooted at `/`).
+ */
+export function publicBaseUrl(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = (env.BOTC_PUBLIC_URL ?? "").trim().replace(/\/$/, "");
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (u.pathname && u.pathname !== "/") {
+      console.warn(
+        `BOTC_PUBLIC_URL has a path (${u.pathname}); ignoring. Use a subdomain origin (no /botc) — the app serves /tv, /api, /socket.io at the root.`,
+      );
+      return null;
+    }
+    // Drop default ports so join links match the public URL visitors type.
+    const port =
+      (u.protocol === "https:" && u.port === "443") || (u.protocol === "http:" && u.port === "80")
+        ? ""
+        : u.port
+          ? `:${u.port}`
+          : "";
+    return `${u.protocol}//${u.hostname}${port}`;
+  } catch {
+    console.warn(`BOTC_PUBLIC_URL is not a valid URL: ${JSON.stringify(raw)}`);
+    return null;
+  }
+}
+
+function lanJoinUrls(host: string, port: number, scheme: Scheme): { main: string[]; other: string[] } {
   if (isLoopback(host)) return { main: [], other: [] };
   if (!isWildcard(host)) return { main: [`${scheme}://${host}:${port}`], other: [] };
   const { primary, other } = lanAddresses();
@@ -51,6 +82,18 @@ export function joinBaseUrls(host: string, port: number, scheme: Scheme = "http"
     main: primary.map((a) => `${scheme}://${a.address}:${port}`),
     other: other.map((a) => `${scheme}://${a.address}:${port} (${a.iface})`),
   };
+}
+
+export function joinBaseUrls(host: string, port: number, scheme: Scheme = "http"): { main: string[]; other: string[] } {
+  const pub = publicBaseUrl();
+  const lan = lanJoinUrls(host, port, scheme);
+  if (pub) {
+    return {
+      main: [pub],
+      other: [...lan.main, ...lan.other],
+    };
+  }
+  return lan;
 }
 
 export function formatJoinInfo(opts: {

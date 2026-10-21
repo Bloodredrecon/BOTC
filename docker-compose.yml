@@ -1,0 +1,57 @@
+# Local / LAN run:
+#   docker compose up --build
+# Then open http://localhost:3847/tv and /storyteller
+#
+# Optional Cloudflare Tunnel (needs TUNNEL_TOKEN from Zero Trust dashboard):
+#   export TUNNEL_TOKEN=...
+#   export BOTC_PUBLIC_URL=https://botc.danazonprime.co.uk
+#   docker compose --profile tunnel up --build
+
+services:
+  botc:
+    build: .
+    image: botc-companion:local
+    ports:
+      - "${BOTC_PUBLISH_PORT:-3847}:3847"
+    environment:
+      BOTC_HOST: "0.0.0.0"
+      BOTC_PORT: "3847"
+      BOTC_HTTPS: "0"
+      # Public URL for QR / phone join links when exposed via Tunnel or Containers
+      # (origin only, no /botc path — app serves at domain root).
+      BOTC_PUBLIC_URL: "${BOTC_PUBLIC_URL:-}"
+      BOTC_PIN: "${BOTC_PIN:-}"
+      BOTC_PHONES: "${BOTC_PHONES:-}"
+    volumes:
+      # Persist session, logs, custom audio, player photos across restarts
+      - botc-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3847/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+
+  # cloudflared connects outbound; set Public Hostname in the Cloudflare dashboard
+  # to botc.danazonprime.co.uk → http://botc:3847 (same Docker network).
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    depends_on:
+      botc:
+        condition: service_healthy
+    environment:
+      # Required when using --profile tunnel (Zero Trust → Networks → Tunnels → token)
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+    command: tunnel --no-autoupdate run
+    restart: unless-stopped
+
+volumes:
+  botc-data:
