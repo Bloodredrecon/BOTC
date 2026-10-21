@@ -71,6 +71,7 @@ function parsePort(raw: unknown): number | null {
  * Precedence (highest wins): env vars > config/local.json > config/default.json.
  * config/hue.json is merged into `hue` after local.json.
  * Env: BOTC_PORT or PORT, BOTC_HOST or HOST, BOTC_PIN, BOTC_PHONES (1/0), BOTC_HTTPS (1/0),
+ * BOTC_PUBLIC_URL (public origin for QR/join links; no path prefix),
  * BOTC_WLED (1/0), BOTC_WLED_HOST, BOTC_WLED_LEDS, BOTC_WLED_BRI, BOTC_WLED_START, BOTC_WLED_STOP.
  */
 export function loadConfig(): AppConfig {

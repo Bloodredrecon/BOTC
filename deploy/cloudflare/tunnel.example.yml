@@ -1,0 +1,26 @@
+# Example locally-managed Cloudflare Tunnel ingress for BOTC on a LAN host.
+# Prefer a subdomain: the app serves absolute paths at the origin root
+# (/tv, /storyteller, /api, /socket.io). cloudflared does NOT strip path prefixes.
+#
+# Setup (on the machine that runs Docker Compose `botc`):
+#   1. cloudflared tunnel login
+#   2. cloudflared tunnel create botc
+#   3. cloudflared tunnel route dns botc botc.danazonprime.co.uk
+#   4. Copy this file to ~/.cloudflared/config.yml and fill tunnel UUID + credentials path
+#   5. cloudflared tunnel run botc
+#
+# Or use a remotely-managed tunnel token with docker compose --profile tunnel
+# (Zero Trust → Networks → Tunnels → Public Hostname → http://botc:3847).
+
+tunnel: <TUNNEL-UUID>
+credentials-file: /root/.cloudflared/<TUNNEL-UUID>.json
+
+ingress:
+  - hostname: botc.danazonprime.co.uk
+    service: http://127.0.0.1:3847
+  # Path-based example (NOT recommended without app base-path support):
+  # - hostname: danazonprime.co.uk
+  #   path: ^/botc/?
+  #   service: http://127.0.0.1:3847
+  #   # Request still arrives as /botc/... — app expects /tv not /botc/tv
+  - service: http_status:404

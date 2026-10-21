@@ -25,3 +25,6 @@ web/public/tv/elements/_prior/
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# Local Cloudflare agent skills (installed via npx skills)
+.agents/

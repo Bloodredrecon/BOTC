@@ -1,0 +1,44 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "botc-companion",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "upload_source_maps": true,
+  // Custom Domain: Worker is the origin; Cloudflare manages DNS + cert.
+  // Prefer subdomain — the app hardcodes absolute paths (/api, /socket.io, /tv, …).
+  // Path /botc on the apex needs base-path support the app does not have yet.
+  "routes": [
+    {
+      "pattern": "botc.danazonprime.co.uk",
+      "custom_domain": true
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "BotcContainer",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "dockerfile": "../../Dockerfile",
+          "build_context": "../.."
+        }
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BOTC",
+        "class_name": "BotcContainer"
+      }
+    ]
+  },
+  "exports": {
+    "BotcContainer": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  }
+}

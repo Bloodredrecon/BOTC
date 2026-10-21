@@ -134,6 +134,14 @@ npm start
 
 Then open `http://<server-ip>:3847/tv` and `/storyteller`. The startup log lists the real LAN addresses and a QR code.
 
+### Docker
+
+```bash
+docker compose up --build
+```
+
+Same URLs on port `3847`. Session/logs live in the `botc-data` volume. Set `BOTC_PUBLIC_URL=https://botc.example.com` when exposing via Cloudflare Tunnel so QR/join links use the public host (origin only — no `/botc` path; the UI is rooted at `/`). Cloudflare Worker + Containers scaffold and tunnel examples: `deploy/cloudflare/`.
+
 ## Hue setup
 
 1. Copy `config/hue.json.example` → `config/hue.json`
