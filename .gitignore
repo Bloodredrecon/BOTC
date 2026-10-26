@@ -10,8 +10,10 @@ data/player-photos/*
 config/hue.json
 config/local.json
 config/tls/
-data/audio/*
-!data/audio/README.txt
+# Playable cues in data/audio are versioned. Keep generation leftovers local.
+data/audio/_backup_*/
+data/audio/_batch_build/
+data/audio/_voice_design/
 .env
 __pycache__/
 *.pyc
