@@ -7,6 +7,7 @@ export const NOT_UNDOABLE = new Set([
   "game:setAmbiance",
   "lighting:set",
   "lighting:preview",
+  "lighting:cue",
   "game:scene",
   "game:timerEnded",
   "game:undo",

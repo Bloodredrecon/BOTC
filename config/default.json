@@ -19,6 +19,8 @@
     "host": "",
     "ledCount": 300,
     "brightness": 128,
+    "maxBrightness": 180,
+    "eventCues": true,
     "segmentId": 0,
     "start": 0,
     "stop": 300

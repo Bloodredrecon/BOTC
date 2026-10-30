@@ -981,10 +981,13 @@ export class GameEngine {
       this.mutate((s) => pushStNotice(s, `Exile not called — ${refused}`));
       return { ok: false, message: refused };
     }
-    this.mutate((s) => {
-      const caller = calledById ? s.players.find((p) => p.id === calledById && !p.leftGame) : undefined;
-      s.exile = { travellerId, calledById: caller?.id ?? null, supporters: [] };
-    });
+    this.mutate(
+      (s) => {
+        const caller = calledById ? s.players.find((p) => p.id === calledById && !p.leftGame) : undefined;
+        s.exile = { travellerId, calledById: caller?.id ?? null, supporters: [] };
+      },
+      { hue: "nomination" },
+    );
     return { ok: true };
   }
 
@@ -1010,27 +1013,33 @@ export class GameEngine {
     const threshold = exileThreshold(this.session);
     const supporters = ex.supporters.length;
     const exiled = force ? force === "exile" : supporters >= threshold;
-    this.mutate((s) => {
-      const t = s.players.find((p) => p.id === ex.travellerId);
-      if (t && exiled) t.alive = false;
-      s.publicLog.push({
-        type: "exile",
-        playerId: ex.travellerId,
-        playerName: t?.name,
-        supporters,
-        threshold,
-        exiled,
-        dayNumber: Math.max(1, s.dayNumber || 1),
-        at: Date.now(),
-      });
-      s.exile = null;
-      pushStNotice(
-        s,
-        exiled
-          ? `${t?.name ?? "The Traveller"} is exiled (${supporters}/${threshold}) and dies. Not an execution — the day's execution is still available.`
-          : `${t?.name ?? "The Traveller"} is not exiled (${supporters}/${threshold}).`,
-      );
-    });
+    this.mutate(
+      (s) => {
+        const t = s.players.find((p) => p.id === ex.travellerId);
+        if (t && exiled) t.alive = false;
+        s.publicLog.push({
+          type: "exile",
+          playerId: ex.travellerId,
+          playerName: t?.name,
+          supporters,
+          threshold,
+          exiled,
+          dayNumber: Math.max(1, s.dayNumber || 1),
+          at: Date.now(),
+        });
+        s.exile = null;
+        pushStNotice(
+          s,
+          exiled
+            ? `${t?.name ?? "The Traveller"} is exiled (${supporters}/${threshold}) and dies. Not an execution — the day's execution is still available.`
+            : `${t?.name ?? "The Traveller"} is not exiled (${supporters}/${threshold}).`,
+        );
+      },
+      {
+        hue: exiled ? "death_settle" : undefined,
+        sound: exiled ? pickSound("exile") : pickSound("exile_spared"),
+      },
+    );
     if (exiled) this.checkStandingWin(0);
     return { ok: true, exiled };
   }
@@ -1145,6 +1154,7 @@ export class GameEngine {
     this.clearNightTimer();
     const fromDusk = this.session.phase === "dusk";
     const endingDay = ["day", "dusk", "nomination", "vote", "execution"].includes(this.session.phase);
+    const noExecution = endingDay && !executionHappenedToday(this.session);
     // Mayor win at the end of the day: exactly 3 alive (travellers count), no execution today
     const mayor = mayorWinAtDusk(this.session);
     if (mayor) {
@@ -1191,8 +1201,16 @@ export class GameEngine {
         s.nightPending = false;
         s.timer = null;
       },
-      // Dusk already played its own line; a direct day → night jump keeps dusk takes in the pool.
-      { hue: "night", sound: fromDusk ? pickSound("night") : pickSound("night", "dusk") },
+      // Empty block / no execution: no_execution (night only if that family is missing). Never mix dusk in.
+      // Dusk already played its own line; a direct day → night jump after an execution still keeps dusk takes.
+      {
+        hue: "night",
+        sound: noExecution
+          ? pickSoundOrFallback("no_execution", "night")
+          : fromDusk
+            ? pickSound("night")
+            : pickSound("night", "dusk"),
+      },
     );
   }
 
@@ -1621,7 +1639,7 @@ export class GameEngine {
           s.publicLog.push({ type: "nominations_open", dayNumber: day, at: Date.now() });
         }
       },
-      { hue: "nomination" },
+      { hue: "nomination", sound: pickSound("nominations_open") },
     );
     return { ok: true };
   }
@@ -1905,7 +1923,7 @@ export class GameEngine {
         ? pickSound("majority")
         : result === "tie"
           ? pickSound("tie")
-          : pickSound("no_majority", "lives");
+          : pickSoundOrFallback("no_majority");
     const back = nominationReturnPhase(this.session);
     const hue: HueScene = result === "majority" ? "nomination" : back === "dusk" ? "dawn" : "day";
 
@@ -2226,7 +2244,7 @@ export class GameEngine {
           }
         }
       },
-      { sound: pickSound("public_shot") },
+      { sound: pickSound("public_shot"), hue: outcome.hit ? "execution" : "vote_urgency" },
     );
 
     const win = outcome.hit ? standingWin(this.session, this.script) : null;

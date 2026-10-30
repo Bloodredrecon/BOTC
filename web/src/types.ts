@@ -420,6 +420,8 @@ export type LightingStatus = {
   host: string;
   ledCount: number;
   brightness: number;
+  maxBrightness: number;
+  eventCues: boolean;
   scene: string | null;
   lastError: string | null;
 };

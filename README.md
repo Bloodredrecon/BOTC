@@ -156,9 +156,9 @@ The **server** must reach the Bridge. If Hue is down, the app stays in stub mode
 Addressable strip (WLED JSON API). Off until you turn it on:
 
 1. `BOTC.bat` → **Settings** → **LED strip (WLED)** → set the controller IP → on
-2. Or `config/local.json`: `{ "wled": { "enabled": true, "host": "192.168.50.139", "ledCount": 300, "start": 0, "stop": 300 } }`
+2. Or `config/local.json`: `{ "wled": { "enabled": true, "host": "192.168.50.139", "ledCount": 300, "start": 277, "stop": 577 } }`
 
-The game strip is **300 LEDs**. The controller at `192.168.50.139` reports 577 because a 277-LED strip is on the same chain; BOTC does not light those. Storyteller **Ambiance → Lights** follows the game, sets brightness, and previews scenes. The strip going down never blocks play. Details: `docs/WLED.md`.
+The game strip is **300 LEDs**, second on the chain (pixels 277–577). The other 277 stay off. Storyteller **Ambiance → Lights** follows the game, sets brightness, and previews scenes. The strip going down never blocks play. Details: `docs/WLED.md`.
 
 ## Audio
 

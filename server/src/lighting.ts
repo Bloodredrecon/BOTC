@@ -7,6 +7,13 @@ export type LightingApplyOpts = {
   durationMs?: number;
 };
 
+/** Short accents on top of the phase bed. Storyteller can turn these off. */
+export const EVENT_CUE_SCENES: ReadonlySet<LightingScene> = new Set([
+  "night_wake",
+  "vote_urgency",
+  "death_settle",
+]);
+
 export interface LightingDriver {
   applyScene(scene: LightingScene, opts?: LightingApplyOpts): Promise<void>;
   isLive(): boolean;
@@ -14,6 +21,8 @@ export interface LightingDriver {
   tickVoteClock?(): void | Promise<void>;
   setFollow?(on: boolean): Promise<void>;
   setBrightness?(bri: number): Promise<void>;
+  setMaxBrightness?(bri: number): Promise<void>;
+  setEventCues?(on: boolean): Promise<void>;
   preview?(scene: LightingScene): Promise<void>;
   status(): LightingStatus;
 }
@@ -42,6 +51,8 @@ export const STUB_LIGHTING_STATUS: LightingStatus = {
   host: "",
   ledCount: 300,
   brightness: 128,
+  maxBrightness: 180,
+  eventCues: true,
   scene: null,
   lastError: null,
 };
@@ -95,6 +106,12 @@ export function composeLighting(backends: LightingDriver[]): LightingDriver {
     async setBrightness(bri) {
       await Promise.all(list.map((d) => d.setBrightness?.(bri) ?? Promise.resolve()));
     },
+    async setMaxBrightness(bri) {
+      await Promise.all(list.map((d) => d.setMaxBrightness?.(bri) ?? Promise.resolve()));
+    },
+    async setEventCues(on) {
+      await Promise.all(list.map((d) => d.setEventCues?.(on) ?? Promise.resolve()));
+    },
     async preview(scene) {
       await Promise.all(list.map((d) => (d.preview ? d.preview(scene) : d.applyScene(scene))));
     },
@@ -106,10 +123,13 @@ export function composeLighting(backends: LightingDriver[]): LightingDriver {
       const host = statuses.find((s) => s.host)?.host ?? "";
       const ledCount = statuses.find((s) => s.backend === "wled")?.ledCount ?? statuses[0]?.ledCount ?? 300;
       const brightness = statuses.find((s) => s.follow)?.brightness ?? statuses[0]?.brightness ?? 128;
+      const liveOrCfg = statuses.find((s) => s.configured) ?? statuses[0];
+      const maxBrightness = liveOrCfg?.maxBrightness ?? 180;
+      const eventCues = liveOrCfg?.eventCues ?? true;
       const scene = [...statuses].reverse().find((s) => s.scene)?.scene ?? null;
       const lastError = statuses.find((s) => s.lastError)?.lastError ?? null;
       const backend = statuses.reduce<LightingBackend>((acc, s) => mergeBackend(acc, s.live || s.configured ? s.backend : "none"), "none");
-      return { configured, follow, live, backend, host, ledCount, brightness, scene, lastError };
+      return { configured, follow, live, backend, host, ledCount, brightness, maxBrightness, eventCues, scene, lastError };
     },
   };
 }

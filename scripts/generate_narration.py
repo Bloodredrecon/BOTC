@@ -35,6 +35,11 @@ FFMPEG = None
 FFPROBE = None
 
 SKIP = {"intro.mp3"}  # skip in full batch unless --force / explicit cue
+CREDIT_CAP = int(os.environ.get("BOTC_CREDIT_CAP") or "8000")
+
+
+class QuotaExceeded(RuntimeError):
+    pass
 # rules_full / rules_quick are stitched from modular rules_* at the end (no TTS)
 STITCH_RULES_FULL = True
 RULES_STITCHES = {
@@ -154,12 +159,23 @@ def http_post_json(url: str, payload: dict, headers: dict, out_path: Path, retri
             return
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
+            if "quota_exceeded" in body.lower():
+                raise QuotaExceeded(body[:500]) from e
             if e.code in (429, 500, 502, 503) and attempt < retries - 1:
                 wait = 2 ** attempt + 1
                 print(f"  retry {attempt+1} after HTTP {e.code} ({wait}s)")
                 time.sleep(wait)
                 continue
             raise RuntimeError(f"HTTP {e.code} {url}: {body[:500]}") from e
+
+
+def subscription(key: str) -> dict:
+    req = urllib.request.Request(
+        "https://api.elevenlabs.io/v1/user/subscription",
+        headers={"xi-api-key": key},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def tts(text: str, out: Path, whisper: bool, key: str) -> None:
@@ -691,6 +707,13 @@ def main() -> None:
         return
 
     key = api_key()
+    start_sub = subscription(key)
+    start_chars = int(start_sub.get("character_count") or 0)
+    char_limit = int(start_sub.get("character_limit") or 0)
+    print(
+        f"subscription character_count={start_chars} limit={char_limit} "
+        f"remaining={char_limit - start_chars} cap={CREDIT_CAP}"
+    )
     force = "--force" in flags
     skip_existing = "--skip-existing" in flags or "--only-missing" in flags
     variants_only = "--variants" in flags
@@ -720,6 +743,7 @@ def main() -> None:
         print(f"preview tag={PREVIEW_TAG} settings={overrides or 'default'} text={PREVIEW_TEXT or 'script'}")
     ok = 0
     err = 0
+    checked_after_first = False
     for i, cue in enumerate(cues, 1):
         try:
             msg = process_cue(
@@ -733,6 +757,19 @@ def main() -> None:
             )
             print(f"[{i}/{len(cues)}] {msg}")
             ok += 1
+            did_tts = not msg.startswith(("skip ", "defer ", "empty "))
+            if did_tts and not checked_after_first:
+                checked_after_first = True
+                sub = subscription(key)
+                used = int(sub.get("character_count") or 0) - start_chars
+                remaining = int(sub.get("character_limit") or 0) - int(sub.get("character_count") or 0)
+                print(f"after first TTS: used={used} remaining={remaining}")
+                if used > CREDIT_CAP:
+                    raise QuotaExceeded(f"credit cap {CREDIT_CAP} exceeded (used {used})")
+        except QuotaExceeded as e:
+            err += 1
+            print(f"[{i}/{len(cues)}] STOP quota_exceeded {cue.filename}: {e}")
+            break
         except Exception as e:
             err += 1
             print(f"[{i}/{len(cues)}] FAIL {cue.filename}: {e}")
@@ -754,6 +791,12 @@ def main() -> None:
                 err += 1
 
     print(f"Done. ok={ok} err={err}")
+    try:
+        end_sub = subscription(key)
+        end_chars = int(end_sub.get("character_count") or 0)
+        print(f"credit delta={end_chars - start_chars} (start={start_chars} end={end_chars})")
+    except Exception as e:
+        print(f"credit delta unavailable: {e}")
     # summary
     files = sorted(OUT_DIR.glob("*.mp3"))
     print(f"{len(files)} mp3 files in {OUT_DIR}")

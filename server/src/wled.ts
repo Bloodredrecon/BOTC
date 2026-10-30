@@ -1,5 +1,5 @@
 import type { LightingApplyOpts, LightingDriver, LightingScene } from "./lighting.js";
-import { STUB_LIGHTING_STATUS } from "./lighting.js";
+import { EVENT_CUE_SCENES, STUB_LIGHTING_STATUS } from "./lighting.js";
 import type { LightingStatus } from "./types.js";
 
 export type WledConfig = {
@@ -8,6 +8,10 @@ export type WledConfig = {
   /** Game strip length. This LAN has 300 + 277 on one controller; only the 300 is used. */
   ledCount: number;
   brightness: number;
+  /** Hard cap on the WLED `bri` field after scene scaling. */
+  maxBrightness: number;
+  /** Accent cues (wake / death / vote end). Phase beds still follow when false. */
+  eventCues: boolean;
   /** WLED segment id for the game strip. */
   segmentId: number;
   /** Inclusive start pixel (WLED `start`). */
@@ -21,6 +25,8 @@ export const DEFAULT_WLED: WledConfig = {
   host: "",
   ledCount: 300,
   brightness: 128,
+  maxBrightness: 180,
+  eventCues: true,
   segmentId: 0,
   start: 0,
   stop: 300,
@@ -34,12 +40,21 @@ export type WledLayout = {
   deviceCount: number;
 };
 
-/** WLED 0.14 / 16 effect IDs (Solid=0). Avoid blink/strobe. */
+/** WLED 16 IDs from GET /json/effects on 192.168.50.139. No blink/strobe. */
 const FX_SOLID = 0;
-const FX_BREATHE = 2;
-const FX_FADE = 12;
-const FX_CANDLE = 88;
+const FX_WIPE = 3;
+const FX_SWEEP = 6;
+const FX_SCAN_DUAL = 11;
+const FX_DISSOLVE = 18;
+const FX_STREAM = 39;
+const FX_FIRE_FLICKER = 45;
+const FX_FAIRY = 49;
+const FX_METEOR = 76;
+const FX_SPOTS = 85;
+const FX_FIREWORKS_1D = 90;
 const FX_PERCENT = 98;
+const FX_FLOW = 110;
+const FX_DANCING_SHADOWS = 112;
 
 type Rgb = [number, number, number];
 
@@ -55,20 +70,20 @@ type WledScene = {
 };
 
 const SCENES: Record<LightingScene, WledScene> = {
-  lobby: { col: [255, 140, 40], bri: 48, fx: FX_BREATHE, sx: 28, ix: 90, transition: 20 },
-  night: { col: [8, 18, 70], bri: 42, fx: FX_BREATHE, sx: 22, ix: 80, transition: 30 },
-  night_wake: { col: [20, 40, 120], bri: 64, fx: FX_BREATHE, sx: 36, ix: 110, transition: 8 },
-  dawn: { col: [255, 150, 45], bri: 96, fx: FX_FADE, sx: 24, ix: 140, transition: 40 },
-  day: { col: [255, 186, 96], bri: 168, fx: FX_SOLID, sx: 0, ix: 128, transition: 20 },
-  dusk: { col: [70, 90, 170], bri: 64, fx: FX_BREATHE, sx: 26, ix: 90, transition: 25 },
-  nomination: { col: [220, 70, 18], bri: 120, fx: FX_SOLID, sx: 0, ix: 128, transition: 12 },
+  lobby: { col: [255, 140, 40], bri: 48, fx: FX_FAIRY, sx: 36, ix: 90, transition: 20 },
+  night: { col: [8, 18, 70], bri: 42, fx: FX_METEOR, sx: 26, ix: 70, transition: 30 },
+  night_wake: { col: [20, 40, 120], bri: 72, fx: FX_SCAN_DUAL, sx: 40, ix: 160, transition: 8 },
+  dawn: { col: [255, 150, 45], bri: 96, fx: FX_WIPE, sx: 28, ix: 140, transition: 40 },
+  day: { col: [255, 186, 96], bri: 168, fx: FX_FLOW, sx: 22, ix: 128, transition: 20 },
+  dusk: { col: [70, 90, 170], bri: 64, fx: FX_STREAM, sx: 24, ix: 100, transition: 25 },
+  nomination: { col: [220, 70, 18], bri: 120, fx: FX_SWEEP, sx: 38, ix: 128, transition: 12 },
   vote: { col: [220, 64, 16], bri: 130, fx: FX_PERCENT, sx: 0, ix: 8, transition: 4 },
-  vote_urgency: { col: [255, 78, 16], bri: 170, fx: FX_BREATHE, sx: 70, ix: 150, transition: 6 },
-  execution: { col: [120, 0, 0], bri: 72, fx: FX_SOLID, sx: 0, ix: 128, transition: 8 },
-  death_settle: { col: [70, 0, 28], bri: 40, fx: FX_FADE, sx: 30, ix: 100, transition: 12 },
-  hush: { col: [18, 16, 32], bri: 22, fx: FX_SOLID, sx: 0, ix: 128, transition: 20 },
-  good_wins: { col: [255, 196, 56], bri: 200, fx: FX_CANDLE, sx: 40, ix: 160, transition: 16 },
-  evil_wins: { col: [110, 0, 70], bri: 110, fx: FX_SOLID, sx: 0, ix: 128, transition: 16 },
+  vote_urgency: { col: [255, 78, 16], bri: 170, fx: FX_SCAN_DUAL, sx: 58, ix: 180, transition: 6 },
+  execution: { col: [120, 0, 0], bri: 80, fx: FX_FIRE_FLICKER, sx: 42, ix: 140, transition: 8 },
+  death_settle: { col: [70, 0, 28], bri: 40, fx: FX_DISSOLVE, sx: 28, ix: 90, transition: 12 },
+  hush: { col: [18, 16, 32], bri: 22, fx: FX_SPOTS, sx: 18, ix: 40, transition: 20 },
+  good_wins: { col: [255, 196, 56], bri: 200, fx: FX_FIREWORKS_1D, sx: 44, ix: 160, transition: 16 },
+  evil_wins: { col: [110, 0, 70], bri: 110, fx: FX_DANCING_SHADOWS, sx: 32, ix: 120, transition: 16 },
 };
 
 const TIMEOUT_MS = 1500;
@@ -131,6 +146,8 @@ export function mergeWled(base: WledConfig, patch: unknown): WledConfig {
     host: typeof p.host === "string" ? normalizeWledHost(p.host) : base.host,
     ledCount,
     brightness: intIn(p.brightness, 1, 255) ?? base.brightness,
+    maxBrightness: intIn(p.maxBrightness, 1, 255) ?? base.maxBrightness,
+    eventCues: typeof p.eventCues === "boolean" ? p.eventCues : base.eventCues,
     segmentId: intIn(p.segmentId, 0, 31) ?? base.segmentId,
     start,
     stop,
@@ -150,9 +167,11 @@ export function normalizeWledRange(config: WledConfig): { id: number; start: num
 }
 
 /**
- * Pick the 300-LED game strip. Probe evidence (192.168.50.139, 2026-10-20): one segment
- * id 0 start 0 stop 577 — two physical strips (300 + 277) not yet split. Until a 300-len
- * segment exists, drive start 0 stop 300 and turn the leftover 277 off.
+ * Pick the 300-LED game strip. Probe evidence (192.168.50.139, 2026-10-20):
+ * one chain of 577 (WLED 16.0.1). Live test: pixels 0–300 only lit ~23 LEDs on the
+ * 300-strip; pixels 277–577 turned the whole 300 red. The 277 is first on the wire,
+ * the 300 is second. Config start 277 / stop 577. If WLED already has a 300-len
+ * segment, that one is used and the 277 is left as-is.
  */
 export function resolveWledLayout(
   config: WledConfig,
@@ -172,12 +191,13 @@ export function resolveWledLayout(
     game = { id: match300.id, start: match300.start, stop: match300.stop };
   }
 
-  const alreadySplit = segs.some((s) => lenOf(s) === range.ledCount) && segs.length > 1;
+  // Always switch leftover pixels off. Leaving them "as-is" after a split left a
+  // second overlapping 300-LED segment on this controller (probe 2026-10-20).
   let rest: WledLayout["rest"] = null;
-  if (!alreadySplit && deviceCount > game.stop) {
-    rest = { id: game.id === 0 ? 1 : 0, start: game.stop, stop: deviceCount };
-  } else if (!alreadySplit && game.start > 0) {
-    rest = { id: game.id === 0 ? 1 : 0, start: 0, stop: game.start };
+  if (game.start > 0) {
+    rest = { id: 0, start: 0, stop: game.start };
+  } else if (deviceCount > game.stop) {
+    rest = { id: 1, start: game.stop, stop: deviceCount };
   }
   return { game, rest, deviceCount };
 }
@@ -186,6 +206,7 @@ export function wledPayloadForScene(
   scene: LightingScene,
   opts: {
     brightness: number;
+    maxBrightness?: number;
     ix?: number;
     layout: WledLayout;
     /** When true, only the game segment is switched off; leftover pixels are not mirrored. */
@@ -194,13 +215,13 @@ export function wledPayloadForScene(
 ): Record<string, unknown> {
   const def = SCENES[scene];
   const master = clamp(Math.floor(opts.brightness), 1, 255);
-  const bri = clamp(Math.round((def.bri * master) / 255), 1, 255);
+  const cap = clamp(Math.floor(opts.maxBrightness ?? 255), 1, 255);
+  const bri = clamp(Math.round((def.bri * master) / 255), 1, cap);
   const ix = opts.ix != null ? clamp(Math.floor(opts.ix), 0, 255) : def.ix;
   const g = opts.layout.game;
   const gameSeg: Record<string, unknown> = opts.gameOff
-    ? { id: g.id, start: g.start, stop: g.stop, on: false }
+    ? { start: g.start, stop: g.stop, on: false }
     : {
-        id: g.id,
         start: g.start,
         stop: g.stop,
         on: true,
@@ -214,7 +235,6 @@ export function wledPayloadForScene(
   if (opts.layout.rest && !opts.gameOff) {
     const r = opts.layout.rest;
     segs.push({
-      id: r.id,
       start: r.start,
       stop: r.stop,
       on: false,
@@ -222,6 +242,12 @@ export function wledPayloadForScene(
       col: [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
     });
   }
+  // WLED wants segments in chain order with id 0 at pixel 0. The live 277+300
+  // test only filled the 300-strip when the off 277 was id 0 and the game was id 1.
+  segs.sort((a, b) => Number(a.start) - Number(b.start));
+  segs.forEach((s, i) => {
+    s.id = i;
+  });
   const body: Record<string, unknown> = {
     on: true,
     transition: def.transition,
@@ -270,6 +296,8 @@ export function createWledDriver(
   const configured = Boolean(base);
   let follow = Boolean(cfg.enabled) && configured;
   let brightness = clamp(Math.floor(cfg.brightness || DEFAULT_WLED.brightness), 1, 255);
+  let maxBrightness = clamp(Math.floor(cfg.maxBrightness || DEFAULT_WLED.maxBrightness), 1, 255);
+  let eventCues = cfg.eventCues !== false;
   let layout: WledLayout = resolveWledLayout(cfg);
   let scene: LightingScene | null = null;
   let lastError: string | null = null;
@@ -282,7 +310,7 @@ export function createWledDriver(
 
   function status(): LightingStatus {
     const ledCount = layout.game.stop - layout.game.start;
-    if (!configured) return { ...STUB_LIGHTING_STATUS, ledCount, brightness };
+    if (!configured) return { ...STUB_LIGHTING_STATUS, ledCount, brightness, maxBrightness, eventCues };
     return {
       configured: true,
       follow,
@@ -291,6 +319,8 @@ export function createWledDriver(
       host,
       ledCount,
       brightness,
+      maxBrightness,
+      eventCues,
       scene,
       lastError,
     };
@@ -350,6 +380,7 @@ export function createWledDriver(
   function payload(next: LightingScene, extra?: { ix?: number; gameOff?: boolean }): Record<string, unknown> {
     return wledPayloadForScene(next, {
       brightness,
+      maxBrightness,
       ix: extra?.ix,
       layout,
       gameOff: extra?.gameOff,
@@ -377,6 +408,7 @@ export function createWledDriver(
     isLive: () => follow,
     status,
     async applyScene(next, opts) {
+      if (!eventCues && EVENT_CUE_SCENES.has(next)) return;
       scene = next;
       if (next === "vote" && opts?.durationMs && opts.durationMs > 0) {
         voteStartedAt = now();
@@ -427,6 +459,13 @@ export function createWledDriver(
     async setBrightness(bri) {
       brightness = clamp(Math.floor(bri), 1, 255);
       if (follow && scene) await sendScene(scene);
+    },
+    async setMaxBrightness(bri) {
+      maxBrightness = clamp(Math.floor(bri), 1, 255);
+      if (follow && scene) await sendScene(scene);
+    },
+    async setEventCues(on) {
+      eventCues = Boolean(on);
     },
     async preview(next) {
       if (!configured) return;

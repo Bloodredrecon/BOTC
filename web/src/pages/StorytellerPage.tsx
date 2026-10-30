@@ -1711,11 +1711,13 @@ function NightTab({
     applyInfoRemindersFromComposer();
     setRevealResult(true);
     setShowing(true);
+    emit("lighting:cue", { scene: "night_wake" });
   }
 
   function startAskShow() {
     setRevealResult(false);
     setShowing(true);
+    emit("lighting:cue", { scene: "night_wake" });
   }
 
   const demonBluffs =
@@ -2507,6 +2509,7 @@ function NightTab({
                 setShowing(false);
                 setRevealResult(false);
                 setWakeCompleted(true);
+                emit("lighting:cue", { scene: "night" });
               }}
             >
               Hide (back to Storyteller)
@@ -3008,11 +3011,13 @@ function SoundTab({
 const LIGHTING_PREVIEWS: { id: string; label: string }[] = [
   { id: "lobby", label: "Lobby" },
   { id: "night", label: "Night" },
+  { id: "night_wake", label: "Wake" },
   { id: "dawn", label: "Dawn" },
   { id: "day", label: "Day" },
   { id: "dusk", label: "Dusk" },
   { id: "nomination", label: "Nomination" },
   { id: "vote", label: "Vote" },
+  { id: "vote_urgency", label: "Vote end" },
   { id: "execution", label: "Gallows" },
   { id: "death_settle", label: "Death" },
   { id: "hush", label: "Hush" },
@@ -3040,6 +3045,8 @@ function LightsPanel({
   const configured = Boolean(lighting?.configured);
   const follow = Boolean(lighting?.follow);
   const bri = lighting?.brightness ?? 128;
+  const maxBri = lighting?.maxBrightness ?? 180;
+  const eventCues = lighting?.eventCues !== false;
   return (
     <div className="panel">
       <h2>Lights</h2>
@@ -3056,7 +3063,7 @@ function LightsPanel({
             {lighting?.ledCount ? ` · ${lighting.ledCount} LEDs` : ""}
             {lighting?.scene ? ` · ${lighting.scene}` : ""}
             {lighting?.lastError ? ` · last error: ${lighting.lastError}` : ""}
-            . Game strip is {lighting?.ledCount ?? 300} LEDs; a second strip on the same controller is left off. Slow colour washes only — nothing strobes.
+            . Game strip is {lighting?.ledCount ?? 300} LEDs (second on the chain); the other strip stays off. Effects travel along the LEDs — nothing strobes.
           </p>
           <div className="row" style={{ marginTop: "0.5rem" }}>
             <button
@@ -3066,6 +3073,14 @@ function LightsPanel({
               onClick={() => emit("lighting:set", { follow: !follow })}
             >
               {follow ? "Following game" : "Lights off"}
+            </button>
+            <button
+              type="button"
+              className={`chip${eventCues ? " on" : ""}`}
+              aria-pressed={eventCues}
+              onClick={() => emit("lighting:set", { eventCues: !eventCues })}
+            >
+              {eventCues ? "Event cues on" : "Event cues off"}
             </button>
             <button type="button" onClick={() => emit("lighting:set", { follow: false })}>
               Strip off
@@ -3079,10 +3094,24 @@ function LightsPanel({
               max={255}
               step={1}
               value={bri}
-              disabled={!follow}
               onChange={(e) => emit("lighting:set", { brightness: Number(e.target.value) })}
             />
           </label>
+          <label className="ambiance-master">
+            <span>Max brightness · {Math.round((maxBri / 255) * 100)}%</span>
+            <input
+              type="range"
+              min={16}
+              max={255}
+              step={1}
+              value={maxBri}
+              onChange={(e) => emit("lighting:set", { maxBrightness: Number(e.target.value) })}
+            />
+          </label>
+          <p className="muted">
+            Max brightness is a hard cap (keeps a 5 A supply from clipping). Event cues cover night
+            wakes, deaths, Slayer shots, exile, and vote-timer end; phase beds (day/night/vote) still follow.
+          </p>
           <p className="muted" style={{ marginTop: "0.65rem" }}>
             Preview (lights only, no audio):
           </p>

@@ -56,6 +56,8 @@ const CATALOG: Record<string, CatalogEntry> = {
   day_n: { label: "Day 4+", group: "phase" },
 
   nomination: { label: "Nomination", group: "votes" },
+  nominations_open: { label: "Nominations open", group: "votes" },
+  no_execution: { label: "No execution", group: "votes" },
   vote_open: { label: "Vote open", group: "votes" },
   vote_closed: { label: "Vote closed", group: "votes" },
   majority: { label: "Majority", group: "votes" },
@@ -78,6 +80,8 @@ const CATALOG: Record<string, CatalogEntry> = {
 
   guest_arrive: { label: "Guest arrives", group: "guests" },
   guest_depart: { label: "Guest departs", group: "guests" },
+  exile: { label: "Exile", group: "guests" },
+  exile_spared: { label: "Exile spared", group: "guests" },
   public_shot: { label: "Public shot", group: "guests" },
   public_shot_true: { label: "Shot hits (evil)", group: "guests" },
   public_shot_false: { label: "Shot misses", group: "guests" },

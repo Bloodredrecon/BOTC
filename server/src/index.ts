@@ -27,7 +27,7 @@ import {
   snapshotSession,
   type SessionSnapshot,
 } from "./action-log.js";
-import { GAME_LOG_DIR, loadConfig, loadScript, loadSession, ROOT, saveSession } from "./persistence.js";
+import { GAME_LOG_DIR, loadConfig, loadScript, loadSession, patchLocalWled, ROOT, saveSession } from "./persistence.js";
 import { PhoneHub } from "./phone-hub.js";
 import { PinGuard } from "./pin-guard.js";
 import { readPlayerPhoto } from "./player-photos.js";
@@ -306,7 +306,7 @@ function undoLast(): { ok: boolean; message: string } {
 }
 
 /** Actions that only read state: answered, never logged or undone. */
-const READ_ONLY_ACTIONS = new Set(["game:refresh", "game:previewDeal", "lighting:set", "lighting:preview"]);
+const READ_ONLY_ACTIONS = new Set(["game:refresh", "game:previewDeal", "lighting:set", "lighting:preview", "lighting:cue"]);
 
 /** Connected-device counts for the Storyteller; tvChangedAt marks when the TV count last hit or left 0. */
 let tvChangedAt = Date.now();
@@ -470,9 +470,34 @@ io.on("connection", (socket) => {
       void (async () => {
         if (typeof d.follow === "boolean") await lighting.setFollow?.(d.follow);
         if (typeof d.brightness === "number") await lighting.setBrightness?.(d.brightness);
+        if (typeof d.maxBrightness === "number") await lighting.setMaxBrightness?.(d.maxBrightness);
+        if (typeof d.eventCues === "boolean") await lighting.setEventCues?.(d.eventCues);
         if (d.follow === true) await lighting.applyScene(sceneForSession(engine.session));
+        const persist: Parameters<typeof patchLocalWled>[0] = {};
+        if (typeof d.follow === "boolean") persist.enabled = d.follow;
+        if (typeof d.brightness === "number") persist.brightness = d.brightness;
+        if (typeof d.maxBrightness === "number") persist.maxBrightness = d.maxBrightness;
+        if (typeof d.eventCues === "boolean") persist.eventCues = d.eventCues;
+        if (Object.keys(persist).length) patchLocalWled(persist);
         engine.emit();
       })();
+    },
+    "lighting:cue": (d) => {
+      const scene = String(d.scene ?? "") as LightingScene;
+      const allowed: LightingScene[] = [
+        "night_wake",
+        "night",
+        "day",
+        "hush",
+        "nomination",
+        "execution",
+        "death_settle",
+        "vote_urgency",
+      ];
+      if (!allowed.includes(scene)) return { ok: false, message: "Unknown cue" };
+      void lighting.applyScene(scene);
+      engine.emit();
+      return { ok: true };
     },
     "lighting:preview": (d) => {
       const scene = String(d.scene ?? "") as LightingScene;

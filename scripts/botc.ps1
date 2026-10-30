@@ -250,14 +250,23 @@ function Set-LocalWled {
   if ($isDefault) {
     $obj.PSObject.Properties.Remove('wled')
   } else {
+    $maxB = 180
+    $cues = $true
+    if ($obj.wled) {
+      $mb = 0
+      if ([int]::TryParse(([string]$obj.wled.maxBrightness), [ref]$mb) -and $mb -ge 1 -and $mb -le 255) { $maxB = $mb }
+      if ($obj.wled.eventCues -is [bool]) { $cues = [bool]$obj.wled.eventCues }
+    }
     $wled = [pscustomobject]@{
-      enabled    = [bool]$nextEnabled
-      host       = $nextHost
-      ledCount   = [int]$nextLeds
-      brightness = [int]$nextBri
-      segmentId  = 0
-      start      = [int]$nextStart
-      stop       = [int]$nextStop
+      enabled        = [bool]$nextEnabled
+      host           = $nextHost
+      ledCount       = [int]$nextLeds
+      brightness     = [int]$nextBri
+      maxBrightness  = [int]$maxB
+      eventCues      = [bool]$cues
+      segmentId      = 0
+      start          = [int]$nextStart
+      stop           = [int]$nextStop
     }
     $obj | Add-Member -NotePropertyName 'wled' -NotePropertyValue $wled -Force
   }

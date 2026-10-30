@@ -104,6 +104,8 @@ export function createHueDriver(config: AppConfig["hue"]): LightingDriver {
       host: config.bridgeIp,
       ledCount: 0,
       brightness: 254,
+      maxBrightness: 254,
+      eventCues: true,
       scene,
       lastError,
     };

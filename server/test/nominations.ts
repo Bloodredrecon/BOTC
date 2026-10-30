@@ -54,6 +54,7 @@ function assert(cond: unknown, msg: string) {
 const baseName = (cue: string) => cue.replace(/^custom:/, "").replace(/\.[^.]+$/, "");
 const isDuskCue = (c: Cue) => /^dusk(_[a-z])?$/.test(baseName(c.cue));
 const isNightCue = (c: Cue) => /^night(_[a-z])?$/.test(baseName(c.cue));
+const isNoExecutionCue = (c: Cue) => /^no_execution(_[a-z])?$/.test(baseName(c.cue));
 const day = (s: Session) => {
   s.phase = "day";
   s.nominationsOpen = false;
@@ -294,7 +295,10 @@ const cases: Case[] = [
         count(e, "no_execution") === 1 && count(e, "dusk") === 1 && count(e, "nominations_open") === 1,
         "chronicle lines",
       );
-      assert(isNightCue(cues.at(-1)!), `night cue from dusk was ${cues.at(-1)?.cue}`);
+      assert(
+        isNoExecutionCue(cues.at(-1)!) || isNightCue(cues.at(-1)!),
+        `no-execution cue from dusk was ${cues.at(-1)?.cue}`,
+      );
     },
   },
   {
@@ -328,7 +332,10 @@ const cases: Case[] = [
       e.startNight();
       assert(e.session.phase === "night", `phase ${e.session.phase}`);
       assert(count(e, "no_execution") === 1 && count(e, "dusk") === 0, "chronicle lines");
-      assert(/^(night|dusk)(_[a-z])?$/.test(baseName(cues.at(-1)!.cue)), `cue ${cues.at(-1)?.cue}`);
+      assert(
+        /^(no_execution|night)(_[a-z])?$/.test(baseName(cues.at(-1)!.cue)),
+        `cue ${cues.at(-1)?.cue}`,
+      );
     },
   },
   {

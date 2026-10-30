@@ -116,9 +116,9 @@ The town gathers close. A fate hangs in the air.
 [Tone: Solemn, final, measured]  
 [Ambience | ~12s]: "Heavy silence in a stone square, low wind, distant crow"  
 [SFX | ~2s]: "Deep solemn drum hit, wooden scaffold creak"  
-The town has chosen.  
+The sentence is here.  
 [Pause 1.0s]  
-On these stones, judgment will be done.
+On these stones, judgment is done.
 
 ### `death.mp3`
 [Tone: Low, mournful, heavy]  
@@ -206,7 +206,21 @@ Choose carefully… while you still can.
 [SFX | ~2s]: "Distant lamp lighting, soft flame catch"  
 The sun bleeds out behind the rooftops.  
 [Pause 0.8s]  
-Finish your business in the square. Night does not bargain.
+The day’s talk thins. Stand ready in the square.
+
+### `nominations_open.mp3`
+[Tone: Formal, fading light — a public summons]  
+[Ambience | ~10s]: "Crowd murmur in a stone square, tense hush rising, lamps being lit"  
+The square is open to judgment.  
+[Pause 0.8s]  
+Speak a name… or keep your peace until the lamps die.
+
+### `no_execution.mp3`
+[Tone: Quiet close — still watchful]  
+[Ambience | loop | ~12s]: "Oil lamps guttering, empty wet streets, low night drone"  
+The block stands empty. The town takes no blood today.  
+[Pause 0.8s]  
+Night comes all the same.
 
 ### `no_deaths.mp3`
 [Tone: Uneasy relief — almost a whisper of doubt]  
@@ -261,7 +275,7 @@ This soul stands beneath the square’s judgment.
 ### `no_majority.mp3`
 [Tone: Soft release — still watchful]  
 [SFX | ~2s]: "Soft release of held breath from a crowd, uneasy settle"  
-The hands are not enough.  
+This name does not take the block.  
 [Pause 0.8s]  
 This soul remains among you… while daylight still holds.
 
@@ -281,16 +295,14 @@ This life hangs by a thread.
 ### `lives.mp3`
 [Tone: Exhale of relief — still unsettled]  
 [SFX | ~2s]: "Soft relieved crowd murmur, still nervous undertone"  
-They live.  
+They are not taken.  
 [Pause 0.8s]  
-This soul walks back into the crowd… for now.
+This soul remains among you… for now.
 
 ### `good_wins.mp3`
 [Tone: Brightening, earned — still theatrical]  
 [Ambience | ~15s]: "Morning clearing after storm: soft birds, clean wind, distant hopeful bell"  
-The shadow breaks. Morning feels clean for the first time.  
-[Pause 1.0s]  
-The Demon is dead. Ravenswood Bluff is free.  
+The shadow breaks. The town has outlasted the dark. Ravenswood Bluff is free.  
 [Pause 0.8s]  
 Breathe the clean air. The town endures.  
 [Fade out gently]
@@ -330,6 +342,21 @@ A stranger’s road turns away.
 [Pause 0.8s]  
 One less face in the square… one less unknown.
 
+### `exile.mp3`
+[Tone: Formal, weighty — a public turning-out]  
+[Ambience | ~10s]: "Crowd murmur in a stone square, tense hush rising"  
+[SFX | ~3s]: "Boots on wet cobblestones, travel bag creak"  
+The town turns on a stranger. The road is called.  
+[Pause 0.8s]  
+They will not sleep in Ravenswood tonight.
+
+### `exile_spared.mp3`
+[Tone: Soft release — still watchful]  
+[Ambience | ~8s]: "Crowd murmur in a stone square, uneasy settle"  
+The stranger remains.  
+[Pause 0.8s]  
+The town would not send them into the dark. Not yet.
+
 ### `public_shot.mp3`
 [Tone: Sudden crack — sharp intake before the line]  
 [Pause 0.3s]  
@@ -359,7 +386,7 @@ Fear rushes back into the square twice as deep.
 [SFX | ~3s | vol:0.2]: "Wet blood drip on stone, then deep doom hit"  
 Innocent blood — sacred blood — stains the cobblestones.  
 [Pause 1.2s]  
-The town has damned itself. Evil claims the night… and the win.  
+The town has damned itself. Evil claims the win.  
 [Fade out]
 
 ### `three_stand.mp3`
@@ -387,7 +414,7 @@ You are about to live — and perhaps die — by these rules.
 [Pause 1.0s]  
 Most of you are good. Your task is to find the Demon… and execute it. If the Demon dies, good wins.  
 [Pause 0.6s]  
-A few of you are evil. Your task is to destroy the town. If only two players are left alive, evil wins.  
+A few of you are evil. Your task is to destroy the town. If only two players are left alive — Travellers not counted — evil wins.  
 [Pause 1.0s]  
 By day, you talk… and you decide who to execute. By night, you close your eyes… and I wake some of you in secret.  
 [Pause 0.8s]  
@@ -510,9 +537,9 @@ Often… it is the dead who decide the fate of the town.
 [Ambience | loop | ~25s]: "Attentive square, soft wind, distant tower — long teach bed"  
 Every ability in this town is printed on the character sheet. Glance there as I speak.  
 [Pause 1.0s]  
-Townsfolk who learn — the Washerwoman, Librarian and Investigator each learn that one of two players is a particular character. The Chef learns how many pairs of evil players sit together. The Empath learns how many living neighbours are evil. The Fortune Teller hunts for the Demon — but one good player will seem a Demon to them. The Undertaker learns what the executed truly were. And the Ravenkeeper, if killed at night, learns one player's character.  
+Townsfolk who learn — the Washerwoman and Investigator each learn that one of two players is a particular character. The Librarian learns that one of two is an Outsider — or that none are in play. The Chef learns how many pairs of evil players sit together. The Empath learns how many living neighbours are evil. The Fortune Teller hunts for the Demon — but one good player will seem a Demon to them. The Undertaker learns what the executed truly were. And the Ravenkeeper, if killed at night, learns one player's character.  
 [Pause 1.0s]  
-Townsfolk who protect and strike — the Monk shields a player from the Demon each night. The Soldier is safe from the Demon. The Virgin — the first time she is nominated, if a Townsfolk nominated her, they are executed at once. The Slayer, once per game, may publicly choose a player: if they are the Demon, they die. And the Mayor — if only three players live and no one is executed, good wins… and if the Demon comes for the Mayor, someone else might die instead.  
+Townsfolk who protect and strike — the Monk shields a player from the Demon each night after the first. The Soldier is safe from the Demon. The Virgin — the first time she is nominated, if a Townsfolk nominated her, they are executed at once. The Slayer, once per game, may publicly choose a player: if they are the Demon, they die. And the Mayor — if only three players live and no one is executed, good wins… and if the Demon comes for the Mayor, someone else might die instead.  
 [Pause 1.0s]  
 Outsiders — the Butler may only vote when their chosen master votes too. The Drunk thinks they are a Townsfolk… but is not, and does not know it. The Recluse might register as evil. And the Saint — if executed, good loses.  
 [Pause 1.0s]  
@@ -683,7 +710,7 @@ Listen for the tremor… not the smile.
 ### `atm_day_time.mp3`
 [Tone: Urgent without shouting]  
 [SFX | ~2s]: "Sun-slant wind, distant clock advancing"  
-The sun slides behind the rooftops whether you are ready or not.  
+The light leans west whether you are ready or not.  
 [Pause 0.8s]  
 Ravenswood Bluff does not pause for certainty.
 
@@ -692,7 +719,7 @@ Ravenswood Bluff does not pause for certainty.
 [SFX | ~2s | vol:0.23]: "Sudden hush, birds going silent"  
 A hush falls over the square.  
 [Pause 0.8s]  
-Even the birds refuse to sing too loudly here.
+Even the birds will not sing here.
 
 ### `atm_day_accuse.mp3`
 [Tone: Smoky tension]  
@@ -765,7 +792,7 @@ Dream of daylight… if you can.
 [Ambience | ~12s]: "Cold dawn mist on stones, sparse bird, empty spaces feel"  
 Cold morning. Mist on the stones.  
 [Pause 0.8s]  
-Count the faces you know… and the empty places where faces should be.
+Count the faces you know… and wait to see which still belong to the living.
 
 ### `atm_dawn_waiting.mp3`
 [Tone: Held breath]  
@@ -790,7 +817,7 @@ Evil still breathes somewhere behind a smiling door.
 [SFX | ~2.5s]: "Soft mourning wind, single quiet sob-like breath, then harden"  
 Grief takes a seat in the square.  
 [Pause 0.8s]  
-Mourn quickly. The night will not wait for tears.
+Mourn quickly. The day will not wait for tears.
 
 ---
 
@@ -814,7 +841,7 @@ A raised palm may end a life on these stones.
 [Tone: Rising dread — slightly faster]  
 Hands rise like a dark tide in the square.  
 [Pause 0.6s]  
-The count climbs toward the mark… sharp as a blade.
+The count climbs toward the mark.
 
 ### `atm_count_falling.mp3`
 [Tone: Falling short — ambiguous]  
@@ -863,7 +890,7 @@ Do not look away. The stones will remember even if you will not.
 
 ### `atm_survived.mp3`
 [Tone: Relief with sour aftertaste]  
-The judgment passes over.  
+They are spared.  
 [Pause 0.8s]  
 Relief shouts. Guilt whispers. Notice both in the faces around you.
 
@@ -958,7 +985,7 @@ Some masks are about to crack against the morning light.
 [Ambience | ~15s]: "Shadow lifting from rooftops, clean morning air, soft birds"  
 The shadow lifts from the rooftops.  
 [Pause 0.8s]  
-Ravenswood Bluff lives. Breathe the clean air… while it lasts.  
+Ravenswood Bluff lives. Breathe the clean air. The town endures.  
 [Fade gentle]
 
 ### `atm_after_evil.mp3`
@@ -1041,7 +1068,7 @@ What walks now is not for the square to witness.
 [Ambience | ~10s]: "Sunset wind, lamps being lit, birds settling"  
 The light drains from the rooftops.  
 [Pause 0.8s]  
-Finish what you must. Night is already at the edge of town.
+Finish the talk you started in the sun. The square has not yet chosen.
 
 ### `dusk_c.mp3`
 [Tone: Urgent but measured]  
@@ -1049,7 +1076,37 @@ Finish what you must. Night is already at the edge of town.
 [SFX | ~1.5s]: "Distant lamp lighting, soft flame"  
 Day loosens its grip.  
 [Pause 0.8s]  
-Speak your last daylight words… before the shutters close.
+Speak while the light still holds. The square is about to grow still.
+
+### `nominations_open_b.mp3`
+[Tone: Fading light, firm]  
+[Ambience | ~10s]: "Sunset wind, lamps being lit, birds settling"  
+Daylight thins. The town may call a soul to stand.  
+[Pause 0.8s]  
+Who among you will be named?
+
+### `nominations_open_c.mp3`
+[Tone: Public summons]  
+[Ambience | ~8s]: "Tense town square hush rising"  
+[SFX | ~1.5s]: "Distant lamp lighting, soft flame"  
+The tower will hear a name.  
+[Pause 0.8s]  
+Step forward if you would accuse. The cobbles are waiting.
+
+### `no_execution_b.mp3`
+[Tone: Soft release — then night]  
+[Ambience | ~10s]: "Sky darkening, settling hush, cold wind"  
+No one dies to the square.  
+[Pause 0.8s]  
+Mercy — or fear — kept the stones clean. Darkness will not.
+
+### `no_execution_c.mp3`
+[Tone: Hushed command]  
+[Ambience | loop | ~12s]: "Cold wind in shutters, slow clock ticks, dark streets"  
+[SFX | ~2s]: "Single heavy wooden shutter closing with a soft wood thud"  
+Judgment is withheld. These streets stay dry until morning.  
+[Pause 0.8s]  
+Close your eyes anyway.
 
 ### `first_night_b.mp3`
 [Tone: Hushed, ceremonial]  
@@ -1122,16 +1179,16 @@ This soul stands beneath the square’s judgment.
 [Tone: Cold certainty]  
 [Mix: no-sfx]  
 [Ambience | ~8s]: "Crowd hush after a decisive count"  
-The mark is met. The town has spoken with one hard voice.  
+The mark is met. This soul stands on the block.  
 [Pause 0.8s]  
-Bring them forward. Judgment waits on the stones.
+Nominations go on — unless a greater count is raised.
 
 ### `no_majority_b.mp3`
 [Tone: Soft release — watchful]  
 [SFX | ~2s]: "Soft release of held breath, uneasy settle"  
-Not enough hands.  
+The count does not unseat the block.  
 [Pause 0.8s]  
-They walk free… for now. Daylight still burns.
+They remain among you. Daylight still burns.
 
 ### `no_majority_c.mp3`
 [Tone: Measured denial]  
@@ -1171,21 +1228,21 @@ Judgment is a breath away.
 [Mix: no-sfx]  
 They live.  
 [Pause 0.8s]  
-They rejoin the crowd… alive, for another hour.
+They rejoin the crowd — the square has spent its killing for the day.
 
 ### `lives_c.mp3`
 [Tone: Quiet reprieve]  
 Mercy — or hesitation — holds.  
 [Pause 0.8s]  
-This soul remains among you. The judgment passes them by.
+This soul remains among you. The square has spent its judgment for the day.
 
 ### `execution_b.mp3`
 [Tone: Solemn, final]  
 [Ambience | ~10s]: "Heavy silence in a stone square, low wind"  
 [SFX | ~2s]: "Deep solemn drum hit"  
-The town has chosen its price.  
+The price is taken.  
 [Pause 0.8s]  
-On these stones, the sentence will be carried out.
+On these stones, the sentence is carried out.
 
 ### `execution_c.mp3`
 [Tone: Measured, grave]  

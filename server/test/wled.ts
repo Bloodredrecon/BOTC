@@ -3,7 +3,7 @@
  * Run: cd server && npx tsx test/wled.ts
  */
 import { persistence } from "./_harness.js";
-import { sceneForSession } from "../src/lighting.js";
+import { sceneForSession, type LightingScene } from "../src/lighting.js";
 import {
   createWledDriver,
   DEFAULT_WLED,
@@ -124,7 +124,7 @@ const cases: Case[] = [
       if (!game) return `no game seg ${JSON.stringify(segs)}`;
       if (game.stop !== 300 || game.start !== 0) return `game range ${game.start}-${game.stop} (want 0-300)`;
       if ((game.stop ?? 0) - (game.start ?? 0) === 577) return "lit all 577";
-      if (game.fx !== 2) return `fx ${game.fx} (want Breathe=2)`;
+      if (game.fx !== 76) return `fx ${game.fx} (want Meteor=76)`;
       const [r, g, b] = game.col?.[0] ?? [];
       if ((b ?? 0) <= (r ?? 0) || (b ?? 0) <= (g ?? 0)) return `not blue-black col=${JSON.stringify(game.col?.[0])}`;
       if ((game.sx ?? 255) > 80) return `speed ${game.sx} too fast`;
@@ -136,7 +136,57 @@ const cases: Case[] = [
     },
   },
   {
-    name: "If WLED already has a 300-LED segment, drive that and leave the 277 as-is",
+    name: "This LAN: 300-strip is second (start 277); leftover 277 is id 0 off",
+    run: async () => {
+      const { calls, http } = mockHttp({ count: 577, segs: [{ id: 0, start: 0, stop: 577, len: 577 }] });
+      const d = createWledDriver(
+        { enabled: true, host: "192.168.50.139", ledCount: 300, start: 277, stop: 577 },
+        { fetch: http },
+      );
+      await d.applyScene("execution");
+      const segs = segsOf(lastState(calls));
+      if (segs.length !== 2) return `seg count ${segs.length}`;
+      if (segs[0]?.id !== 0 || segs[0]?.start !== 0 || segs[0]?.stop !== 277 || segs[0]?.on !== false) {
+        return `first seg ${JSON.stringify(segs[0])}`;
+      }
+      if (segs[1]?.id !== 1 || segs[1]?.start !== 277 || segs[1]?.stop !== 577 || segs[1]?.on !== true) {
+        return `game seg ${JSON.stringify(segs[1])}`;
+      }
+      if (d.status().ledCount !== 300) return `status leds ${d.status().ledCount}`;
+      return null;
+    },
+  },
+  {
+    name: "Phase beds use spatial effects, not Breathe",
+    run: async () => {
+      const { calls, http } = mockHttp();
+      const d = createWledDriver({ enabled: true, host: "192.168.50.139", ledCount: 300 }, { fetch: http });
+      const want: Record<string, number> = {
+        lobby: 49,
+        night: 76,
+        night_wake: 11,
+        dawn: 3,
+        day: 110,
+        dusk: 39,
+        nomination: 6,
+        vote_urgency: 11,
+        execution: 45,
+        death_settle: 18,
+        hush: 85,
+        good_wins: 90,
+        evil_wins: 112,
+      };
+      for (const [scene, fx] of Object.entries(want)) {
+        await d.applyScene(scene as LightingScene);
+        const game = segsOf(lastState(calls)).find((s) => s.on !== false);
+        if (game?.fx === 2) return `${scene} still Breathe`;
+        if (game?.fx !== fx) return `${scene} fx ${game?.fx} want ${fx}`;
+      }
+      return null;
+    },
+  },
+  {
+    name: "If WLED already has a 300-LED segment, drive that and still switch the 277 off",
     run: () => {
       const layout = resolveWledLayout(DEFAULT_WLED, {
         total: 577,
@@ -148,7 +198,9 @@ const cases: Case[] = [
       if (layout.game.start !== 277 || layout.game.stop !== 577 || layout.game.id !== 1) {
         return `picked ${JSON.stringify(layout.game)}`;
       }
-      if (layout.rest) return `should not rewrite the 277, got rest ${JSON.stringify(layout.rest)}`;
+      if (!layout.rest || layout.rest.start !== 0 || layout.rest.stop !== 277) {
+        return `rest ${JSON.stringify(layout.rest)}`;
+      }
       return null;
     },
   },
@@ -230,6 +282,32 @@ const cases: Case[] = [
       if (b.start !== 277 || b.stop !== 577 || b.ledCount !== 300) return `second strip ${b.start}-${b.stop} n=${b.ledCount}`;
       const c = mergeWled(b, { ledCount: 99_999 });
       if (c.ledCount !== 300) return `uncapped leds ${c.ledCount}`;
+      return null;
+    },
+  },
+  {
+    name: "Max brightness caps the WLED bri field",
+    run: () => {
+      const layout = resolveWledLayout({ ...DEFAULT_WLED, start: 277, stop: 577 });
+      const body = wledPayloadForScene("day", { brightness: 255, maxBrightness: 40, layout });
+      if (body.bri !== 40) return `bri ${String(body.bri)} (want 40)`;
+      return null;
+    },
+  },
+  {
+    name: "Event cues off skips death_settle HTTP",
+    run: async () => {
+      const { calls, http } = mockHttp();
+      const d = createWledDriver(
+        { enabled: true, host: "192.168.50.139", ledCount: 300, eventCues: false },
+        { fetch: http },
+      );
+      await d.applyScene("day");
+      const before = calls.length;
+      await d.applyScene("death_settle");
+      await d.applyScene("night_wake");
+      if (calls.length !== before) return `accent sent ${calls.length - before} extra`;
+      if (d.status().scene !== "day") return `scene ${d.status().scene}`;
       return null;
     },
   },

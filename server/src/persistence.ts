@@ -294,3 +294,23 @@ export function saveSession(session: GameSession): void {
   const { tvConnected: _t, tvSoundReady: _sound, storytellerConnected: _s, ...rest } = session;
   writeFileSync(SESSION_PATH, JSON.stringify(rest, null, 2), "utf-8");
 }
+
+/**
+ * Persist Storyteller lighting overrides into gitignored config/local.json.
+ * Skipped when BOTC_SESSION_PATH is set (tests use a temp session and must not touch the real local config).
+ */
+export function patchLocalWled(patch: Partial<WledConfig>): void {
+  if (process.env.BOTC_SESSION_PATH) return;
+  mkdirSync(dirname(LOCAL_CONFIG_PATH), { recursive: true });
+  let obj: Record<string, unknown> = {};
+  if (existsSync(LOCAL_CONFIG_PATH)) {
+    try {
+      obj = readJson(LOCAL_CONFIG_PATH);
+    } catch {
+      obj = {};
+    }
+  }
+  const current = mergeWled(DEFAULT_WLED, obj.wled);
+  obj.wled = mergeWled(current, patch);
+  writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(obj, null, 4), "utf-8");
+}

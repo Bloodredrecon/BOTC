@@ -114,7 +114,7 @@ const cases: Case[] = [
   {
     name: "Sound, ambiance, notices and reset are never undo steps",
     run: () => {
-      for (const a of ["game:playSound", "game:setAmbiance", "lighting:set", "lighting:preview", "game:scene", "game:reset", "game:refresh", "game:dismissStNotice", "game:timerEnded"]) {
+      for (const a of ["game:playSound", "game:setAmbiance", "lighting:set", "lighting:preview", "lighting:cue", "game:scene", "game:reset", "game:refresh", "game:dismissStNotice", "game:timerEnded"]) {
         if (!undo.NOT_UNDOABLE.has(a)) return `${a} is undoable`;
       }
       const label = undo.undoLabel("game:startNomination", { nominatorId: "Ada (seat 1)", nomineeId: "Bram (seat 2)", override: true });

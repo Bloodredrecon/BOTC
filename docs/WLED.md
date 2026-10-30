@@ -4,7 +4,7 @@ Atmospheric room lighting for game night. **Off by default** — the game never 
 
 This repo talks to a WLED JSON API (`GET /json/si`, `POST /json/state`).
 
-**Two strips on one controller:** a probe of `192.168.50.139` (WLED 16.0.1 Niji/ESP32) reported **577 LEDs in a single segment** (`id 0`, start `0`, stop `577`). That is a **300 + 277** chain that is not split in WLED yet. BOTC drives **only the 300-LED game strip** (pixels `0–300` by default) and turns the leftover 277 off so game scenes do not mirror onto it. If the wrong physical strip lights, set start to `277` (pixels `277–577`). If WLED later has a real 300-LED segment, that segment is used and the 277 is left as-is.
+**Two strips on one controller:** a probe of `192.168.50.139` (WLED 16.0.1 Niji/ESP32) reported **577 LEDs**. Live test 2026-10-20: pixels `0–300` only turned a few LEDs red on the 300-strip; pixels `277–577` turned the **whole 300 red**. The 277 is first on the data line; the game strip is second. BOTC drives **only that 300** (`start` 277, `stop` 577 in `config/local.json`) and leaves the 277 off. If WLED later has a real 300-LED segment, that segment is used and the 277 is left as-is.
 
 ## Enable
 
@@ -23,8 +23,8 @@ Or edit gitignored `config/local.json` (never commit this file):
     "ledCount": 300,
     "brightness": 128,
     "segmentId": 0,
-    "start": 0,
-    "stop": 300
+    "start": 277,
+    "stop": 577
   }
 }
 ```
@@ -32,9 +32,7 @@ Or edit gitignored `config/local.json` (never commit this file):
 Non-interactive:
 
 ```text
-BOTC.bat set -Wled on -WledHost 192.168.50.139 -WledLeds 300
-BOTC.bat set -WledStart 277
-(if the 300-LED strip is the second one on the chain)
+BOTC.bat set -Wled on -WledHost 192.168.50.139 -WledLeds 300 -WledStart 277
 ```
 
 Environment (highest priority): `BOTC_WLED=1`, `BOTC_WLED_HOST`, `BOTC_WLED_LEDS`, `BOTC_WLED_BRI`, `BOTC_WLED_START`, `BOTC_WLED_STOP`.
@@ -43,28 +41,36 @@ Environment (highest priority): `BOTC_WLED=1`, `BOTC_WLED_HOST`, `BOTC_WLED_LEDS
 
 ## Storyteller
 
-**Ambiance** tab → **Lights**: follow on/off, brightness, preview scenes (no audio).  
-**Control** → **Room scenes** still plays the day/night/hush *sound* beds as well.
+**Ambiance** tab → **Lights**:
+- Follow game / strip off
+- **Event cues** on/off (wakes, deaths, Slayer, exile, vote-timer end). Phase beds still follow when this is off.
+- **Brightness** (scene mixer) and **Max brightness** (hard cap on the strip, default 180 so a 5 A supply does not clip)
+- Preview chips (lights only, no audio)
+
+Overrides persist in `config/local.json`. **Control** → **Room scenes** still plays the day/night/hush *sound* beds as well.
 
 ## Scenes
 
-| Moment | Strip |
+| Moment | Strip (uses the 300 LEDs, not a global pulse) |
 | --- | --- |
-| Lobby / new game | Dim warm idle (slow breathe) |
-| First night / night | Deep blue-black, slow pulse |
-| Dawn | Amber lift |
-| Day | Warmer, brighter solid |
-| Dusk | Cooler, dimmer |
-| Nominations | Focused red/amber |
+| Lobby / new game | Warm fairy sparkles along the line |
+| First night / night | Slow blue meteors |
+| Night wake (Show to player) | Dual scan bars, then meteors again on Hide |
+| Dawn | Amber wipe down the strip |
+| Day | Slow warm flow |
+| Dusk | Cool stream along the line |
+| Nominations | Red/amber sweep |
 | Vote | Fill along the strip with the vote clock |
-| Vote timer end | Brighter slow pulse (not a strobe) |
-| Execution / gallows | Deep red |
-| Death / scream | Brief dark red, then the next phase |
-| Good wins | Gold hold |
-| Evil wins | Crimson / violet hold |
-| Hush / reveal-only | Very dim |
+| Vote timer end | Dual scan (not a strobe) |
+| Execution / gallows | Fire flicker |
+| Death / scream / exile | Pixels dissolve dark red |
+| Slayer hit | Fire, then dissolve |
+| Slayer miss | Dual scan |
+| Good wins | Gold fireworks 1D |
+| Evil wins | Violet dancing shadows |
+| Hush / reveal-only | Sparse dim spots |
 
-Effects stay slow on purpose (no blink/strobe).
+No blink/strobe. Speeds stay moderate.
 
 ## Hue
 

@@ -711,6 +711,10 @@ export type LightingStatus = {
   host: string;
   ledCount: number;
   brightness: number;
+  /** Hard cap on WLED `bri` (1–255). Storyteller override. */
+  maxBrightness: number;
+  /** Accent cues (wake, death, vote end). Phase beds still follow when false. */
+  eventCues: boolean;
   scene: Exclude<HueScene, null> | null;
   lastError: string | null;
 };
