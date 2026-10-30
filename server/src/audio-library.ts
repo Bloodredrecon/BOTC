@@ -151,6 +151,7 @@ const CATALOG: Record<string, CatalogEntry> = {
   atm_before_reveal: { label: "Before reveal", group: "atmosphere", subgroup: "End" },
   atm_after_good: { label: "After good", group: "atmosphere", subgroup: "End" },
   atm_after_evil: { label: "After evil", group: "atmosphere", subgroup: "End" },
+  atm_snobs: { label: "More adventures… In Snobs?", group: "atmosphere", subgroup: "End" },
 
   atm_sting_tension: { label: "Sting · careful", group: "atmosphere", subgroup: "Stings" },
   atm_sting_doom: { label: "Sting · doom", group: "atmosphere", subgroup: "Stings" },

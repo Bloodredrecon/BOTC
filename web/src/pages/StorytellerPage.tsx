@@ -3217,6 +3217,20 @@ function AmbianceTab({
       </div>
 
       <div className="panel">
+        <h2>After the table</h2>
+        <p className="muted">Soundboard-only — tap to play on the TV. Never fires from phase changes.</p>
+        <div className="chip-row">
+          <button
+            type="button"
+            className="chip"
+            onClick={() => emit("game:playSound", { cueId: "atm_snobs" })}
+          >
+            More adventures… In Snobs?
+          </button>
+        </div>
+      </div>
+
+      <div className="panel">
         <h2>Layers</h2>
         <div className="ambiance-list">
           {catalog.map((def) => {

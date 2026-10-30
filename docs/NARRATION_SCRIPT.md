@@ -998,6 +998,16 @@ Darkness settles into every lane.
 Lock your doors. It will not help… but lock them anyway.  
 [Fade to silence]
 
+### After the table (soundboard only — never auto-picked)
+
+### `atm_snobs.mp3`
+[Tone: Gothic Ravenswood storyteller, full voice — closing the night]  
+[Ambience | ~10s]: "Quiet town square after the play, distant clocktower wind, faint wet cobbles, held low under the voice"  
+This adventure is through, but more adventures await…  
+[Pause 1.0s]  
+[Tone: Slight wry lift — punchline, full voice]  
+In Snobs?
+
 ---
 
 ### Stingers (≤2 seconds)
