@@ -1004,6 +1004,22 @@ code {
   font-size: 1.05rem;
 }
 
+.show-grim-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+
+.show-grim-token {
+  display: inline-block;
+  font-size: 0.92rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(232, 220, 196, 0.9);
+  color: #2a1a10;
+}
+
 .ambiance-master {
   display: flex;
   flex-direction: column;
@@ -1223,6 +1239,9 @@ code {
   background: rgba(232, 220, 196, 0.85);
   color: #2a1a10;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .grim-reminder.more { background: rgba(196, 163, 90, 0.8); }
 

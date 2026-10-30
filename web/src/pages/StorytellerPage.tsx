@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { displayReminder, playerHasReminder } from "../reminders";
 import { useSocket, useStoryteller } from "../socket";
 import type { AudioCueInfo, LightingStatus, NightShowSpec, Player, StorytellerState, Team } from "../types";
 import { ConnectionBanners, ConnectionPills } from "./storyteller/ConnectionStatus";
@@ -35,7 +36,7 @@ function nextDayNumber(dayNumber: number) {
 function isPoisonedOrDrunkPlayer(p: Player | null | undefined): boolean {
   if (!p || p.characterId === "beggar") return false;
   return (
-    p.reminders.includes("Poisoned") ||
+    playerHasReminder(p, "Poisoned") ||
     p.reminders.includes("Drunk") ||
     p.reminders.includes("Is the Drunk") ||
     p.characterId === "drunk"
@@ -60,7 +61,7 @@ function trueCharacterId(p: Player | null | undefined, characters: { id: string;
 /** Match server rules.nightKillProtection — why a Demon kill on `target` fails tonight. */
 function nightKillProtection(players: Player[], target: Player | null | undefined): string | null {
   if (!target || !target.alive) return null;
-  if (target.reminders.includes("Safe")) {
+  if (playerHasReminder(target, "Safe")) {
     // Only the Monk's own health matters — the protected player's poison is irrelevant.
     const monk = players.find((p) => wakeCharacterId(p) === "monk" && p.alive && !p.leftGame);
     if (!monk || !isPoisonedOrDrunkPlayer(monk)) return "Protected by the Monk (Safe)";
@@ -848,6 +849,27 @@ function SetupTab({
   const [dealPath, setDealPath] = useState<"companion" | "physical" | null>(null);
   const residents = state.players.filter((p) => !p.isTraveller && !p.leftGame).length;
   const travellers = state.players.filter((p) => p.isTraveller && !p.leftGame).length;
+  const maxPlayers = state.allowOver15 ? 20 : 15;
+  const [countDraft, setCountDraft] = useState(String(residents));
+  const [countError, setCountError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCountDraft(String(residents));
+    setCountError(null);
+  }, [residents]);
+
+  function applyPlayerCount() {
+    const raw = countDraft.trim();
+    const n = Number(raw);
+    if (!raw || !Number.isInteger(n) || n < 5 || n > maxPlayers) {
+      setCountError(`Enter a whole number from 5 to ${maxPlayers}.`);
+      return;
+    }
+    setCountError(null);
+    if (n === residents) return;
+    emit("game:setPlayerCount", { count: n });
+  }
+
   return (
     <div className="stack">
       {/* 1. Players and names */}
@@ -856,14 +878,39 @@ function SetupTab({
           Players and names ({residents}
           {travellers ? ` + ${travellers} Traveller${travellers === 1 ? "" : "s"}` : ""})
         </h2>
-        <label className="muted">Player count, not counting Travellers (5–{state.allowOver15 ? 20 : 15})</label>
-        <input
-          type="number"
-          min={5}
-          max={state.allowOver15 ? 20 : 15}
-          value={residents}
-          onChange={(e) => emit("game:setPlayerCount", { count: Number(e.target.value) })}
-        />
+        <label className="muted" htmlFor="player-count">
+          Player count, not counting Travellers (5–{maxPlayers})
+        </label>
+        <form
+          className="row"
+          style={{ marginTop: "0.35rem" }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            applyPlayerCount();
+          }}
+        >
+          <input
+            id="player-count"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            value={countDraft}
+            aria-invalid={countError ? true : undefined}
+            aria-describedby={countError ? "player-count-error" : undefined}
+            onChange={(e) => {
+              setCountDraft(e.target.value);
+              setCountError(null);
+            }}
+          />
+          <button className="primary" type="submit">
+            Confirm
+          </button>
+        </form>
+        {countError && (
+          <p className="warn" id="player-count-error">
+            {countError}
+          </p>
+        )}
         <label className="row" style={{ marginTop: "0.5rem", gap: "0.5rem" }}>
           <input
             type="checkbox"
@@ -1197,16 +1244,23 @@ function PlayerEditor({
             ...player.reminders,
             // Always offer common auto-placed tokens so they show/edit on any seat
             "Is the Drunk",
+            "Poisoned · Poisoner",
             "Poisoned",
+            "Safe · Monk",
             "Safe",
+            "Master · Butler",
             "Master",
+            "Townsfolk · Washerwoman",
             "Townsfolk",
+            "Outsider · Librarian",
             "Outsider",
+            "Minion · Investigator",
             "Minion",
             "Wrong · Washerwoman",
             "Wrong · Librarian",
             "Wrong · Investigator",
             "Wrong",
+            "Red herring · Fortune Teller",
             "Red herring",
             "Died today",
             "Is the Demon",
@@ -1553,6 +1607,13 @@ function NightTab({
     });
   }
 
+  /** Record the choice on this wake only. Never auto-advance — the overlay would then
+   *  flash the next player's info while this player is still looking. */
+  function noteChoiceRecorded() {
+    setTargetConfirmed(true);
+    setWakeCompleted(true);
+  }
+
   /** Send the Imp's kill; the server may ask for the star-pass recipient first. */
   function sendKill(targetId: string, reason: string, starPassTo?: string) {
     emit("game:otherDeath", { playerId: targetId, reason, starPassTo }, (res) => {
@@ -1564,8 +1625,7 @@ function NightTab({
       }
       setStarPass(null);
       setMayorPrompt(null);
-      setTargetConfirmed(true);
-      window.setTimeout(() => emit("game:markNightStepDone"), 350);
+      noteChoiceRecorded();
     });
   }
 
@@ -1591,9 +1651,7 @@ function NightTab({
     emit("game:applyNightReminder", { playerId: targetId, reminder: show.reminder }, (res) => {
       const r = res as { ok?: boolean } | undefined;
       if (r && r.ok === false) return;
-      setTargetConfirmed(true);
-      // Choice recorded on the grimoire — advance to the next wake
-      window.setTimeout(() => emit("game:markNightStepDone"), 350);
+      noteChoiceRecorded();
     });
   }
 
@@ -1639,6 +1697,12 @@ function NightTab({
   }
 
   function finishNightStep() {
+    if (showing) {
+      setShowing(false);
+      setRevealResult(false);
+      setWakeCompleted(true);
+      return;
+    }
     applyInfoRemindersFromComposer();
     emit("game:markNightStepDone");
   }
@@ -2146,8 +2210,7 @@ function NightTab({
                     const r = state.players.find((p) => p.id === mayorPrompt.replacementId);
                     if (r && !r.alive) {
                       setMayorPrompt(null);
-                      setTargetConfirmed(true);
-                      window.setTimeout(() => emit("game:markNightStepDone"), 350);
+                      noteChoiceRecorded();
                       return;
                     }
                     sendKill(mayorPrompt.replacementId, "Demon (Mayor bounce)");
@@ -2266,17 +2329,21 @@ function NightTab({
                 </div>
 
                 {show.kind === "choose-target" && (
-                  <div className="row show-overlay-actions">
-                    <button
-                      className="primary"
-                      type="button"
-                      disabled={!infoPlayers[0]}
-                      onClick={confirmTarget}
-                    >
-                      Confirm choice
-                    </button>
-                    {targetConfirmed && <span className="muted">Marked.</span>}
-                  </div>
+                  <>
+                    <div className="row show-overlay-actions">
+                      <button
+                        className="primary"
+                        type="button"
+                        disabled={!infoPlayers[0] || targetConfirmed}
+                        onClick={confirmTarget}
+                      >
+                        Confirm choice
+                      </button>
+                    </div>
+                    {targetConfirmed && (
+                      <p className="muted">Recorded. Hide this screen before anyone else looks.</p>
+                    )}
+                  </>
                 )}
 
                 {show.kind === "yes-no" && (
@@ -2381,11 +2448,20 @@ function NightTab({
                           const c =
                             state.characters.find((x) => x.id === p.characterId) ||
                             state.travellers.find((x) => x.id === p.characterId);
+                          const tokens = p.reminders.filter((t) => t !== "Dead");
                           return (
                             <li key={p.id}>
                               <strong>{p.name}</strong> — {c?.name ?? "?"} ({c?.team ?? "?"})
                               {!p.alive ? " †" : ""}
-                              {p.reminders.length ? ` · ${p.reminders.join(", ")}` : ""}
+                              {tokens.length > 0 && (
+                                <span className="show-grim-tokens">
+                                  {tokens.map((t) => (
+                                    <span key={t} className="show-grim-token">
+                                      {displayReminder(t)}
+                                    </span>
+                                  ))}
+                                </span>
+                              )}
                             </li>
                           );
                         })}
@@ -2808,7 +2884,7 @@ function RulesTab({
           <li>Drunk: set Drunk + &quot;Thinks they are&quot; — they wake as that Townsfolk; Undertaker / Ravenkeeper / Librarian / reveal see the Drunk</li>
           <li>Travellers are exiled (Travel tab), never nominated; dead Travellers keep a ghost vote; Beggar votes need tokens from the dead</li>
           <li>
-            Night Show/Done places WW Townsfolk+Wrong · Washerwoman, Lib Outsider+Wrong · Librarian, Inv Minion+Wrong · Investigator (Recluse/Spy
+            Night Show/Done places WW Townsfolk · Washerwoman + Wrong · Washerwoman, Lib Outsider · Librarian + Wrong · Librarian, Inv Minion · Investigator + Wrong · Investigator (Recluse/Spy
             registering get the token); FT Red herring if missing; execution places Died today; deaths mid-night keep your place in the order
           </li>
         </ul>
@@ -3083,7 +3159,7 @@ function AmbianceTab({
         <p className="muted">
           Layer beds from <code>data/audio/ambiance/</code> on the TV. Loops stay on; sporadic
           one-shots fire with long random gaps. When narration / a sting plays, ambiance ducks,
-          then returns.
+          then returns. Rain on cobbles also draws rain on the TV; Fog hum thickens the fog banks.
         </p>
         <label className="ambiance-master">
           <span>Master volume · {Math.round(mix.masterVolume * 100)}%</span>
@@ -3291,7 +3367,7 @@ function VotesTab({
   const block = state.block ?? null;
   const toBeat = nom ? (nom.toBeat ?? null) : (block?.votes ?? null);
   const need = toBeat != null ? Math.max(majority, toBeat + 1) : majority;
-  const master = state.players.find((p) => p.reminders.includes("Master") && !p.leftGame);
+  const master = state.players.find((p) => playerHasReminder(p, "Master") && !p.leftGame);
   const butler = state.players.find(
     (p) => p.characterId === "butler" && p.alive && !p.leftGame,
   );
@@ -3771,10 +3847,10 @@ function VotePanels({
               : butler
                 ? ` · Butler (${butler.name}) — set Master on grimoire`
                 : ""}
-            {state.players.some((p) => p.reminders.includes("3 votes") && p.alive)
+            {state.players.some((p) => playerHasReminder(p, "3 votes") && p.alive)
               ? " · 3-votes token in play"
               : ""}
-            {state.players.some((p) => p.reminders.includes("Negative vote") && p.alive)
+            {state.players.some((p) => playerHasReminder(p, "Negative vote") && p.alive)
               ? " · Negative-vote token in play"
               : ""}
           </p>
@@ -3800,8 +3876,8 @@ function VotePanels({
               const canRaise = (p.alive && !beggarBlocked) || (!p.alive && !p.usedGhostVote);
               const can = on || canRaise;
               const mods = [
-                p.reminders.includes("3 votes") ? "×3" : "",
-                p.reminders.includes("Negative vote") ? "−" : "",
+                playerHasReminder(p, "3 votes") ? "×3" : "",
+                playerHasReminder(p, "Negative vote") ? "−" : "",
                 butler && p.id === butler.id ? "Butler" : "",
                 master && p.id === master.id ? "Master" : "",
                 p.characterId === "beggar" && p.alive ? `tokens ${p.voteTokens}` : "",

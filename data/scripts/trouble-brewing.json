@@ -9,7 +9,7 @@
       "ability": "You start knowing that 1 of 2 players is a particular Townsfolk.",
       "firstNight": 10,
       "otherNight": 0,
-      "reminders": ["Townsfolk", "Wrong · Washerwoman"],
+      "reminders": ["Townsfolk · Washerwoman", "Wrong · Washerwoman"],
       "oncePerGame": true,
       "storytellerNotes": "FIRST NIGHT ONLY. Show two players and a Townsfolk token (one is correct). Place Townsfolk + Wrong · Washerwoman reminders. Does not wake again."
     },
@@ -20,7 +20,7 @@
       "ability": "You start knowing that 1 of 2 players is a particular Outsider. (Or that zero are in play.)",
       "firstNight": 11,
       "otherNight": 0,
-      "reminders": ["Outsider", "Wrong · Librarian"],
+      "reminders": ["Outsider · Librarian", "Wrong · Librarian"],
       "oncePerGame": true,
       "storytellerNotes": "FIRST NIGHT ONLY. Show two players and an Outsider (or that zero Outsiders are in play). Does not wake again."
     },
@@ -31,7 +31,7 @@
       "ability": "You start knowing that 1 of 2 players is a particular Minion.",
       "firstNight": 12,
       "otherNight": 0,
-      "reminders": ["Minion", "Wrong · Investigator"],
+      "reminders": ["Minion · Investigator", "Wrong · Investigator"],
       "oncePerGame": true,
       "storytellerNotes": "FIRST NIGHT ONLY. Show two players and a Minion token. Does not wake again."
     },
@@ -63,7 +63,7 @@
       "ability": "Each night, choose 2 players: you learn if either is a Demon. There is a good player that registers as a Demon to you.",
       "firstNight": 15,
       "otherNight": 16,
-      "reminders": ["Red herring"],
+      "reminders": ["Red herring · Fortune Teller"],
       "storytellerNotes": "Every night. They pick two; nod if either is Demon OR the red herring. Place Red herring reminder on a good player at setup."
     },
     {
@@ -83,7 +83,7 @@
       "ability": "Each night*, choose a player (not yourself): they are safe from the Demon tonight.",
       "firstNight": 0,
       "otherNight": 5,
-      "reminders": ["Safe"],
+      "reminders": ["Safe · Monk"],
       "storytellerNotes": "OTHER NIGHTS ONLY. They choose a player; place Safe. Imp cannot kill that player tonight."
     },
     {
@@ -145,7 +145,7 @@
       "ability": "Each night, choose a player (not yourself): tomorrow, you may only vote if they are voting too.",
       "firstNight": 16,
       "otherNight": 17,
-      "reminders": ["Master"],
+      "reminders": ["Master · Butler"],
       "storytellerNotes": "Every night. They choose Master; place reminder. Next day they may only vote if Master is voting."
     },
     {
@@ -185,7 +185,7 @@
       "ability": "Each night, choose a player: they are poisoned tonight and tomorrow day.",
       "firstNight": 8,
       "otherNight": 4,
-      "reminders": ["Poisoned"],
+      "reminders": ["Poisoned · Poisoner"],
       "storytellerNotes": "Every night (incl. first). Choose player; Poisoned reminder. Clear previous poison when they pick anew."
     },
     {

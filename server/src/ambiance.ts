@@ -33,9 +33,9 @@ export const AMBIANCE_AUDIO_DIR = join(CUSTOM_AUDIO_DIR, "ambiance");
 
 /** Pack from data/audio/ambiance/ (scripts/generate_ambiance.py). */
 const PACK: AmbianceLayerDef[] = [
-  { id: "amb_rain", label: "Rain on cobbles", hint: "Soft continuous rain · loop", kind: "loop", defaultVolume: 0.35 },
+  { id: "amb_rain", label: "Rain on cobbles", hint: "Soft continuous rain · loop · rain on the TV", kind: "loop", defaultVolume: 0.35 },
   { id: "amb_wind_shutters", label: "Wind / shutters", hint: "Draft through shutters · loop", kind: "loop", defaultVolume: 0.32 },
-  { id: "amb_fog_hum", label: "Fog hum", hint: "Low distant stone hum · loop", kind: "loop", defaultVolume: 0.32 },
+  { id: "amb_fog_hum", label: "Fog hum", hint: "Low distant stone hum · loop · thickens TV fog", kind: "loop", defaultVolume: 0.32 },
   {
     id: "amb_clocktower_mechanism",
     label: "Clocktower gears",

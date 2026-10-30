@@ -1,3 +1,4 @@
+import { compactReminder, playerHasReminder } from "../../reminders";
 import type { Player, StorytellerState, Team } from "../../types";
 
 /** Reminder tokens shown on the circle; the full list is in the editor below. */
@@ -26,7 +27,7 @@ export function GrimoireCircle({
     state.characters.find((c) => c.id === id) ?? state.travellers.find((c) => c.id === id);
   const demon = seated.find((p) => charOf(p.characterId)?.team === "demon");
   const bluffs = (demon?.bluffs ?? []).map((id) => charOf(id)?.name ?? id);
-  const herring = seated.find((p) => p.reminders.includes("Red herring"));
+  const herring = seated.find((p) => playerHasReminder(p, "Red herring"));
   const alive = seated.filter((p) => p.alive).length;
   // Fewer seats get bigger tokens. Big tables use a taller ellipse: phones have height to spare.
   const size = n <= 8 ? 21 : n <= 10 ? 18 : n <= 12 ? 15 : 13;
@@ -51,7 +52,7 @@ export function GrimoireCircle({
           )}
           {herring && (
             <div>
-              <span className="muted">Red herring</span> {herring.name}
+              <span className="muted">Fortune Teller herring</span> {herring.name}
             </div>
           )}
         </div>
@@ -144,8 +145,8 @@ function Seat({
       {tokens.length > 0 && (
         <span className="grim-reminders">
           {tokens.slice(0, MAX_TOKENS).map((t) => (
-            <span key={t} className="grim-reminder">
-              {t}
+            <span key={t} className="grim-reminder" title={t}>
+              {compactReminder(t)}
             </span>
           ))}
           {tokens.length > MAX_TOKENS && <span className="grim-reminder more">+{tokens.length - MAX_TOKENS}</span>}

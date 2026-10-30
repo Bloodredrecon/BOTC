@@ -1,4 +1,5 @@
 import type { ScriptData } from "./persistence.js";
+import { MASTER_LABEL, POISONED_LABEL, SAFE_LABEL } from "./reminders.js";
 import { isEvil, isPoisonedOrDrunk, trueCharacterId, wakeCharacterId } from "./rules.js";
 import type {
   CharacterDef,
@@ -738,7 +739,7 @@ function showForCharacter(
         kind: "choose-target",
         hint: "They pick someone to protect (not themselves; dead players allowed). Confirm marks Safe. Safe fails only if the Monk is Poisoned/Drunk.",
         maxPlayers: 1,
-        reminder: "Safe",
+        reminder: SAFE_LABEL,
         playerTitle: "Monk",
         playerPrompt: "Choose a player to protect tonight. You cannot protect yourself.",
         playersLabel: "Protected",
@@ -749,7 +750,7 @@ function showForCharacter(
         kind: "choose-target",
         hint: "They pick someone to poison. Confirm marks Poisoned. Disables that player’s ability (Safe/Soldier/etc.).",
         maxPlayers: 1,
-        reminder: "Poisoned",
+        reminder: POISONED_LABEL,
         playerTitle: "Poisoner",
         playerPrompt: "Choose a player to poison tonight.",
         playersLabel: "Poisoned",
@@ -760,7 +761,7 @@ function showForCharacter(
         kind: "choose-target",
         hint: "They pick their Master (not themselves). Confirm marks Master. The Butler may only vote while the Master's hand is up — you get a private warning if not.",
         maxPlayers: 1,
-        reminder: "Master",
+        reminder: MASTER_LABEL,
         playerTitle: "Butler",
         playerPrompt: "Choose your Master. You may only vote if they vote.",
         playersLabel: "Your Master",

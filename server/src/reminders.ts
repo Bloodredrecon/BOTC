@@ -1,11 +1,41 @@
 import type { GameSession, Player } from "./types.js";
 
+/** "Wrong · Washerwoman" → "Wrong"; unlabeled "Red herring" stays "Red herring". */
+export function reminderBase(reminder: string): string {
+  const cut = reminder.indexOf(" · ");
+  return cut === -1 ? reminder : reminder.slice(0, cut);
+}
+
+export function playerHasReminder(p: { reminders: string[] }, base: string): boolean {
+  return p.reminders.some((r) => reminderBase(r) === base);
+}
+
+export const RED_HERRING_LABEL = "Red herring · Fortune Teller";
+export const POISONED_LABEL = "Poisoned · Poisoner";
+export const SAFE_LABEL = "Safe · Monk";
+export const MASTER_LABEL = "Master · Butler";
+
+export function infoPingLabel(
+  positiveLabel: "Townsfolk" | "Outsider" | "Minion",
+  infoRoleLabel: string,
+): string {
+  return `${positiveLabel} · ${infoRoleLabel}`;
+}
+
 /** Remove a reminder string from every player. */
 export function clearReminderEverywhere(session: GameSession, reminder: string) {
   for (const p of session.players) {
     if (p.reminders.includes(reminder)) {
       p.reminders = p.reminders.filter((r) => r !== reminder);
     }
+  }
+}
+
+/** Drop every token whose base matches (both "Poisoned" and "Poisoned · Poisoner"). */
+export function clearReminderBaseEverywhere(session: GameSession, base: string) {
+  for (const p of session.players) {
+    const next = p.reminders.filter((r) => reminderBase(r) !== base);
+    if (next.length !== p.reminders.length) p.reminders = next;
   }
 }
 
@@ -24,9 +54,9 @@ export function addReminder(p: Player, reminder: string) {
   }
 }
 
-/** Exclusive marks: at most one player holds the token. */
+/** Exclusive marks: at most one player holds the token (including labeled variants of the same base). */
 export function placeExclusiveReminder(session: GameSession, playerId: string, reminder: string) {
-  clearReminderEverywhere(session, reminder);
+  clearReminderBaseEverywhere(session, reminderBase(reminder));
   const p = session.players.find((x) => x.id === playerId);
   if (p) addReminder(p, reminder);
 }
@@ -63,22 +93,23 @@ export function placeInfoPairReminders(
 ): string {
   const { positiveLabel, infoRoleLabel, playerIds, shownCharacterId, zeroOutsiders } = opts;
   const wrongLabel = wrongReminderLabel(infoRoleLabel);
+  const pingLabel = infoPingLabel(positiveLabel, infoRoleLabel);
   const pair = playerIds
     .map((id) => session.players.find((p) => p.id === id))
     .filter((p): p is Player => !!p);
 
-  clearReminderEverywhere(session, positiveLabel);
+  clearReminderBaseEverywhere(session, positiveLabel);
   // Exclusive to this info ability — leave other roles' Wrong · … tokens alone.
   clearReminderEverywhere(session, wrongLabel);
 
   if (zeroOutsiders) {
     // Drop legacy bare Wrong on the (empty) selection if any were passed.
     clearReminderFrom(pair, "Wrong");
-    return `Cleared ${positiveLabel} / ${wrongLabel} tokens (zero Outsiders shown). Edit grimoire if lying.`;
+    return `Cleared ${pingLabel} / ${wrongLabel} tokens (zero Outsiders shown). Edit grimoire if lying.`;
   }
 
   if (pair.length < 2 || !shownCharacterId) {
-    return `Need 2 players + a character token to place ${positiveLabel} / ${wrongLabel}.`;
+    return `Need 2 players + a character token to place ${pingLabel} / ${wrongLabel}.`;
   }
 
   // Legacy bare Wrong on this pair (unlabeled decoys from older sessions).
@@ -87,11 +118,11 @@ export function placeInfoPairReminders(
   const correct = pair.filter((p) => p.characterId === shownCharacterId);
   if (correct.length >= 1) {
     const hit = correct[0];
-    addReminder(hit, positiveLabel);
+    addReminder(hit, pingLabel);
     for (const p of pair) {
       if (p.id !== hit.id) addReminder(p, wrongLabel);
     }
-    return `Placed ${positiveLabel} on ${hit.name}, ${wrongLabel} on the other (truth from characterIds). Edit grimoire if Drunk/poisoned info should lie.`;
+    return `Placed ${pingLabel} on ${hit.name}, ${wrongLabel} on the other (truth from characterIds). Edit grimoire if Drunk/poisoned info should lie.`;
   }
 
   // Recluse may register as a Minion; the Spy as a Townsfolk / Outsider.
@@ -99,12 +130,12 @@ export function placeInfoPairReminders(
     positiveLabel === "Minion" ? p.characterId === "recluse" : p.characterId === "spy",
   );
   if (registers) {
-    addReminder(registers, positiveLabel);
+    addReminder(registers, pingLabel);
     for (const p of pair) {
       if (p.id !== registers.id) addReminder(p, wrongLabel);
     }
     const role = registers.characterId === "recluse" ? "Recluse" : "Spy";
-    return `Placed ${positiveLabel} on ${registers.name} (${role} registering as ${shownCharacterId}), ${wrongLabel} on the other.`;
+    return `Placed ${pingLabel} on ${registers.name} (${role} registering as ${shownCharacterId}), ${wrongLabel} on the other.`;
   }
 
   for (const p of pair) addReminder(p, wrongLabel);

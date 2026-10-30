@@ -52,7 +52,9 @@ const cases: Case[] = [
         playerIds: alt.playerIds,
         shownCharacterId: alt.characterId,
       });
-      if (!player(e, pid(e, "recluse")).reminders.includes("Minion")) return "Minion not on the Recluse";
+      if (!player(e, pid(e, "recluse")).reminders.includes("Minion · Investigator")) {
+        return `Minion not on the Recluse: ${player(e, pid(e, "recluse")).reminders.join(",")}`;
+      }
       return null;
     },
   },

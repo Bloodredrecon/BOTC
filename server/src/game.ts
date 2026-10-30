@@ -26,8 +26,10 @@ import {
 } from "./projection.js";
 import {
   addReminder,
+  RED_HERRING_LABEL,
   placeExclusiveReminder,
   placeInfoPairReminders,
+  reminderBase,
 } from "./reminders.js";
 import {
   alignmentOf,
@@ -157,8 +159,8 @@ const DAWN_CLEAR_REMINDERS = ["Died today"];
 function clearNightScopedReminders(s: GameSession): string[] {
   const poisonCleared: string[] = [];
   for (const p of s.players) {
-    const hadPoison = p.reminders.includes("Poisoned");
-    const next = p.reminders.filter((r) => !NIGHT_SCOPED_REMINDERS.includes(r));
+    const hadPoison = p.reminders.some((r) => reminderBase(r) === "Poisoned");
+    const next = p.reminders.filter((r) => !NIGHT_SCOPED_REMINDERS.includes(reminderBase(r)));
     if (next.length !== p.reminders.length) {
       p.reminders = next;
       if (hadPoison) poisonCleared.push(p.name);
@@ -665,7 +667,7 @@ export class GameEngine {
         p.alive = true;
         p.usedGhostVote = false;
       }
-      if (deal.redHerringId) placeExclusiveReminder(s, deal.redHerringId, "Red herring");
+      if (deal.redHerringId) placeExclusiveReminder(s, deal.redHerringId, RED_HERRING_LABEL);
       const demon = s.players.find((p) => !p.leftGame && !p.isTraveller && p.characterId === "imp");
       if (demon) demon.bluffs = [...deal.bluffs];
       const bluffNames = deal.bluffs.map((id) => findDef(this.script, id)?.name ?? id).join(", ");
@@ -770,8 +772,8 @@ export class GameEngine {
       }
       if (patch.reminders !== undefined) {
         let next = [...patch.reminders];
-        if (p.characterId === "butler" && next.includes("Master")) {
-          next = next.filter((r) => r !== "Master");
+        if (p.characterId === "butler" && next.some((r) => reminderBase(r) === "Master")) {
+          next = next.filter((r) => reminderBase(r) !== "Master");
           pushStNotice(s, `The Butler (${p.name}) cannot choose themselves as Master.`);
         }
         p.reminders = next;
@@ -1206,12 +1208,12 @@ export class GameEngine {
     const step = s0.night?.steps[s0.night.stepIndex];
     // "(not yourself)": Monk → Safe, Butler → Master, Bureaucrat → 3 votes, Thief → Negative vote.
     const selfRule: Record<string, string> = { Safe: "monk", Master: "butler", "3 votes": "bureaucrat", "Negative vote": "thief" };
-    const chooser = selfRule[label];
+    const chooser = selfRule[reminderBase(label)];
     const selfPick =
       target &&
       chooser &&
       ((step?.characterId === chooser && step.playerIds.includes(target.id)) ||
-        (label === "Master" && target.characterId === "butler"));
+        (reminderBase(label) === "Master" && target.characterId === "butler"));
     if (selfPick) {
       const name = findDef(this.script, chooser)?.name ?? chooser;
       const message = `The ${name} cannot choose themselves — pick another player.`;
@@ -1221,7 +1223,7 @@ export class GameEngine {
     this.mutate((s) => {
       const p = s.players.find((x) => x.id === playerId);
       if (!p || p.leftGame) return;
-      if (EXCLUSIVE_NIGHT_REMINDERS.includes(label)) {
+      if (EXCLUSIVE_NIGHT_REMINDERS.includes(reminderBase(label))) {
         placeExclusiveReminder(s, playerId, label);
       } else {
         addReminder(p, label);
@@ -1382,8 +1384,8 @@ export class GameEngine {
           ok = false;
           return;
         }
-        placeExclusiveReminder(s, herringId, "Red herring");
-        message = `Placed Red herring on ${p.name}.`;
+        placeExclusiveReminder(s, herringId, RED_HERRING_LABEL);
+        message = `Placed ${RED_HERRING_LABEL} on ${p.name}.`;
       } else {
         message = "Unknown info role.";
         ok = false;

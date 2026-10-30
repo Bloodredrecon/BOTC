@@ -185,7 +185,9 @@ const cases: Case[] = [
       }
       const drunk = e.session.players.find((p) => p.characterId === "drunk")!;
       if (!drunk.reminders.includes("Is the Drunk")) return "no Is the Drunk token";
-      if (!player(e, r.deal.redHerringId!).reminders.includes("Red herring")) return "no Red herring token";
+      if (!player(e, r.deal.redHerringId!).reminders.some((x) => /^Red herring/.test(x))) {
+        return "no Red herring token";
+      }
       const imp = e.session.players.find((p) => p.characterId === "imp")!;
       if (imp.bluffs.join() !== r.deal.bluffs.join()) return `bluffs ${imp.bluffs}`;
       if (projection.setupWarning(e.session, script)) return `setup warning: ${projection.setupWarning(e.session, script)}`;

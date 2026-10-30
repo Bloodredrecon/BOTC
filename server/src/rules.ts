@@ -1,5 +1,9 @@
 import type { ScriptData } from "./persistence.js";
-import { clearReminderEverywhere, placeExclusiveReminder } from "./reminders.js";
+import {
+  clearReminderBaseEverywhere,
+  placeExclusiveReminder,
+  playerHasReminder,
+} from "./reminders.js";
 import type { Alignment, GameSession, Player, SetupCounts } from "./types.js";
 
 export type StNotice = { id: string; message: string; at: number };
@@ -51,7 +55,7 @@ function soberAndHealthy(p: Player): boolean {
 }
 
 export function isPoisoned(p: Player): boolean {
-  return p.reminders.includes("Poisoned") && !soberAndHealthy(p);
+  return playerHasReminder(p, "Poisoned") && !soberAndHealthy(p);
 }
 
 export function isDrunk(p: Player): boolean {
@@ -99,7 +103,7 @@ function livingMonk(session: GameSession): Player | undefined {
  * irrelevant — poison only removes the poisoned player's own ability.
  */
 export function safeProtects(session: GameSession, target: Player): boolean {
-  if (!target.reminders.includes("Safe")) return false;
+  if (!playerHasReminder(target, "Safe")) return false;
   const monk = livingMonk(session);
   if (monk && abilityDisabled(monk)) return false;
   // No living Monk but Safe token remains (e.g. Monk marked dead after choosing) — still protects.
@@ -168,15 +172,15 @@ export function livingPoisoner(session: GameSession): Player | undefined {
  */
 export function endPoisonWithPoisoner(session: GameSession, hadLivingPoisoner: boolean): string[] {
   if (!hadLivingPoisoner || livingPoisoner(session)) return [];
-  const cured = session.players.filter((p) => p.reminders.includes("Poisoned")).map((p) => p.name);
-  if (cured.length) clearReminderEverywhere(session, "Poisoned");
+  const cured = session.players.filter((p) => playerHasReminder(p, "Poisoned")).map((p) => p.name);
+  if (cured.length) clearReminderBaseEverywhere(session, "Poisoned");
   return cured;
 }
 
 /** Master token holder (Butler’s chosen master). */
 export function masterPlayer(session: GameSession): Player | undefined {
   return session.players.find(
-    (p) => !p.leftGame && p.reminders.includes("Master"),
+    (p) => !p.leftGame && playerHasReminder(p, "Master"),
   );
 }
 
@@ -207,8 +211,8 @@ function activeTraveller(session: GameSession, characterId: string): boolean {
 
 /** Weight of one raised hand: Thief −1 / Bureaucrat ×3 (only while that Traveller lives) / normal 1. */
 export function voteWeight(session: GameSession, p: Player): number {
-  if (p.reminders.includes("Negative vote") && activeTraveller(session, "thief")) return -1;
-  if (p.reminders.includes("3 votes") && activeTraveller(session, "bureaucrat")) return 3;
+  if (playerHasReminder(p, "Negative vote") && activeTraveller(session, "thief")) return -1;
+  if (playerHasReminder(p, "3 votes") && activeTraveller(session, "bureaucrat")) return 3;
   return 1;
 }
 

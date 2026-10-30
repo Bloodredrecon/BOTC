@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { isAudioUnlocked, playCue, syncAmbiance, unlockAudio } from "../audio";
 import { useSocket, useTvState } from "../socket";
+import type { PublicState } from "../types";
 import { plateHasLogo, plateKeyForPhase } from "./tv/assets";
 import { Atmosphere } from "./tv/Atmosphere";
 import { OakPlaque, PhaseWord, TvBrandLogo, TvLabel, TvScript } from "./tv/chrome";
@@ -11,6 +12,10 @@ import { MomentOverlay, useMoment } from "./tv/moments";
 import { CharacterSheet, DawnReveal, DayTag, Gazette, HeroPlaque, TimerBadge, TownBoard } from "./tv/panels";
 import { ExecutionStage, ExileStage, NominationStage, VoteStage } from "./tv/stages";
 import "./tv/tv.css";
+
+function ambianceLayerOn(state: PublicState | null | undefined, match: RegExp): boolean {
+  return Boolean(state?.ambiance?.layers.some((l) => l.enabled && match.test(l.id)));
+}
 
 function useCountdown(endsAt: number | null | undefined) {
   const [now, setNow] = useState(Date.now());
@@ -46,7 +51,9 @@ export function TvPage() {
   const seconds = useCountdown(state?.timer?.endsAt);
   const moment = useMoment(state);
   // /tv?motion=off turns off the idle motion for a slow TV browser (prefers-reduced-motion does too).
+  // /tv?fx=rain|fog|all previews weather overlays without touching the ambiance mix.
   const still = useMemo(() => new URLSearchParams(window.location.search).get("motion") === "off", []);
+  const fx = useMemo(() => new URLSearchParams(window.location.search).get("fx") ?? "", []);
 
   useEffect(() => {
     if (!state?.soundCue || !soundOn) return;
@@ -131,12 +138,20 @@ export function TvPage() {
         showTimer ? "has-timer" : "",
         moment ? "tv-moment-on" : "",
         moment && !moment.resolved ? "tv-moment-aim" : "",
+        ambianceLayerOn(state, /rain/i) || fx === "rain" || fx === "all" ? "tv-rain" : "",
+        ambianceLayerOn(state, /fog/i) || fx === "fog" || fx === "all" ? "tv-fog-heavy" : "",
         still ? "tv-still" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <Atmosphere phase={state.phase} winner={state.winner} dayNumber={state.dayNumber} />
+      <Atmosphere
+        phase={state.phase}
+        winner={state.winner}
+        dayNumber={state.dayNumber}
+        rain={ambianceLayerOn(state, /rain/i) || fx === "rain" || fx === "all"}
+        funeral={showDawn}
+      />
       <h1 className="visually-hidden">Blood on the Clocktower</h1>
 
       {!soundOn && <SoundGate onEnable={enableSound} />}
